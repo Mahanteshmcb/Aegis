@@ -1,0 +1,11 @@
+Copyright (c) 2025 Mahantesh Biradar
+
+ALL RIGHTS RESERVED
+
+This software and its contents are proprietary and confidential. 
+
+You MAY NOT copy, modify, distribute, sublicense, or use this software or any part of it without the express written permission of the copyright holder.
+
+This repository is made public for demonstration, academic, or evaluation purposes only. Any unauthorized use is strictly prohibited and may result in legal action.
+
+For licensing inquiries, contact: mcbmahantesh@gmail.com
