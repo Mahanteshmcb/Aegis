@@ -72,3 +72,15 @@ Moving beyond the single-user estate prototype, the system is engineered with a 
 * **Blockchain Integration:** Solidity smart contracts deployed via Hardhat; Web3.py for backend integration.
 * **Database:** PostgreSQL with PostGIS for mobility tracking and strict tenant isolation.
 * **Frontend Interface:** React / Next.js with Tailwind CSS for high-performance data visualization.
+
+---
+
+## Quick Links
+- [Project Vision](VISION.md)
+- [Development Roadmap](roadmap.md)
+- [License](LICENSE.txt)
+
+---
+
+## Project Summary
+Aegis is a decentralized digital twin framework for sovereign asset management, anti-forensic security, and enterprise infrastructure orchestration. It is designed to work offline/local-first, with a decentralized blockchain backup for audit and resilience. The project leverages a multi-agent AI kernel (Vryndara), blockchain-backed audit trails, and a multi-tenant SaaS interface to deliver secure, autonomous, and scalable management of physical assets.
