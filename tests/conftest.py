@@ -10,32 +10,47 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.config import settings
 from backend.database import Base
+import backend.models_db  # Ensure all models are registered with Base
 from backend.main import app
 from backend.dependencies import get_db
 
 
 # Test database setup
+
 @pytest.fixture(scope="function")
 def test_db():
-    """Create a test database and yield a session."""
-    engine = create_engine("sqlite:///:memory:")
+    """Create a file-based test database and yield a session."""
+    import os
+    test_db_url = "sqlite:///./test.db"
+    # Remove old test DB if exists
+    if os.path.exists("./test.db"):
+        os.remove("./test.db")
+    engine = create_engine(test_db_url, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
-    
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     SessionLocal = TestingSessionLocal
-    
     def override_get_db():
         try:
             db = SessionLocal()
             yield db
         finally:
             db.close()
-    
     app.dependency_overrides[get_db] = override_get_db
-    
     yield SessionLocal
-    
     app.dependency_overrides.clear()
+    # Clean up test DB file
+    try:
+        engine.dispose()
+    except Exception:
+        pass
+    import time
+    for _ in range(5):
+        try:
+            if os.path.exists("./test.db"):
+                os.remove("./test.db")
+            break
+        except PermissionError:
+            time.sleep(0.1)
 
 
 @pytest.fixture

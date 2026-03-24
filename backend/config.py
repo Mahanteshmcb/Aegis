@@ -6,7 +6,7 @@ Supports dev, test, and production configurations with Pydantic.
 import os
 from typing import Literal
 from pydantic import Field
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     server_port: int = Field(8000, env="SERVER_PORT")
     
     # Database Configuration
+    # Example for PostgreSQL: "postgresql+psycopg2://user:password@localhost:5432/aegis"
     database_url: str = Field("sqlite:///./aegis.db", env="DATABASE_URL")
     sqlalchemy_echo: bool = Field(True, env="SQLALCHEMY_ECHO")
     

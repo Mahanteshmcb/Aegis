@@ -25,15 +25,30 @@ class ResearchResponse(BaseModel):
     status: str
 
 
-@router.post("/research/framework", response_model=ResearchResponse)
+
+from fastapi import Body
+
+@router.post(
+    "/research/framework",
+    response_model=ResearchResponse,
+    summary="Research a compliance framework",
+    description="Query Vryndara for compliance research on a given framework.",
+    tags=["research"],
+)
 async def research_framework(
-    request: ResearchRequest,
+    request: ResearchRequest = Body(
+        ..., 
+        example={
+            "framework": "ISO27001",
+            "query": "Describe the main controls for access management."
+        }
+    ),
     current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     """
     Research compliance framework using Vryndara.
-    Implemented in Month 3 (Week 9-10).
+    Returns findings, summary, and status.
     """
     return {
         "framework": request.framework,
@@ -43,31 +58,56 @@ async def research_framework(
     }
 
 
-@router.post("/generate/audit-script")
+
+class AuditScriptResponse(BaseModel):
+    status: str
+    message: str = ""
+    script: str = ""
+
+@router.post(
+    "/generate/audit-script",
+    response_model=AuditScriptResponse,
+    summary="Generate audit validation script",
+    description="Generate an audit validation script using Vryndara Coder agent.",
+    tags=["research"],
+)
 async def generate_audit_script(
     current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     """
     Generate audit validation script using Vryndara Coder agent.
-    Implemented in Month 3 (Week 11-12).
+    Returns script and status.
     """
     return {
         "status": "not_implemented",
-        "message": "Code generation endpoint not yet implemented"
+        "message": "Code generation endpoint not yet implemented",
+        "script": ""
     }
 
 
-@router.post("/analysis/logs")
+class AnalyzeLogsResponse(BaseModel):
+    status: str
+    findings: list = []
+    message: str = ""
+
+@router.post(
+    "/analysis/logs",
+    response_model=AnalyzeLogsResponse,
+    summary="Analyze logs for anomalies",
+    description="Analyze logs for anomalies using Vryndara Brain agent.",
+    tags=["research"],
+)
 async def analyze_logs(
     current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     """
     Analyze logs for anomalies using Vryndara Brain agent.
-    Implemented in Month 3 (Week 13-14).
+    Returns findings and status.
     """
     return {
         "status": "not_implemented",
+        "findings": [],
         "message": "Log analysis endpoint not yet implemented"
     }

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from . import models, schemas
+from . import models_db as models, schemas
 
 
 def create_tenant(db: Session, tenant: schemas.TenantCreate) -> models.Tenant:
@@ -68,3 +68,36 @@ def list_audit_logs(db: Session, sensor_id: int, skip: int = 0, limit: int = 100
         .limit(limit)
         .all()
     )
+
+
+# --- User CRUD for authentication ---
+from sqlalchemy.exc import IntegrityError
+from passlib.hash import bcrypt
+
+def get_user_by_email(db: Session, email: str) -> models.User | None:
+    return db.query(models.User).filter(models.User.email == email).first()
+
+def create_user(db: Session, user: schemas.UserCreate) -> models.User:
+    hashed_password = bcrypt.hash(user.password)
+    db_user = models.User(
+        email=user.email,
+        hashed_password=hashed_password,
+        role=user.role,
+        tenant_id=user.tenant_id,
+    )
+    db.add(db_user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise ValueError("User with this email already exists")
+    db.refresh(db_user)
+    return db_user
+
+def authenticate_user(db: Session, email: str, password: str) -> models.User | None:
+    user = get_user_by_email(db, email)
+    if not user:
+        return None
+    if not bcrypt.verify(password, user.hashed_password):
+        return None
+    return user

@@ -1,3 +1,18 @@
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add common security headers to all responses."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
 """
 Aegis Backend - Middleware
 Request logging, error handling, request ID tracing.
@@ -105,7 +120,16 @@ def setup_cors_middleware(app):
 
 def setup_custom_middleware(app):
     """Setup custom middleware in order."""
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(ErrorHandlingMiddleware)
     app.add_middleware(LoggingMiddleware)
     app.add_middleware(RequestIDMiddleware)
+    return app
+
+def setup_production_security_middleware(app):
+    """Setup production-only security middleware (TrustedHost, HTTPSRedirect)."""
+    # Restrict to trusted hosts (adjust as needed)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "yourdomain.com"])
+    # Redirect HTTP to HTTPS (enable in production)
+    app.add_middleware(HTTPSRedirectMiddleware)
     return app

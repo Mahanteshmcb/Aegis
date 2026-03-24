@@ -9,8 +9,12 @@ from sqlalchemy.pool import StaticPool
 
 from backend.config import settings
 
+
 # Base class for all ORM models
 Base = declarative_base()
+
+# Ensure all models are registered with Base
+import backend.models_db
 
 # Create database engine
 if settings.database_url.startswith("sqlite"):

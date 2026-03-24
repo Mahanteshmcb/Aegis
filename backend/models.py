@@ -32,6 +32,22 @@ class Sensor(Base):
     audit_logs = relationship("AuditLog", back_populates="sensor")
 
 
+
+class Zone(Base):
+    __tablename__ = "zones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(String(255))
+    location = Column(String(255))
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships (add as needed)
+    # tenant = relationship("Tenant", back_populates="zones")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

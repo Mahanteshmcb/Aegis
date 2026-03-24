@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 from backend.config import settings
 from backend.database import init_db, SessionLocal
 from backend.exceptions import AegisException
-from backend.middleware import setup_cors_middleware, setup_custom_middleware
+from backend.middleware import setup_cors_middleware, setup_custom_middleware, setup_production_security_middleware
 
 # Import routers
-from backend.routers import auth, zones, sensors, research, health
+from backend.routers import auth, zones, sensors, research, health, audit
 
 # Configure logging
 logging.basicConfig(
@@ -45,9 +45,20 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         raise
     
-    # Check Vryndara connectivity
-    logger.info(f"Vryndara endpoint: {settings.vryndara_host}:{settings.vryndara_port}")
-    logger.info("Vryndara fallback mode enabled")
+    # Check Vryndara connectivity on startup
+    try:
+        import sys, os
+        vryndara_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai'))
+        if vryndara_path not in sys.path:
+            sys.path.insert(0, vryndara_path)
+        from vryndara_connector import VryndaraConnector
+        vryndara = VryndaraConnector()
+        if vryndara.health_check():
+            logger.info(f"Vryndara endpoint: {settings.vryndara_host}:{settings.vryndara_port} CONNECTED")
+        else:
+            logger.warning("Vryndara kernel unavailable, fallback mode enabled")
+    except Exception as e:
+        logger.error(f"Vryndara health check failed: {e}")
     
     yield
     
@@ -66,9 +77,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Setup middleware
 setup_cors_middleware(app)
 setup_custom_middleware(app)
+
+# Enable production security middleware if not in debug mode
+if not settings.debug:
+    setup_production_security_middleware(app)
 
 
 # Exception handlers
@@ -134,11 +150,16 @@ async def root():
 
 
 # Include routers
+
+# Register routers
 app.include_router(health.router)
 app.include_router(auth.router)
+from backend.routers import tenants
+app.include_router(tenants.router)
 app.include_router(zones.router)
 app.include_router(sensors.router)
 app.include_router(research.router)
+app.include_router(audit.router)
 
 
 if __name__ == "__main__":
