@@ -1,31 +1,29 @@
-import Head from 'next/head'
-import Header from '../components/Header'
-import Sidebar from '../components/Sidebar'
-import Main from '../components/Main'
-import Button from '../components/Button'
-import Card from '../components/Card'
-import Form from '../components/Form'
+import Main from '../components/Main';
+import Card from '../components/Card';
+import Button from '../components/Button';
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
-      <Header />
-      <div className="flex flex-1">
-        <Sidebar />
-        <Main>
-          <Card className="max-w-md mx-auto">
-            <h1 className="text-4xl font-bold text-blue-600 mb-4">
-              Welcome to <span className="underline">Aegis</span>
-            </h1>
-            <p className="text-lg text-gray-700 mb-6">
-              Sovereign Asset Management Platform
-            </p>
-            <Form>
-              <Button type="button">Get Started</Button>
-            </Form>
-          </Card>
-        </Main>
+    <Main>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-semibold">System Overview</h2>
+        <Button variant="primary">Generate AI Audit</Button>
       </div>
-    </div>
-  )
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card title="Active Zones">
+          <p className="text-3xl font-bold text-aegis-text">3</p>
+          <p className="text-sm mt-2">Lab, Farm, Mobility</p>
+        </Card>
+        <Card title="Vryndara Status">
+          <p className="text-3xl font-bold text-aegis-success">Online</p>
+          <p className="text-sm mt-2">8 Agents active</p>
+        </Card>
+        <Card title="Blockchain Ledger">
+          <p className="text-3xl font-bold text-aegis-text">1,402</p>
+          <p className="text-sm mt-2">Hashes anchored</p>
+        </Card>
+      </div>
+    </Main>
+  );
 }

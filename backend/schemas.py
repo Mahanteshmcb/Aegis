@@ -46,7 +46,7 @@ class Sensor(SensorBase):
 
 
 class AuditLogBase(BaseModel):
-    sensor_id: int
+    sensor_id: Optional[int] = None
     event_type: str
     data_hash: str
     blockchain_tx: Optional[str] = None

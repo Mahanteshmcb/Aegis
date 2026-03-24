@@ -3,7 +3,6 @@ Aegis Backend - Authentication Router
 Login, token refresh, user management.
 """
 
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -17,7 +16,6 @@ from backend.config import settings
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
 
-
 class TokenResponse(schemas.BaseModel):
     access_token: str
     refresh_token: str
@@ -29,6 +27,9 @@ class RefreshTokenRequest(schemas.BaseModel):
 class RegisterRequest(schemas.UserCreate):
     pass
 
+class UserLoginRequest(schemas.BaseModel):
+    email: str
+    password: str
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -55,24 +56,28 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
         user = crud.create_user(db, request)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+        
     # Audit log for user creation
     user_data = f"email={user.email}|tenant_id={user.tenant_id}|role={user.role}"
     data_hash = hashlib.sha256(user_data.encode()).hexdigest()
+    
+    # FIXED: Removed sensor_id=0 to prevent the SQLite Foreign Key crash
     audit = schemas.AuditLogCreate(
-        sensor_id=0,  # Not applicable for user creation
         event_type="user_created",
         data_hash=data_hash,
         blockchain_tx=None,
     )
+    
     try:
         crud.create_audit_log(db, audit)
     except Exception:
         pass  # Do not block user creation if audit log fails
+        
     return schemas.UserRead.from_orm(user)
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(request: schemas.UserCreate, db: Session = Depends(get_db)):
+def login(request: UserLoginRequest, db: Session = Depends(get_db)):
     """
     User login endpoint.
     Returns access and refresh tokens.
@@ -85,7 +90,6 @@ def login(request: schemas.UserCreate, db: Session = Depends(get_db)):
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
-
 
 
 @router.post("/auth/refresh", response_model=TokenResponse)
@@ -106,7 +110,6 @@ def refresh_token(request: RefreshTokenRequest):
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
     except JWTError:
         raise AuthenticationError("Invalid refresh token")
-
 
 
 @router.post("/auth/logout")

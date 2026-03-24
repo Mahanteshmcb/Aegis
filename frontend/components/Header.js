@@ -1,13 +1,19 @@
 export default function Header() {
   return (
-    <header className="bg-blue-700 text-white px-6 py-4 shadow flex items-center justify-between">
-      <div className="text-2xl font-bold tracking-tight">Aegis</div>
-      <nav className="space-x-4">
-        <a href="#" className="hover:underline">Dashboard</a>
-        <a href="#" className="hover:underline">Sensors</a>
-        <a href="#" className="hover:underline">Zones</a>
-        <a href="#" className="hover:underline">Audit Logs</a>
-      </nav>
+    <header className="h-16 bg-aegis-dark border-b border-slate-700 flex items-center justify-between px-6">
+      <div className="flex items-center">
+        {/* Mobile menu button could go here */}
+        <span className="text-aegis-muted font-medium">Main Estate (Tenant A)</span>
+      </div>
+      <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2">
+          <div className="w-2 h-2 rounded-full bg-aegis-success"></div>
+          <span className="text-sm text-aegis-muted">System Healthy</span>
+        </div>
+        <div className="w-8 h-8 rounded-full bg-aegis-primary flex items-center justify-center text-white font-bold">
+          A
+        </div>
+      </div>
     </header>
   );
 }
