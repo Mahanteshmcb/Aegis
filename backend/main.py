@@ -4,19 +4,20 @@ FastAPI app initialization and startup/shutdown events.
 """
 
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy.orm import Session
+from fastapi.security import OAuth2PasswordBearer
 
 from backend.config import settings
-from backend.database import init_db, SessionLocal
+from backend.database import init_db
 from backend.exceptions import AegisException
 from backend.middleware import setup_cors_middleware, setup_custom_middleware, setup_production_security_middleware
 
 # Import routers
-from backend.routers import auth, zones, sensors, research, health, audit
+from backend.routers import auth, zones, sensors, research, health, audit, tenants
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +26,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+async def vryndara_guard_loop():
+    """
+    Day 19: Background Watcher
+    Simulates Vryndara's continuous oversight of sector integrity.
+    """
+    logger.info("🛡️ Vryndara Guard: Active Background Monitoring initialized.")
+    try:
+        while True:
+            # In Phase 2, this will trigger actual anomaly detection logic
+            # for now, it serves as the 'Heartbeat' of the autonomous system.
+            logger.debug("Vryndara Guard: Scanning Sector integrity...")
+            await asyncio.sleep(30)
+    except asyncio.CancelledError:
+        logger.info("Vryndara Guard: Background Monitoring suspended.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,10 +47,9 @@ async def lifespan(app: FastAPI):
     FastAPI lifespan context manager.
     Handles startup and shutdown events.
     """
-    # Startup
+    # --- Startup ---
     logger.info("Starting Aegis backend...")
     logger.info(f"Environment: {settings.environment}")
-    logger.info(f"Database: {settings.database_url}")
     
     # Initialize database
     try:
@@ -45,7 +59,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         raise
     
-    # Check Vryndara connectivity on startup
+    # Check Vryndara connectivity
     try:
         import sys, os
         vryndara_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai'))
@@ -59,14 +73,23 @@ async def lifespan(app: FastAPI):
             logger.warning("Vryndara kernel unavailable, fallback mode enabled")
     except Exception as e:
         logger.error(f"Vryndara health check failed: {e}")
+
+    # Start the Day 19 Background Monitor
+    guard_task = asyncio.create_task(vryndara_guard_loop())
     
     yield
     
-    # Shutdown
+    # --- Shutdown ---
     logger.info("Shutting down Aegis backend...")
+    guard_task.cancel()
+    try:
+        await guard_task
+    except asyncio.CancelledError:
+        pass
 
+# Security Scheme for Swagger UI
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 
-# Create FastAPI app
 app = FastAPI(
     title=settings.app_name,
     description="Decentralized Digital Twin for IoT Audit & Autonomous Control",
@@ -75,40 +98,30 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
+    swagger_ui_parameters={"persistAuthorization": True} 
 )
-
 
 # Setup middleware
 setup_cors_middleware(app)
 setup_custom_middleware(app)
 
-# Enable production security middleware if not in debug mode
 if not settings.debug:
     setup_production_security_middleware(app)
 
+# --- Exception Handlers ---
 
-# Exception handlers
 @app.exception_handler(AegisException)
 async def aegis_exception_handler(request: Request, exc: AegisException):
-    """Handle Aegis custom exceptions."""
     request_id = getattr(request.state, "request_id", "unknown")
-    logger.error(f"[{request_id}] {exc.message}", extra={"request_id": request_id})
-    
+    logger.error(f"[{request_id}] {exc.message}")
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "error": exc.message,
-            "request_id": request_id,
-        }
+        content={"error": exc.message, "request_id": request_id}
     )
-
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors."""
     request_id = getattr(request.state, "request_id", "unknown")
-    logger.warning(f"[{request_id}] Validation error: {exc}", extra={"request_id": request_id})
-    
     return JSONResponse(
         status_code=422,
         content={
@@ -118,13 +131,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
-
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Handle unexpected exceptions."""
     request_id = getattr(request.state, "request_id", "unknown")
-    logger.error(f"[{request_id}] Unexpected error: {exc}", extra={"request_id": request_id}, exc_info=True)
-    
+    logger.error(f"[{request_id}] Unexpected error: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content={
@@ -134,37 +144,27 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
+# --- Routes ---
 
-# Health check root endpoint
 @app.get("/")
 async def root():
-    """Root endpoint - API info."""
     return {
         "name": settings.app_name,
         "version": settings.app_version,
-        "environment": settings.environment,
         "status": "running",
-        "docs": "/docs",
         "health": "/api/v1/health",
     }
 
-
-# Include routers
-
-# Register routers
 app.include_router(health.router)
 app.include_router(auth.router)
-from backend.routers import tenants
 app.include_router(tenants.router)
 app.include_router(zones.router)
 app.include_router(sensors.router)
 app.include_router(research.router)
 app.include_router(audit.router)
 
-
 if __name__ == "__main__":
     import uvicorn
-    
     uvicorn.run(
         "backend.main:app",
         host=settings.server_host,

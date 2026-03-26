@@ -32,17 +32,18 @@ class SensorCreate(SensorBase):
 
 
 class SensorUpdate(SensorBase):
-    last_reading: Optional[Dict[str, Any]] = None
+    last_reading: Optional[Any] = None
 
 
 class Sensor(SensorBase):
     id: int
     tenant_id: int
-    last_reading: Optional[Dict[str, Any]]
+    last_reading: Optional[Any] = None
     updated_at: datetime
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 
 class AuditLogBase(BaseModel):

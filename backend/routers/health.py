@@ -1,29 +1,32 @@
 """
 Aegis Backend - Health Check Router
-System status endpoints.
+System status and real-time threat monitoring endpoints.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-
-
-from backend.config import settings
-from backend.dependencies import get_current_admin, get_db
+import time
 import sys
 import os
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from web3 import Web3
+
+from backend.config import settings
+from backend.dependencies import get_current_admin, get_db, get_current_user
+from backend.models_db import Sensor
+
 # Import VryndaraConnector
 vryndara_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../ai'))
 if vryndara_path not in sys.path:
     sys.path.insert(0, vryndara_path)
 from vryndara_connector import VryndaraConnector
-from web3 import Web3
 
-router = APIRouter(prefix="/api/v1", tags=["health"])
+router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
+# --- SCHEMAS ---
 
 class HealthResponse(BaseModel):
-    """Health check response."""
     status: str
     backend: str
     database: str
@@ -32,28 +35,56 @@ class HealthResponse(BaseModel):
     uptime_seconds: int
     timestamp: str
 
-
 class DetailedHealthResponse(HealthResponse):
-    """Detailed health check response."""
     database_latency_ms: float = 0.0
     vryndara_latency_ms: float = 0.0
     request_count: int = 0
     error_count: int = 0
     version: str
 
+class SystemStatusResponse(BaseModel):
+    """Day 19: Real-time Threat Status Schema"""
+    status: str
+    threat_count: int
+    uptime: str
+    vryndara_version: str
 
 # Track uptime
-import time
 start_time = time.time()
 
+# --- ENDPOINTS ---
 
+@router.get("/status", response_model=SystemStatusResponse)
+async def get_system_status(
+    db: Session = Depends(get_db), 
+    current_user = Depends(get_current_user)
+):
+    """
+    Day 19: Active Sector Monitoring.
+    Scans live telemetry for threshold violations (Thermal Anomalies).
+    """
+    # Fetch all sensors for the user's tenant
+    sensors = db.query(Sensor).filter(Sensor.tenant_id == current_user["tenant_id"]).all()
+    
+    overall_status = "HEALTHY"
+    threats = 0
+    
+    for s in sensors:
+        # Scan for thermal anomaly (threshold: 23.5°C)
+        if s.last_reading and s.last_reading.get("value", 0) > 23.5:
+            overall_status = "WARNING"
+            threats += 1
+            
+    return SystemStatusResponse(
+        status=overall_status,
+        threat_count=threats,
+        uptime=f"{int((time.time() - start_time) / 3600)}h {int(((time.time() - start_time) % 3600) / 60)}m",
+        vryndara_version="3.1-Flash"
+    )
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check(db=Depends(get_db)):
-    """
-    Get system health status.
-    Checks: backend, database, vryndara, blockchain.
-    """
+async def health_check(db: Session = Depends(get_db)):
+    """Standard connectivity check."""
     uptime_seconds = int(time.time() - start_time)
     timestamp = datetime.utcnow().isoformat() + "Z"
 
@@ -67,20 +98,21 @@ async def health_check(db=Depends(get_db)):
     # Check Vryndara
     vryndara = VryndaraConnector()
     try:
-        vryndara_status = "connected" if vryndara.health_check() else ("fallback" if vryndara.fallback_mode else "disconnected")
+        vryndara_ok = vryndara.health_check()
+        vryndara_status = "connected" if vryndara_ok else ("fallback" if vryndara.fallback_mode else "disconnected")
     except Exception:
         vryndara_status = "disconnected"
 
-    # Check blockchain (basic connectivity)
+    # Check blockchain
     try:
-        w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
-        blockchain_status = "connected" if w3.isConnected() else "disconnected"
+        # Note: Using a short timeout for health check
+        w3 = Web3(Web3.HTTPProvider("http://localhost:8545", request_kwargs={'timeout': 1}))
+        blockchain_status = "connected" if w3.is_connected() else "disconnected"
     except Exception:
         blockchain_status = "disconnected"
 
-    # Determine overall status
     overall_status = "healthy"
-    if db_status != "connected" or vryndara_status in ("disconnected",) or blockchain_status != "connected":
+    if db_status != "connected" or vryndara_status == "disconnected" or blockchain_status != "connected":
         overall_status = "degraded"
 
     return HealthResponse(
@@ -93,59 +125,45 @@ async def health_check(db=Depends(get_db)):
         timestamp=timestamp,
     )
 
-
-
 @router.get("/health/detailed", response_model=DetailedHealthResponse)
 async def health_check_detailed(
     current_admin=Depends(get_current_admin),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
-    """
-    Get detailed system health status (admin only).
-    Includes latency metrics and request counts.
-    """
+    """Detailed health check for Admin dashboard."""
     uptime_seconds = int(time.time() - start_time)
     timestamp = datetime.utcnow().isoformat() + "Z"
 
-    # Check database with latency
-    import time as time_module
-    db_start = time_module.time()
+    # Database latency
+    t0 = time.time()
     try:
         db.execute("SELECT 1")
+        db_latency = (time.time() - t0) * 1000
         db_status = "connected"
-        db_latency = (time_module.time() - db_start) * 1000
     except Exception:
-        db_status = "disconnected"
         db_latency = 0.0
+        db_status = "disconnected"
 
     # Vryndara latency
     vryndara = VryndaraConnector()
-    vryndara_start = time_module.time()
+    t1 = time.time()
     try:
         vryndara_ok = vryndara.health_check()
+        vryndara_latency = (time.time() - t1) * 1000
         vryndara_status = "connected" if vryndara_ok else ("fallback" if vryndara.fallback_mode else "disconnected")
-        vryndara_latency = (time_module.time() - vryndara_start) * 1000
     except Exception:
-        vryndara_status = "disconnected"
         vryndara_latency = 0.0
+        vryndara_status = "disconnected"
 
-    # Blockchain latency
-    blockchain_start = time_module.time()
+    # Blockchain connectivity
     try:
         w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
-        blockchain_status = "connected" if w3.isConnected() else "disconnected"
-        blockchain_latency = (time_module.time() - blockchain_start) * 1000
+        blockchain_status = "connected" if w3.is_connected() else "disconnected"
     except Exception:
         blockchain_status = "disconnected"
-        blockchain_latency = 0.0
-
-    # Determine overall status
-    overall_status = "healthy"
-    if db_status != "connected" or vryndara_status in ("disconnected",) or blockchain_status != "connected":
-        overall_status = "degraded"
 
     return DetailedHealthResponse(
-        status=overall_status,
+        status="healthy" if db_status == "connected" else "degraded",
         backend="running",
         database=db_status,
         vryndara=vryndara_status,

@@ -15,6 +15,7 @@ Sensor data ingestion and retrieval.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm.attributes import flag_modified
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from backend.dependencies import get_db, get_current_user
@@ -65,21 +66,25 @@ async def ingest_sensor_data(data: SensorDataIngest, db: Session = Depends(get_d
     sensor = db.query(models.Sensor).filter(models.Sensor.id == data.sensor_id).first()
     if not sensor or sensor.tenant_id != current_user["tenant_id"]:
         raise HTTPException(status_code=403, detail="Tenant mismatch or sensor not found")
-    # Assign last_reading as a dict (JSON column)
-    # SQLAlchemy JSON column assignment (should accept dict)
-    setattr(sensor, "last_reading", dict(
-        value=float(data.value),
-        unit=str(data.unit),
-        timestamp=str(data.timestamp),
-    ))
+    
+    sensor.last_reading = {
+        "value": float(data.value),
+        "unit": str(data.unit),
+        "timestamp": str(data.timestamp),
+    }
+    
+    # Crucial for SQLAlchemy to detect changes in JSON columns
+    flag_modified(sensor, "last_reading") 
+    
+    db.add(sensor)
     db.commit()
     db.refresh(sensor)
-    sid = getattr(sensor, "id", None)
+    
     return SensorDataResponse(
-        sensor_id=int(sid) if sid is not None else 0,
-        value=float(data.value),
-        unit=str(data.unit),
-        timestamp=str(data.timestamp),
+        sensor_id=sensor.id,
+        value=sensor.last_reading["value"],
+        unit=sensor.last_reading["unit"],
+        timestamp=sensor.last_reading["timestamp"],
         zone_id=None,
     )
 

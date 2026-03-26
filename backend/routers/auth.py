@@ -3,18 +3,18 @@ Aegis Backend - Authentication Router
 Login, token refresh, user management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
+from typing import Optional
+
 from backend.dependencies import get_db
 from backend.exceptions import AuthenticationError
 from backend import crud, schemas
 from backend.config import settings
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
-
 
 class TokenResponse(schemas.BaseModel):
     access_token: str
@@ -26,11 +26,6 @@ class RefreshTokenRequest(schemas.BaseModel):
 
 class RegisterRequest(schemas.UserCreate):
     pass
-
-class UserLoginRequest(schemas.BaseModel):
-    email: str
-    password: str
-
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
@@ -48,20 +43,16 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
 
 @router.post("/auth/register", response_model=schemas.UserRead)
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    """
-    Register a new user (tenant-scoped).
-    """
+    """Register a new user (tenant-scoped)."""
     import hashlib
     try:
         user = crud.create_user(db, request)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
         
-    # Audit log for user creation
     user_data = f"email={user.email}|tenant_id={user.tenant_id}|role={user.role}"
     data_hash = hashlib.sha256(user_data.encode()).hexdigest()
     
-    # FIXED: Removed sensor_id=0 to prevent the SQLite Foreign Key crash
     audit = schemas.AuditLogCreate(
         event_type="user_created",
         data_hash=data_hash,
@@ -71,32 +62,68 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     try:
         crud.create_audit_log(db, audit)
     except Exception:
-        pass  # Do not block user creation if audit log fails
+        pass 
         
     return schemas.UserRead.from_orm(user)
 
-
 @router.post("/auth/login", response_model=TokenResponse)
-def login(request: UserLoginRequest, db: Session = Depends(get_db)):
+async def login(
+    request: Request,
+    db: Session = Depends(get_db)
+):
     """
-    User login endpoint.
-    Returns access and refresh tokens.
+    Sovereign Login: Handles both Form Data (Swagger) and JSON (Frontend) 
+    manually to avoid Pydantic validation 422 errors.
     """
-    user = crud.authenticate_user(db, request.email, request.password)
+    email = None
+    password = None
+    content_type = request.headers.get("Content-Type", "")
+
+    # 1. Handle Swagger / OAuth2 Form Data
+    if "application/x-www-form-urlencoded" in content_type:
+        form_data = await request.form()
+        email = form_data.get("username")  # Swagger field is 'username'
+        password = form_data.get("password")
+    
+    # 2. Handle Frontend JSON Data
+    else:
+        try:
+            body = await request.json()
+            email = body.get("email")
+            password = body.get("password")
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Invalid request format"
+            )
+
+    if not email or not password:
+         raise AuthenticationError("Missing email or password")
+
+    # Authenticate via CRUD
+    user = crud.authenticate_user(db, email, password)
     if not user:
         raise AuthenticationError("Invalid email or password")
-    # Token payload includes user_id, tenant_id, and role for RBAC/tenant isolation
-    payload = {"sub": str(user.id), "tenant_id": user.tenant_id, "role": user.role}
+
+    # Token payload
+    payload = {
+        "sub": user.email, 
+        "tenant_id": user.tenant_id, 
+        "role": user.role
+    }
+    
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
-
+    
+    return TokenResponse(
+        access_token=access_token, 
+        refresh_token=refresh_token, 
+        token_type="bearer"
+    )
 
 @router.post("/auth/refresh", response_model=TokenResponse)
 def refresh_token(request: RefreshTokenRequest):
-    """
-    Refresh access token using refresh token.
-    """
+    """Refresh access token using refresh token."""
     try:
         payload = jwt.decode(request.refresh_token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         user_id = payload.get("sub")
@@ -111,10 +138,7 @@ def refresh_token(request: RefreshTokenRequest):
     except JWTError:
         raise AuthenticationError("Invalid refresh token")
 
-
 @router.post("/auth/logout")
 def logout():
-    """
-    User logout endpoint (stateless JWT, client-side only).
-    """
+    """User logout endpoint."""
     return {"message": "Logout successful (stateless JWT)"}
