@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from typing import Optional
 
-from backend.dependencies import get_db
+from backend.dependencies import get_db, get_current_user
 from backend.exceptions import AuthenticationError
 from backend import crud, schemas
 from backend.config import settings
@@ -66,6 +66,40 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
         
     return schemas.UserRead.from_orm(user)
 
+@router.post("/auth/signup", response_model=schemas.UserRead)
+def signup(request: RegisterRequest, db: Session = Depends(get_db)):
+    """Alias for register endpoint to support frontend signup."""
+    return register(request, db)
+
+@router.post("/auth/reset-password")
+async def reset_password(request: Request, db: Session = Depends(get_db)):
+    """Accept a reset request and return a neutral success response."""
+    try:
+        body = await request.json()
+        email = body.get("email")
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request format")
+
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
+
+    user = crud.get_user_by_email(db, email)
+    if user:
+        # In Phase 1 we do not send real email, but log the intent for audit.
+        import hashlib
+        user_hash = hashlib.sha256(f"reset={email}".encode()).hexdigest()
+        audit = schemas.AuditLogCreate(
+            event_type="password_reset_requested",
+            data_hash=user_hash,
+            blockchain_tx=None,
+        )
+        try:
+            crud.create_audit_log(db, audit)
+        except Exception:
+            pass
+
+    return {"message": "If the email exists, password reset instructions have been issued."}
+
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(
     request: Request,
@@ -82,15 +116,15 @@ async def login(
     # 1. Handle Swagger / OAuth2 Form Data
     if "application/x-www-form-urlencoded" in content_type:
         form_data = await request.form()
-        email = form_data.get("username")  # Swagger field is 'username'
-        password = form_data.get("password")
+        email = str(form_data.get("username") or "")  # Swagger field is 'username'
+        password = str(form_data.get("password") or "")
     
     # 2. Handle Frontend JSON Data
     else:
         try:
             body = await request.json()
-            email = body.get("email")
-            password = body.get("password")
+            email = str(body.get("email") or "")
+            password = str(body.get("password") or "")
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, 
@@ -119,6 +153,16 @@ async def login(
         access_token=access_token, 
         refresh_token=refresh_token, 
         token_type="bearer"
+    )
+
+@router.get("/auth/me", response_model=schemas.UserProfile)
+def get_current_user_profile(current_user=Depends(get_current_user)):
+    """Return the current authenticated user's profile."""
+    return schemas.UserProfile(
+        id=current_user["id"],
+        email=current_user["email"],
+        role=current_user["role"],
+        tenant_id=current_user["tenant_id"],
     )
 
 @router.post("/auth/refresh", response_model=TokenResponse)

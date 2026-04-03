@@ -14,8 +14,7 @@ export default function Input({ label, type = 'text', id, placeholder, required 
         onChange={onChange}
         required={required}
         placeholder={placeholder}
-        style={{ color: 'white' }} /* Absolute fallback to force white text */
-        className="w-full px-4 py-3 bg-[#0f172a] border border-slate-700 rounded-md !text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-aegis-primary focus:border-transparent transition-all duration-200 autofill:bg-[#0f172a] autofill:text-white"
+        className="w-full px-4 py-3 bg-[#0f172a] border border-slate-700 rounded-2xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-aegis-primary focus:border-transparent transition-all duration-200 autofill:bg-[#0f172a] autofill:text-white"
       />
     </div>
   );

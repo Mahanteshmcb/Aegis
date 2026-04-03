@@ -1,11 +1,28 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
+import { getAuthToken, clearAuthToken } from '../utils/auth';
+import useCurrentUser from '../hooks/useCurrentUser';
 
 export default function Header() {
   const [sysStatus, setSysStatus] = useState({ status: 'HEALTHY', threat_count: 0 });
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user } = useCurrentUser();
+  const router = useRouter();
+
+  const handleLogout = () => {
+    clearAuthToken();
+    setIsLoggedIn(false);
+    router.push('/login');
+  };
+
+  useEffect(() => {
+    const token = getAuthToken();
+    setIsLoggedIn(Boolean(token));
+  }, [router.pathname]);
 
   useEffect(() => {
     const checkStatus = async () => {
-      const token = localStorage.getItem('aegis_token');
+      const token = getAuthToken();
       if (!token) return;
 
       try {
@@ -17,11 +34,10 @@ export default function Header() {
           setSysStatus(data);
         }
       } catch (err) {
-        console.error("Health Sync Failed:", err);
+        console.error('Health Sync Failed:', err);
       }
     };
 
-    // Initial check and 10-second heartbeat
     checkStatus();
     const interval = setInterval(checkStatus, 10000);
     return () => clearInterval(interval);
@@ -36,6 +52,24 @@ export default function Header() {
           Main Estate <span className="text-aegis-primary mx-2">|</span> Sector: Alpha
         </span>
       </div>
+
+      <nav className="space-x-4 text-sm font-medium text-aegis-muted">
+        <a href="/dashboard" className="hover:text-aegis-primary transition-colors">Dashboard</a>
+        <a href="/sensors" className="hover:text-aegis-primary transition-colors">Sensors</a>
+        <a href="/zones" className="hover:text-aegis-primary transition-colors">Zones</a>
+        <a href="/audit-logs" className="hover:text-aegis-primary transition-colors">Audit Logs</a>
+        {!isLoggedIn ? (
+          <>
+            <a href="/login" className="hover:text-aegis-primary transition-colors">Login</a>
+            <a href="/signup" className="hover:text-aegis-primary transition-colors">Sign Up</a>
+          </>
+        ) : (
+          <>
+            <span className="text-sm uppercase tracking-[0.24em] text-aegis-muted">{user?.role || 'OPERATOR'}</span>
+            <button onClick={handleLogout} className="text-aegis-primary hover:text-violet-300 transition-colors">Logout</button>
+          </>
+        )}
+      </nav>
 
       <div className="flex items-center space-x-6">
         {/* Dynamic Status Indicator */}

@@ -85,5 +85,12 @@ class UserRead(UserBase):
         from_attributes = True
         from_attributes = True
 
+class UserProfile(UserBase):
+    id: int
+    tenant_id: int
+
+    class Config:
+        orm_mode = True
+
 class UserInDB(UserRead):
     hashed_password: str

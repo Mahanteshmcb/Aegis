@@ -10,7 +10,6 @@ export const loginAPI = async (email, password) => {
       headers: {
         'Content-Type': 'application/json',
       },
-      // Send trimmed credentials to the backend
       body: JSON.stringify({ 
         email: email.trim().toLowerCase(), 
         password: password 
@@ -25,6 +24,76 @@ export const loginAPI = async (email, password) => {
     return await response.json(); 
   } catch (error) {
     console.error("API Error during login:", error);
+    throw error;
+  }
+};
+
+export const registerAPI = async (email, password, tenantId = 1) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/auth/signup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        password,
+        tenant_id: tenantId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Registration failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error during signup:', error);
+    throw error;
+  }
+};
+
+export const resetPasswordAPI = async (email) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Reset password request failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error during reset password:', error);
+    throw error;
+  }
+};
+
+export const getCurrentUser = async (token) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/auth/me`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to fetch current user');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error fetching current user:', error);
     throw error;
   }
 };
