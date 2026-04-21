@@ -42,8 +42,7 @@ class ZoneResponse(BaseModel):
 async def create_zone(zone: ZoneCreate, db: Session = Depends(get_db), current_admin=Depends(get_current_admin)):
     """Create a new zone (admin only, tenant protected)."""
     import hashlib
-    # FIXED: Accessing object attribute instead of dict key
-    if zone.tenant_id != current_admin.tenant_id:
+    if zone.tenant_id != current_admin.get("tenant_id"):
         raise HTTPException(status_code=403, detail="Tenant mismatch")
         
     db_zone = Zone(

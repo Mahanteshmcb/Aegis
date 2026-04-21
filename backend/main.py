@@ -152,6 +152,7 @@ async def root():
         "name": settings.app_name,
         "version": settings.app_version,
         "status": "running",
+        "docs": "/docs",
         "health": "/api/v1/health",
     }
 

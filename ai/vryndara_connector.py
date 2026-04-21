@@ -11,6 +11,7 @@ import json
 import threading
 import uuid
 import logging
+import time
 from typing import Callable, Dict, Optional, Any, List
 from queue import Queue
 from datetime import datetime
@@ -18,12 +19,29 @@ from datetime import datetime
 import sys
 import os
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 # Add Vryndara SDK to path
 vryndara_path = os.path.join(os.path.dirname(__file__), '../../Vryndara')
 if vryndara_path not in sys.path:
     sys.path.insert(0, vryndara_path)
 
-logger = logging.getLogger(__name__)
+# Conditional import with fallback
+try:
+    from protos import vryndara_pb2, vryndara_pb2_grpc
+    import grpc
+    VRYNDARA_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Vryndara protobuf import failed: {e}. Operating in offline mode.")
+    VRYNDARA_AVAILABLE = False
+    # Create dummy classes for offline mode
+    class vryndara_pb2:
+        class AgentRequest: pass
+        class AgentResponse: pass
+    class vryndara_pb2_grpc:
+        class VryndaraServiceStub: pass
+    grpc = None
 
 # ═══════════════════════════════════════════════════════════════════
 # VRYNDARA CONNECTOR FOR AEGIS
@@ -82,46 +100,113 @@ class VryndaraConnector:
         self.fallback_mode = fallback_mode
         self.is_connected = False
         
+        # gRPC connection
+        self.channel = None
+        self.stub = None
+        
         # Response queues for each request ID
         self.response_queues: Dict[str, Queue] = {}
         
-        # TODO: Import and initialize gRPC client
-        # from sdk.python.vryndara.client import AgentClient
-        # self.client = AgentClient(app_id, kernel_address=kernel_address)
-        
         logger.info(f"✅ VryndaraConnector initialized: {app_id} → {kernel_address}")
+        
+        # Initialize gRPC connection
+        self._init_grpc()
         
         # Start listener thread in background
         self._start_listener()
+    
+    def _init_grpc(self):
+        """Initialize gRPC connection to Vryndara kernel."""
+        if not VRYNDARA_AVAILABLE:
+            logger.warning("⚠️ Vryndara protobuf not available - operating in offline mode")
+            self.is_connected = False
+            return
+            
+        try:
+            self.channel = grpc.insecure_channel(self.kernel_address)
+            self.stub = vryndara_pb2_grpc.VryndaraServiceStub(self.channel)
+            
+            # Test connection by registering
+            info = vryndara_pb2.AgentInfo(
+                id=self.app_id,
+                capabilities=["audit.research", "audit.analysis", "audit.code_generation"]
+            )
+            self.stub.Register(info)
+            self.is_connected = True
+            logger.info(f"✅ Connected to Vryndara kernel at {self.kernel_address}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize gRPC: {e}")
+            self.is_connected = False
     
     def _start_listener(self):
         """Start gRPC listener in background thread."""
         
         def listener_thread():
             try:
-                # TODO: Implement gRPC listener
-                # self.client.register([
-                #     "audit.research",
-                #     "audit.analysis",
-                #     "audit.code_generation",
-                #     "audit.framework"
-                # ])
-                # 
-                # def on_message(signal):
-                #     if signal.request_id not in self.response_queues:
-                #         self.response_queues[signal.request_id] = Queue()
-                #     self.response_queues[signal.request_id].put(signal)
-                # 
-                # self.client.listen(on_message)
+                if not self.is_connected:
+                    logger.warning("⚠️ Not connected to Vryndara - skipping listener")
+                    return
+                
+                # Subscribe to agent-specific messages
+                info = vryndara_pb2.AgentInfo(id=self.app_id)
+                for signal in self.stub.Subscribe(info):
+                    # Route response to appropriate queue
+                    if signal.id in self.response_queues:
+                        self.response_queues[signal.id].put(signal)
                 
                 self.is_connected = True
                 logger.info("📡 Vryndara kernel listener connected")
             except Exception as e:
-                self.is_connected = False
                 logger.warning(f"⚠️ Vryndara kernel listener error: {e}")
         
         thread = threading.Thread(target=listener_thread, daemon=True)
         thread.start()
+    
+    def _send_request_and_wait(self,
+                               agent_id: str,
+                               payload: Dict[str, Any],
+                               timeout: int = 30,
+                               fallback_data: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
+        """Send a request to an agent and wait for response."""
+        
+        if not self.is_connected and not self.fallback_mode:
+            logger.error("❌ Not connected to Vryndara and fallback mode disabled")
+            return None
+        
+        if not self.is_connected:
+            logger.warning(f"⚠️ Using fallback mode for {agent_id}")
+            return fallback_data or {}
+        
+        try:
+            request_id = str(uuid.uuid4())
+            self.response_queues[request_id] = Queue()
+            
+            signal = vryndara_pb2.Signal(
+                id=request_id,
+                source_agent_id=self.app_id,
+                target_agent_id=agent_id,
+                type="AUDIT_REQUEST",
+                payload=json.dumps(payload),
+                timestamp=int(time.time() * 1000)
+            )
+            
+            # Send request
+            self.stub.Publish(signal)
+            logger.info(f"📤 Sent request to {agent_id}")
+            
+            # Wait for response with timeout
+            try:
+                response = self.response_queues[request_id].get(timeout=timeout)
+                result = json.loads(response.payload)
+                logger.info(f"📥 Received response: {list(result.keys())}")
+                return result
+            except:
+                logger.warning(f"⏱️ Request timeout after {timeout}s")
+                return fallback_data or {}
+        finally:
+            # Clean up queue
+            if request_id in self.response_queues:
+                del self.response_queues[request_id]
     
     # ─────────────────────────────────────────────────────────────
     # RESEARCH OPERATIONS
@@ -150,15 +235,6 @@ class VryndaraConnector:
               references: List[str],
               updated: datetime
             }
-        
-        Example:
-            findings = connector.research_compliance_framework(
-                standard="ISO27001",
-                project_id="AUD-2024-001"
-            )
-            
-            for control in findings['controls']:
-                print(f"{control['id']}: {control['description']}")
         """
         
         payload = {
@@ -173,15 +249,23 @@ class VryndaraConnector:
         }
         
         return self._send_request_and_wait(
-            agent_id="researcher-1",
+            agent_id="researcher-agent",
             payload=payload,
             timeout=timeout,
             fallback_data={
                 "framework": standard,
-                "description": f"Framework research for {standard}",
-                "status": "fallback_mode"
+                "description": f"Framework research for {standard} (Fallback)",
+                "status": "fallback_mode",
+                "controls": []
             }
         )
+    
+    def disconnect(self):
+        """Disconnect from Vryndara kernel."""
+        if self.channel:
+            self.channel.close()
+        self.is_connected = False
+        logger.info("🔌 Disconnected from Vryndara kernel")
     
     def research_specific_requirement(self,
                                      standard: str,
@@ -402,60 +486,6 @@ class VryndaraConnector:
             timeout=timeout,
             fallback_data={"gaps": [], "status": "fallback"}
         )
-    
-    # ─────────────────────────────────────────────────────────────
-    # INTERNAL REQUEST HANDLING
-    # ─────────────────────────────────────────────────────────────
-    
-    def _send_request_and_wait(self,
-                              agent_id: str,
-                              payload: Dict[str, Any],
-                              timeout: int,
-                              fallback_data: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
-        """
-        Send request to agent and wait for response with timeout.
-        
-        Args:
-            agent_id: Vryndara agent ID (researcher-1, coder-1, brain-1)
-            payload: Request payload
-            timeout: Max wait time in seconds
-            fallback_data: Default response if kernel unavailable
-        
-        Returns:
-            Agent response or fallback data
-        """
-        
-        if not self.is_connected and self.fallback_mode:
-            logger.warning(f"⚠️ Vryndara offline, using fallback for {agent_id}")
-            return fallback_data or {}
-        
-        request_id = str(uuid.uuid4())
-        self.response_queues[request_id] = Queue()
-        
-        try:
-            # TODO: Implement gRPC send
-            # self.client.send_request(
-            #     request_id=request_id,
-            #     agent_id=agent_id,
-            #     payload=payload
-            # )
-            
-            # Wait for response
-            response = self.response_queues[request_id].get(timeout=timeout)
-            logger.info(f"✅ Response received from {agent_id}")
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"❌ Request failed: {e}")
-            if self.fallback_mode:
-                return fallback_data or {}
-            return None
-        
-        finally:
-            # Cleanup
-            if request_id in self.response_queues:
-                del self.response_queues[request_id]
     
     # ─────────────────────────────────────────────────────────────
     # UTILITIES

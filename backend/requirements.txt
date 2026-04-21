@@ -1,13 +1,15 @@
 fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
+uvicorn==0.24.0
+pydantic==2.13.1
 sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
 # Blockchain/Ethereum stack (compatible versions)
-web3==5.31.4
+web3==5.29.2
 eth-typing==2.2.2
 eth-utils==1.10.0
-eth-keys==0.4.0
+eth-keys==0.3.4
+protobuf==3.20.3
+grpcio==1.80.0
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.1

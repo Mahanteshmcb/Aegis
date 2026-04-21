@@ -22,7 +22,7 @@ if vryndara_path not in sys.path:
     sys.path.insert(0, vryndara_path)
 from vryndara_connector import VryndaraConnector
 
-router = APIRouter(prefix="/api/v1/health", tags=["health"])
+router = APIRouter(prefix="/api/v1", tags=["health"])
 
 # --- SCHEMAS ---
 

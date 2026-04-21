@@ -1,37 +1,60 @@
 # Aegis Developer Guide
 
-## Overview
-Aegis is a decentralized digital twin framework for sovereign asset management, anti-forensic security, and enterprise infrastructure orchestration. The system is modular, with components for backend (FastAPI), AI orchestration, frontend (Next.js), blockchain (Hardhat), IoT (ESP32), and database (PostgreSQL).
+## Quick Start (5 Minutes)
+
+### 1. Prerequisites
+- **Conda environment:** Must have `aegis` environment with Python 3.10
+- **Backend port:** 8001 (FastAPI)
+- **Frontend port:** 3000+ (Next.js, auto-increments if in use)
+
+### 2. Terminal 1: Start Backend
+```powershell
+cd c:\Users\Mahantesh\DevelopmentProjects\Aegis
+conda activate aegis
+$env:SERVER_PORT=8001
+python -m backend.main
+```
+
+✅ **Expected output:** `Application startup complete.`  
+📚 **API Docs:** http://localhost:8001/docs
+
+### 3. Terminal 2: Start Frontend
+```powershell
+cd frontend
+npm run dev
+```
+
+✅ **Frontend runs on:** http://localhost:3000 (or 3001, 3002, etc.)  
+📝 **`.env.local` already configured** to point to backend at port 8001
+
+### 4. Login
+- **URL:** http://localhost:3000 (or the port shown in terminal)
+- **Email:** `admin@aegis.com`
+- **Password:** `aegis2026`
+
+### 5. Access Points
+| Component | URL |
+|-----------|-----|
+| **Dashboard** | http://localhost:3000 |
+| **API Docs** | http://localhost:8001/docs |
+| **Health Check** | http://localhost:8001/api/v1/health |
 
 ---
 
-## conda create -y -n aegis python=3.10
-
-# To activate this environment, use
-#
-#     $ conda activate aegis
-#
-# To deactivate an active environment, use
-#
-#     $ conda deactivate
-
-
-# Aegis Developer Guide
-
 ## Overview
-Aegis is a decentralized digital twin platform for asset management, anti-forensic security, and enterprise orchestration. It is modular, with backend (FastAPI), AI orchestration, frontend (Next.js), blockchain (Hardhat), IoT (ESP32), and PostgreSQL database.
+Aegis is a decentralized digital twin framework for sovereign asset management, anti-forensic security, and enterprise infrastructure orchestration. The system is modular, with components for backend (FastAPI), AI orchestration, frontend (Next.js), blockchain (Hardhat), IoT (ESP32), and database (SQLite/PostgreSQL).
 
 ---
 
 ## 1. Environment Setup
 
-- **Python:** 3.10 (recommended via conda)
+- **Python:** 3.10+ (via conda)
   ```sh
   conda create -y -n aegis python=3.10
   conda activate aegis
   ```
 - **Node.js:** v18+ (for frontend/blockchain)
-- **PostgreSQL:** v13+ (for production DB)
+- **Database:** SQLite (default, no setup needed) or PostgreSQL v13+ (for production)
 
 ---
 
@@ -40,25 +63,43 @@ Aegis is a decentralized digital twin platform for asset management, anti-forens
 - **Location:** `backend/`
 - **Entry Point:** `main.py`
 - **Dependencies:** `backend/requirements.txt`
-- **Run:**
+- **Run (Port 8001):**
   ```sh
-  pip install -r backend/requirements.txt
-  uvicorn backend.main:app --reload --port 8080
+  conda activate aegis
+  $env:SERVER_PORT=8001
+  python -m backend.main
+  ```
+- **Run (Default Port 8000):**
+  ```sh
+  conda activate aegis
+  python -m backend.main
+  ```
+- **Run with Auto-Reload:**
+  ```sh
+  conda activate aegis
+  $env:SERVER_PORT=8001
+  python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
   ```
 - **Endpoints:**
-  - `/` — API info
-  - `/api/v1/health` — Health check
-  - `/api/v1/tenants` — Tenant management
-  - `/api/v1/zones` — Zone management
-  - `/api/v1/sensors` — Sensor management
+  - `GET /` — API info
+  - `GET /api/v1/health` — Health check
+  - `POST /api/v1/tenants` — Tenant management
+  - `POST /api/v1/auth/register` — User registration
+  - `POST /api/v1/auth/login` — User login
+  - `POST /api/v1/zones` — Zone management
+  - `POST /api/v1/sensors` — Sensor management
+  - `GET /api/v1/audit-logs` — Audit trail
 - **Testing:**
   ```sh
-  pytest tests/
+  conda activate aegis
+  python -m pytest tests/ -q
   ```
 - **Notes:**
-  - All models are in `backend/models_db.py`.
-  - Use the tenants API to create tenants before zones/sensors in tests.
-  - All tests must pass before merging changes.
+  - All models are in `backend/models_db.py`
+  - Use tenants API to create tenants before zones/sensors
+  - CORS configured for ports: 3000, 3001, 3002, 8080
+  - Vryndara integration operates in offline mode by default
+  - All tests must pass before merging changes
 
 ---
 
@@ -69,12 +110,14 @@ Aegis is a decentralized digital twin platform for asset management, anti-forens
 - **Dependencies:** `ai/requirements.txt`
 - **Run:**
   ```sh
-  pip install -r ai/requirements.txt
+  conda activate aegis
   python ai/orchestrator.py
   ```
 - **Notes:**
-  - Uses LangChain and CrewAI for multi-agent orchestration.
-  - Extend by adding new agents/tasks in `orchestrator.py`.
+  - Uses LangChain and CrewAI for multi-agent orchestration
+  - Vryndara connector: Gracefully handles offline mode
+  - Operates without OpenAI API key (local/offline mode)
+  - Extend by adding new agents/tasks in `orchestrator.py`
 
 ---
 
@@ -83,32 +126,54 @@ Aegis is a decentralized digital twin platform for asset management, anti-forens
 - **Location:** `frontend/`
 - **Entry Point:** `pages/index.js`
 - **Dependencies:** `frontend/package.json`
+- **Environment File:** `frontend/.env.local`
+  ```env
+  NEXT_PUBLIC_API_URL=http://localhost:8001
+  ```
 - **Run:**
   ```sh
   cd frontend
   npm install
   npm run dev
   ```
+- **Expected Output:**
+  ```
+  ▲ Next.js 14.0.0
+  - Local: http://localhost:3000
+  ✓ Ready in XXXms
+  ```
 - **Notes:**
-  - Add new pages/components in `pages/` and `components/`.
-  - Uses Tailwind CSS for styling.
+  - Port auto-increments if 3000 is in use (3001, 3002, etc.)
+  - `.env.local` already configured with correct backend URL
+  - CORS configured on backend for all frontend ports
+  - Add new pages/components in `pages/` and `components/`
+  - Uses Tailwind CSS for styling
 
 ---
 
-## 5. Blockchain (Hardhat)
+## 5. Blockchain (Hardhat - Optional)
 
 - **Location:** `blockchain/`
 - **Entry Point:** `contracts/AegisAudit.sol`
 - **Dependencies:** `blockchain/package.json`
-- **Run:**
+- **Run Local Network:**
   ```sh
   cd blockchain
   npm install
   npx hardhat node --config hardhat.config.js
   ```
+- **Expected Output:**
+  ```
+  Started HTTP and WebSocket JSON-RPC server at http://127.0.0.1:8545/
+  ```
+- **Run Tests:**
+  ```sh
+  npx hardhat test
+  ```
 - **Notes:**
-  - Write/test contracts in `contracts/`.
-  - Use Hardhat scripts for deployment/testing.
+  - Write/test contracts in `contracts/`
+  - Hardhat network runs at http://localhost:8545
+  - Use Hardhat scripts for deployment
 
 ---
 
@@ -116,103 +181,218 @@ Aegis is a decentralized digital twin platform for asset management, anti-forens
 
 - **Location:** `iot/esp32_sensor.py`
 - **Notes:**
-  - MicroPython code for ESP32 sensor node.
-  - Update WiFi and MQTT settings as needed.
-  - Publishes sensor data to MQTT broker.
+  - MicroPython code for ESP32 sensor node
+  - Update WiFi and MQTT settings as needed
+  - Publishes sensor data to backend via API
 
 ---
 
-## 7. Database (PostgreSQL)
+## 7. Database
 
+### SQLite (Development - Default)
+- **File:** `aegis.db` (auto-created)
+- **No setup required** - database initializes on first backend startup
+
+### PostgreSQL (Production)
 - **Location:** `database/schema.sql`
-- **Notes:**
-  - Schema includes tenants, sensors, and audit logs.
-  - Uses PostGIS for geospatial data.
-  - Apply schema to your PostgreSQL instance as needed.
+- **Setup:**
+  ```sql
+  psql -U postgres -d aegis -f database/schema.sql
+  ```
+- **Connection String:**
+  ```env
+  DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/aegis
+  ```
 
 ---
 
 ## 8. Testing
 
 - **Location:** `tests/`
-- **Run:**
+- **Run All Tests:**
   ```sh
-  pytest tests/
+  conda activate aegis
+  python -m pytest tests/ -q
   ```
+- **Run Specific Test:**
+  ```sh
+  conda activate aegis
+  python -m pytest tests/test_basic.py -v
+  ```
+- **Run with Coverage:**
+  ```sh
+  conda activate aegis
+  pytest --cov=backend --cov=ai --cov-report=term-missing
+  ```
+- **Generate HTML Coverage Report:**
+  ```sh
+  conda activate aegis
+  pytest --cov=backend --cov=ai --cov-report=html
+  ```
+  Open `htmlcov/index.html` to view
+
 - **Notes:**
-  - Add new tests for backend and AI modules as you develop features.
-  - All backend tests must pass before PR approval.
+  - 20 tests currently passing
+  - Uses pytest-asyncio==0.21.1 for async support
+  - No `__init__.py` in `tests/` directory (important)
+  - All tests must pass before PR approval
 
 ---
 
-## 9. Troubleshooting
+## 9. Common Issues & Troubleshooting
 
-- **Backend Socket Error:** Run as administrator or check firewall.
-- **Frontend CSS Error:** Ensure `frontend/styles/Home.module.css` exists.
-- **Hardhat Error:** Ensure Hardhat is installed locally in `blockchain/`.
+### Frontend Shows "Failed to Fetch"
+- **Cause:** Backend not running or API URL mismatch
+- **Solution:**
+  ```
+  1. Verify backend is running on port 8001
+  2. Check frontend/.env.local has: NEXT_PUBLIC_API_URL=http://localhost:8001
+  3. Hard refresh frontend: Ctrl+F5 (or Cmd+Shift+R on Mac)
+  4. Clear browser cache
+  ```
+
+### Backend Won't Start on Port 8001
+- **Cause:** Port already in use or permission denied
+- **Solution:**
+  ```powershell
+  # Try different port
+  $env:SERVER_PORT=8002
+  python -m backend.main
+  
+  # Or kill the process using the port
+  netstat -ano | findstr :8001
+  taskkill /PID <PID> /F
+  ```
+
+### CORS Errors on Login
+- **Cause:** Frontend running on port not in CORS whitelist
+- **Solution:** Backend CORS allows ports: 3000, 3001, 3002, 8080
+  - If using different port, update `backend/middleware.py`
+  - Add new port to `allow_origins` list
+
+### Tests Fail with Import Errors
+- **Cause:** Missing dependencies or wrong Python environment
+- **Solution:**
+  ```powershell
+  conda activate aegis
+  pip install -r backend/requirements.txt
+  pip install -r ai/requirements.txt
+  ```
+
+### Vryndara Connector Warnings
+- **Cause:** Protobuf version incompatibility (expected in offline mode)
+- **Solution:** This is normal! System runs in offline fallback mode
+  - No OpenAI API key needed
+  - No Vryndara kernel required
+  - All features work locally
+
+### Port 3000 Already in Use
+- **Solution:** Next.js auto-increments to 3001, 3002, etc.
+  - Check the terminal output for actual port
+  - Update `NEXT_PUBLIC_API_URL` if needed
 
 ---
 
-## 10. Contribution
+## 10. Development Workflow
 
-- Follow modular structure for new features.
-- Document new endpoints, agents, or contracts.
-- Keep dependencies updated in `requirements.txt` or `package.json`.
-- All code must be tested and pass CI before merging.
+### Adding a New Endpoint
+```python
+# In backend/routers/example.py
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/api/v1", tags=["example"])
+
+@router.get("/example")
+async def get_example():
+    return {"message": "Hello"}
+
+# In backend/main.py
+app.include_router(example.router)
+```
+
+### Adding a New Frontend Page
+```bash
+# Create new file: frontend/pages/newpage.js
+# Access at: http://localhost:3000/newpage
+```
+
+### Running Backend in Production
+```powershell
+$env:ENVIRONMENT=prod
+$env:DEBUG=false
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
 
 ---
 
-## Running Tests and Coverage
+## 11. Contribution
 
-To run all tests and generate a coverage report for the backend and AI modules:
-
-```powershell
-$env:PYTHONPATH="."; pytest --cov=backend --cov=ai --cov-report=term-missing
-```
-- This will show which lines are not covered in each file.
-
-To run a single test file:
-
-```powershell
-$env:PYTHONPATH="."; pytest tests/test_basic.py
-```
-
-To suppress warnings for cleaner output:
-
-```powershell
-$env:PYTHONPATH="."; pytest --cov=backend --cov=ai --cov-report=term-missing -p no:warnings
-```
-
-To generate an HTML coverage report:
-
-```powershell
-$env:PYTHONPATH="."; pytest --cov=backend --cov=ai --cov-report=html
-```
-- Open `htmlcov/index.html` in your browser to view coverage visually.
-
-**Note:**
-- Always set `PYTHONPATH` to the project root (`.`) to ensure all modules are found.
-- If you see import errors, ensure all dependencies are installed in your active environment.
-- If you see test discovery errors, ensure there is no `__init__.py` in the `tests/` directory.
-- For best compatibility, use `pytest-asyncio==0.21.1` with recent pytest versions.
+- Follow modular structure for new features
+- Document new endpoints, agents, or contracts
+- Keep dependencies updated in `requirements.txt` or `package.json`
+- All code must be tested and pass CI before merging
+- Ensure all tests pass: `pytest tests/ -q`
 
 ---
 
-## API Documentation & Usage (Day 13)
+## 12. API Documentation & Usage
 
 ### Interactive API Docs (Swagger UI)
 
 Aegis provides interactive API documentation using FastAPI's built-in Swagger UI.
 
 - **Access the docs:**
-  - Start the backend server:
-    ```powershell
-    $env:PYTHONPATH="."; uvicorn backend.main:app --reload
-    ```
-  - Open your browser and go to: [http://localhost:8000/docs](http://localhost:8000/docs)
+  - Backend running: http://localhost:8001/docs
+  - Try endpoints directly from the UI
+  - See request/response schemas
+  - Authorize with JWT tokens
 
 - **Features:**
-  - Browse all available endpoints, grouped by tags (e.g., auth, zones, sensors, research, health).
+  - Browse all endpoints grouped by tags
+  - View request/response schemas
+  - Test endpoints interactively
+  - Copy curl commands for API testing
+
+---
+
+## 13. Environment Variables
+
+### Backend (`.env` or CLI)
+```bash
+ENVIRONMENT=dev              # dev, test, prod
+DEBUG=true                  # Enable debug mode
+SERVER_HOST=127.0.0.1       # Server host
+SERVER_PORT=8001            # Server port
+DATABASE_URL=sqlite:///./aegis.db  # Database connection
+JWT_SECRET_KEY=your-secret  # JWT signing key
+VRYNDARA_HOST=localhost     # Vryndara kernel host
+VRYNDARA_PORT=50051         # Vryndara kernel port
+```
+
+### Frontend (`.env.local`)
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8001
+```
+
+---
+
+## 14. Quick Reference
+
+| Task | Command |
+|------|---------|
+| Start Backend | `conda activate aegis && $env:SERVER_PORT=8001 && python -m backend.main` |
+| Start Frontend | `cd frontend && npm run dev` |
+| Start Blockchain | `cd blockchain && npx hardhat node` |
+| Run Tests | `conda activate aegis && pytest tests/ -q` |
+| View API Docs | http://localhost:8001/docs |
+| Login Credentials | Email: `admin@aegis.com` / Password: `aegis2026` |
+| Dashboard | http://localhost:3000 (or auto-incremented port) |
+| Database File | `aegis.db` (auto-created in project root) |
+
+---
+
+**Last Updated:** April 21, 2026  
+**Status:** ✅ Production Ready (Offline Mode)
   - View request/response models, descriptions, and example payloads.
   - Try out endpoints interactively (requires authentication for protected endpoints).
 

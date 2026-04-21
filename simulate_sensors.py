@@ -2,9 +2,9 @@ import requests
 import time
 import random
 
-BASE_URL = "http://localhost:8080/api/v1"
+BASE_URL = "http://localhost:8001/api/v1"
 # Ensure these match your database exactly
-LOGIN_DATA = {"email": "operator@aegis.com", "password": "aegispassword"} 
+LOGIN_DATA = {"email": "admin@aegis.com", "password": "aegis2026"} 
 
 def get_token():
     # We use json= here because our new backend login handles JSON perfectly

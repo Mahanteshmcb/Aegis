@@ -88,6 +88,8 @@ def setup_cors_middleware(app):
         allow_origins=[
             "http://localhost:3000",   # Your Next.js frontend
             "http://127.0.0.1:3000",
+            "http://localhost:3001",   # Next.js fallback port
+            "http://localhost:3002",   # Next.js fallback port
             "http://localhost:8080",   # Swagger UI
         ],
         allow_credentials=True,

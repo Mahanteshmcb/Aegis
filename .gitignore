@@ -1,4 +1,5 @@
 # Python
+*.pip_check/
 __pycache__/
 *.py[cod]
 *.pyo

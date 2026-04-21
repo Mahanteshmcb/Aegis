@@ -1,4 +1,4 @@
-langchain==0.1.0
+langchain==0.0.335
 crewai==0.1.0
-openai==1.3.0
+openai==0.28.1
 python-dotenv==1.0.0
