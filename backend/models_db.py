@@ -14,12 +14,13 @@ class Tenant(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False)
+    settings = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     sensors = relationship("Sensor", back_populates="tenant")
     zones = relationship("Zone", back_populates="tenant")
-    users = relationship("User", back_populates="tenant")
+    users = relationship("User", back_populates="users")
     audit_logs = relationship("AuditLog", back_populates="tenant")
 
 

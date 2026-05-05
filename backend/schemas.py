@@ -8,10 +8,16 @@ from pydantic import BaseModel, EmailStr
 
 class TenantBase(BaseModel):
     name: str
+    settings: Optional[Dict[str, Any]] = {}
 
 
 class TenantCreate(TenantBase):
     pass
+
+
+class TenantUpdate(BaseModel):
+    name: Optional[str] = None
+    settings: Optional[Dict[str, Any]] = None
 
 
 class Tenant(TenantBase):

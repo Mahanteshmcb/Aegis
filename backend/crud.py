@@ -4,7 +4,7 @@ from . import models_db as models, schemas
 
 
 def create_tenant(db: Session, tenant: schemas.TenantCreate) -> models.Tenant:
-    db_tenant = models.Tenant(name=tenant.name)
+    db_tenant = models.Tenant(name=tenant.name, settings=tenant.settings or {})
     db.add(db_tenant)
     db.commit()
     db.refresh(db_tenant)
@@ -17,6 +17,27 @@ def get_tenant(db: Session, tenant_id: int) -> models.Tenant | None:
 
 def list_tenants(db: Session, skip: int = 0, limit: int = 100) -> list[models.Tenant]:
     return db.query(models.Tenant).offset(skip).limit(limit).all()
+
+
+def update_tenant(db: Session, tenant_id: int, tenant_update: schemas.TenantUpdate) -> models.Tenant | None:
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not db_tenant:
+        return None
+    update_data = tenant_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_tenant, field, value)
+    db.commit()
+    db.refresh(db_tenant)
+    return db_tenant
+
+
+def delete_tenant(db: Session, tenant_id: int) -> bool:
+    db_tenant = db.query(models.Tenant).filter(models.Tenant.id == tenant_id).first()
+    if not db_tenant:
+        return False
+    db.delete(db_tenant)
+    db.commit()
+    return True
 
 
 def create_sensor(db: Session, sensor: schemas.SensorCreate) -> models.Sensor:
