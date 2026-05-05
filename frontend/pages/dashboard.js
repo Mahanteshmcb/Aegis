@@ -1,122 +1,245 @@
-import { useEffect, useState } from 'react';
-import Card from '../components/Card';
-import { getTenantInfo, getZones, getSensors, getAuditLogs } from '../utils/api';
-import { getAuthToken } from '../utils/auth';
-import { useRouter } from 'next/router';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import Sidebar from '../components/Sidebar';
+import TacticalMap from '../components/TacticalMap';
+import useCurrentUser from '../hooks/useCurrentUser';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export default function Dashboard() {
-  const [tenantName, setTenantName] = useState('Aegis Operator');
-  const [zones, setZones] = useState([]);
-  const [sensors, setSensors] = useState([]);
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const router = useRouter();
+  const { user, loading } = useCurrentUser();
+  const [metrics, setMetrics] = useState({
+    zones: 0,
+    sensors: 0,
+    users: 0,
+    auditLogs: 0,
+  });
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
-      router.push('/login');
-      return;
+    if (!loading && user) {
+      fetchMetrics();
     }
+  }, [user, loading]);
 
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [tenant, zoneData, sensorData, logData] = await Promise.all([
-          getTenantInfo(token),
-          getZones(token),
-          getSensors(token),
-          getAuditLogs(token),
-        ]);
+  async function fetchMetrics() {
+    try {
+      const token = localStorage.getItem('aegis_token');
+      
+      // Fetch all metrics in parallel
+      const [zonesRes, sensorsRes, auditRes, usersRes] = await Promise.all([
+        fetch(`${API_URL}/api/v1/zones`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_URL}/api/v1/sensors`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_URL}/api/v1/audit-logs`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_URL}/api/v1/auth/users`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).catch(() => ({ ok: false }))
+      ]);
 
-        setTenantName(tenant.name || 'Aegis Operator');
-        setZones(zoneData || []);
-        setSensors(sensorData || []);
-        setLogs(logData || []);
-        setError(null);
-      } catch (err) {
-        if (err.message?.includes('401')) {
-          localStorage.removeItem('aegis_token');
-          router.push('/login');
-        } else {
-          setError(err.message || 'Unable to load dashboard data');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+      const zones = zonesRes.ok ? await zonesRes.json() : [];
+      const sensors = sensorsRes.ok ? await sensorsRes.json() : [];
+      const auditLogs = auditRes.ok ? await auditRes.json() : [];
+      const users = usersRes.ok ? await usersRes.json() : [];
 
-    loadData();
-  }, [router]);
+      setMetrics({
+        zones: Array.isArray(zones) ? zones.length : 0,
+        sensors: Array.isArray(sensors) ? sensors.length : 0,
+        users: Array.isArray(users) ? users.length : 1,
+        auditLogs: Array.isArray(auditLogs) ? auditLogs.length : 0,
+      });
+    } catch (err) {
+      console.error('Error fetching metrics:', err);
+    } finally {
+      setLoadingMetrics(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen bg-[#0b1120]">
+        <Sidebar />
+        <main className="flex-1 p-8 flex items-center justify-center">
+          <div className="text-aegis-muted animate-pulse">Loading dashboard...</div>
+        </main>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-white">Dashboard</h1>
-          <p className="mt-2 text-sm text-aegis-muted">Overview of current zones, sensors, and audit activity for {tenantName}.</p>
+    <div className="flex min-h-screen bg-[#0b1120]">
+      <Sidebar />
+      <main className="flex-1 p-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">
+            Dashboard
+          </h1>
+          <p className="text-aegis-muted">
+            Welcome back, {user?.email || 'Operator'}
+          </p>
         </div>
-      </div>
 
-      {error && (
-        <div className="rounded-3xl glass-card border border-red-500/20 p-4 text-red-200">
-          {error}
+        {/* Metrics Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
+          {/* Zones Card */}
+          <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/10 border border-blue-700/50 rounded-lg p-6 hover:border-blue-600/80 transition-colors">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Zones</p>
+                <p className="text-4xl font-bold text-blue-400 mt-2">{loadingMetrics ? '—' : metrics.zones}</p>
+              </div>
+              <div className="text-3xl text-blue-500 opacity-50">📍</div>
+            </div>
+            <p className="text-aegis-muted text-xs mt-4">Active security zones</p>
+            <Link href="/zones" className="text-blue-400 text-xs font-semibold mt-4 inline-block hover:text-blue-300">
+              Manage Zones →
+            </Link>
+          </div>
+
+          {/* Sensors Card */}
+          <div className="bg-gradient-to-br from-green-900/30 to-green-800/10 border border-green-700/50 rounded-lg p-6 hover:border-green-600/80 transition-colors">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Sensors</p>
+                <p className="text-4xl font-bold text-green-400 mt-2">{loadingMetrics ? '—' : metrics.sensors}</p>
+              </div>
+              <div className="text-3xl text-green-500 opacity-50">📊</div>
+            </div>
+            <p className="text-aegis-muted text-xs mt-4">IoT devices online</p>
+            <Link href="/sensors" className="text-green-400 text-xs font-semibold mt-4 inline-block hover:text-green-300">
+              View Sensors →
+            </Link>
+          </div>
+
+          {/* Audit Logs Card */}
+          <div className="bg-gradient-to-br from-yellow-900/30 to-yellow-800/10 border border-yellow-700/50 rounded-lg p-6 hover:border-yellow-600/80 transition-colors">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Audit Logs</p>
+                <p className="text-4xl font-bold text-yellow-400 mt-2">{loadingMetrics ? '—' : metrics.auditLogs}</p>
+              </div>
+              <div className="text-3xl text-yellow-500 opacity-50">📋</div>
+            </div>
+            <p className="text-aegis-muted text-xs mt-4">Compliance events recorded</p>
+            <Link href="/audit-logs" className="text-yellow-400 text-xs font-semibold mt-4 inline-block hover:text-yellow-300">
+              View Logs →
+            </Link>
+          </div>
+
+          {/* Users Card */}
+          <div className="bg-gradient-to-br from-red-900/30 to-red-800/10 border border-red-700/50 rounded-lg p-6 hover:border-red-600/80 transition-colors">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Users</p>
+                <p className="text-4xl font-bold text-red-400 mt-2">{loadingMetrics ? '—' : metrics.users}</p>
+              </div>
+              <div className="text-3xl text-red-500 opacity-50">👥</div>
+            </div>
+            <p className="text-aegis-muted text-xs mt-4">Active tenant users</p>
+            {user?.role === 'admin' && (
+              <Link href="/admin/users" className="text-red-400 text-xs font-semibold mt-4 inline-block hover:text-red-300">
+                Manage Users →
+              </Link>
+            )}
+          </div>
+
+          {/* System Status Card */}
+          <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/10 border border-purple-700/50 rounded-lg p-6 hover:border-purple-600/80 transition-colors">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Status</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                  <p className="text-xl font-bold text-green-400">Online</p>
+                </div>
+              </div>
+              <div className="text-3xl text-purple-500 opacity-50">⚡</div>
+            </div>
+            <p className="text-aegis-muted text-xs mt-4">All systems operational</p>
+            <a href={`${API_URL}/api/v1/health`} target="_blank" rel="noreferrer" className="text-purple-400 text-xs font-semibold mt-4 inline-block hover:text-purple-300">
+              System Health →
+            </a>
+          </div>
         </div>
-      )}
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <Card title="Active Zones">
-          <div className="text-5xl font-bold text-white">{zones.length}</div>
-          <p className="mt-3 text-sm text-aegis-muted">Managed zones currently instrumented.</p>
-        </Card>
-        <Card title="Connected Sensors">
-          <div className="text-5xl font-bold text-white">{sensors.length}</div>
-          <p className="mt-3 text-sm text-aegis-muted">Sensors streaming data to the platform.</p>
-        </Card>
-        <Card title="Recent Audit Entries">
-          <div className="text-5xl font-bold text-white">{logs.length}</div>
-          <p className="mt-3 text-sm text-aegis-muted">Events logged for compliance and integrity.</p>
-        </Card>
-      </div>
+        {/* Holographic Tactical View */}
+        <div className="mb-12">
+          <TacticalMap anomaly={false} />
+        </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card title="Latest Zones">
-          {zones.length ? (
-            <ul className="space-y-3">
-              {zones.slice(0, 5).map((zone) => (
-                <li key={zone.id} className="rounded-2xl border border-slate-800 p-4 bg-[#0c1728]">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-white">{zone.name}</span>
-                    <span className="text-xs uppercase text-aegis-primary">Active</span>
-                  </div>
-                  <p className="mt-2 text-sm text-aegis-muted">Zone ID: {zone.id}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-aegis-muted">No zones found yet.</p>
-          )}
-        </Card>
+        {/* Quick Actions */}
+        <div className="mb-12">
+          <h2 className="text-2xl font-bold text-aegis-primary mb-4 tracking-[0.1em]">Quick Actions</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Link href="/zones">
+              <div className="bg-slate-900/50 hover:bg-slate-800/50 border border-slate-800 hover:border-slate-700 rounded-lg p-6 cursor-pointer transition-all">
+                <h3 className="text-lg font-semibold text-aegis-primary">Create New Zone</h3>
+                <p className="text-aegis-muted text-sm mt-2">Define a new security zone for asset monitoring</p>
+              </div>
+            </Link>
 
-        <Card title="Latest Sensor Activity">
-          {sensors.length ? (
-            <ul className="space-y-3">
-              {sensors.slice(0, 5).map((sensor) => (
-                <li key={sensor.id} className="rounded-2xl border border-slate-800 p-4 bg-[#0c1728]">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-white">{sensor.location || 'Unknown location'}</span>
-                    <span className="text-xs uppercase text-aegis-success">{sensor.type || 'Sensor'}</span>
-                  </div>
-                  <p className="mt-2 text-sm text-aegis-muted">Latest reading: {sensor.last_reading ?? 'N/A'}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-aegis-muted">No sensor telemetry available.</p>
-          )}
-        </Card>
-      </div>
+            <Link href="/sensors">
+              <div className="bg-slate-900/50 hover:bg-slate-800/50 border border-slate-800 hover:border-slate-700 rounded-lg p-6 cursor-pointer transition-all">
+                <h3 className="text-lg font-semibold text-aegis-primary">Register Sensor</h3>
+                <p className="text-aegis-muted text-sm mt-2">Add a new IoT sensor to your network</p>
+              </div>
+            </Link>
+
+            <Link href="/audit-logs">
+              <div className="bg-slate-900/50 hover:bg-slate-800/50 border border-slate-800 hover:border-slate-700 rounded-lg p-6 cursor-pointer transition-all">
+                <h3 className="text-lg font-semibold text-aegis-primary">View Audit Trail</h3>
+                <p className="text-aegis-muted text-sm mt-2">Review compliance and security events</p>
+              </div>
+            </Link>
+
+            {user?.role === 'admin' && (
+              <Link href="/admin/users">
+                <div className="bg-slate-900/50 hover:bg-slate-800/50 border border-slate-800 hover:border-slate-700 rounded-lg p-6 cursor-pointer transition-all">
+                  <h3 className="text-lg font-semibold text-red-400">Manage Users</h3>
+                  <p className="text-aegis-muted text-sm mt-2">Control tenant users and roles</p>
+                </div>
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {/* System Information */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-aegis-primary mb-4">System Information</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
+            <div>
+              <p className="text-aegis-muted font-semibold">Your Email</p>
+              <p className="text-aegis-text font-mono mt-1">{user?.email}</p>
+            </div>
+            <div>
+              <p className="text-aegis-muted font-semibold">Role</p>
+              <p className="text-aegis-text capitalize mt-1">{user?.role}</p>
+            </div>
+            <div>
+              <p className="text-aegis-muted font-semibold">Tenant ID</p>
+              <p className="text-aegis-text font-mono mt-1">{user?.tenant_id}</p>
+            </div>
+            <div>
+              <p className="text-aegis-muted font-semibold">Backend</p>
+              <p className="text-aegis-text font-mono mt-1">FastAPI v1</p>
+            </div>
+            <div>
+              <p className="text-aegis-muted font-semibold">Database</p>
+              <p className="text-aegis-text font-mono mt-1">SQLite</p>
+            </div>
+            <div>
+              <p className="text-aegis-muted font-semibold">Status</p>
+              <p className="text-green-400 font-semibold mt-1">● Operational</p>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

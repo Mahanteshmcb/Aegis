@@ -35,11 +35,12 @@ def test_sensor_data_model():
     assert sd.sensor_id == 1
 
 def test_audit_log_model():
-    al = AuditLog(sensor_id=1, event_type="test", data_hash="abc", blockchain_tx="tx1")
+    al = AuditLog(tenant_id=1, sensor_id=1, event_type="test", data_hash="abc", blockchain_tx="tx1")
     assert al.event_type == "test"
     assert al.data_hash == "abc"
     assert al.blockchain_tx == "tx1"
     assert al.sensor_id == 1
+    assert al.tenant_id == 1
 
 def test_vryndara_request_model():
     vr = VryndaraRequest(

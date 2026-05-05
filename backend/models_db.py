@@ -20,6 +20,7 @@ class Tenant(Base):
     sensors = relationship("Sensor", back_populates="tenant")
     zones = relationship("Zone", back_populates="tenant")
     users = relationship("User", back_populates="tenant")
+    audit_logs = relationship("AuditLog", back_populates="tenant")
 
 
 class User(Base):
@@ -73,6 +74,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     sensor_id = Column(Integer, ForeignKey("sensors.id"), nullable=True)
     event_type = Column(String(100))
     data_hash = Column(String(255))
@@ -80,6 +82,7 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    tenant = relationship("Tenant", back_populates="audit_logs")
     sensor = relationship("Sensor", back_populates="audit_logs")
 
 

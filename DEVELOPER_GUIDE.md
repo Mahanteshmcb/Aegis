@@ -11,8 +11,7 @@
 ```powershell
 cd c:\Users\Mahantesh\DevelopmentProjects\Aegis
 conda activate aegis
-$env:SERVER_PORT=8001
-python -m backend.main
+  python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 ✅ **Expected output:** `Application startup complete.`  
@@ -66,13 +65,12 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 - **Run (Port 8001):**
   ```sh
   conda activate aegis
-  $env:SERVER_PORT=8001
-  python -m backend.main
+  python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
   ```
 - **Run (Default Port 8000):**
   ```sh
   conda activate aegis
-  python -m backend.main
+  python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
   ```
 - **Run with Auto-Reload:**
   ```sh

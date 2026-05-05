@@ -56,7 +56,7 @@ async def create_sensor(sensor: schemas.SensorCreate, db: Session = Depends(get_
         blockchain_tx=None,
     )
     try:
-        crud.create_audit_log(db, audit)
+        crud.create_audit_log(db, audit, tenant_id=current_user["tenant_id"])
     except Exception:
         pass  # Do not block sensor creation if audit log fails
     return db_sensor

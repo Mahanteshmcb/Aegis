@@ -76,11 +76,43 @@ async def lifespan(app: FastAPI):
 
     # Start the Day 19 Background Monitor
     guard_task = asyncio.create_task(vryndara_guard_loop())
-    
+
+    # Initialize blockchain monitoring (Day 26)
+    blockchain_monitor_task = None
+    try:
+        from backend.blockchain_connector import get_blockchain_connector
+        from backend.blockchain_monitor import get_blockchain_monitor
+
+        blockchain_connector = get_blockchain_connector()
+        if blockchain_connector.is_connected:
+            blockchain_monitor = get_blockchain_monitor(blockchain_connector)
+            blockchain_monitor_task = asyncio.create_task(
+                blockchain_monitor.start_monitoring(interval_seconds=30)
+            )
+            logger.info("✅ Blockchain monitoring started")
+        else:
+            logger.warning("⚠️ Blockchain not connected, monitoring disabled")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize blockchain monitoring: {e}")
+
     yield
-    
+
     # --- Shutdown ---
     logger.info("Shutting down Aegis backend...")
+
+    # Stop blockchain monitoring
+    if blockchain_monitor_task:
+        try:
+            from backend.blockchain_monitor import get_blockchain_monitor
+            from backend.blockchain_connector import blockchain_connector
+            monitor = get_blockchain_monitor(blockchain_connector)
+            monitor.stop_monitoring()
+            blockchain_monitor_task.cancel()
+            await blockchain_monitor_task
+        except Exception as e:
+            logger.error(f"Error stopping blockchain monitoring: {e}")
+
     guard_task.cancel()
     try:
         await guard_task

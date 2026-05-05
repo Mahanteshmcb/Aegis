@@ -47,6 +47,7 @@ class Sensor(SensorBase):
 
 
 class AuditLogBase(BaseModel):
+    tenant_id: Optional[int] = None
     sensor_id: Optional[int] = None
     event_type: str
     data_hash: str

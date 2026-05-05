@@ -20,6 +20,7 @@ CREATE TABLE sensors (
 
 CREATE TABLE audit_logs (
     id SERIAL PRIMARY KEY,
+    tenant_id INT REFERENCES tenants(id),
     sensor_id INT REFERENCES sensors(id),
     event_type VARCHAR(100),
     data_hash VARCHAR(255),

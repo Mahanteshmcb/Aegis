@@ -5,6 +5,7 @@ sqlalchemy==2.0.23
 psycopg2-binary==2.9.11
 # Blockchain/Ethereum stack (compatible versions)
 web3==5.29.2
+eth-account==0.5.9
 eth-typing==2.2.2
 eth-utils==1.10.0
 eth-keys==0.3.4

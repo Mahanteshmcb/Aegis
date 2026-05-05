@@ -60,7 +60,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     )
     
     try:
-        crud.create_audit_log(db, audit)
+        crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
     except Exception:
         pass 
         
@@ -94,7 +94,7 @@ async def reset_password(request: Request, db: Session = Depends(get_db)):
             blockchain_tx=None,
         )
         try:
-            crud.create_audit_log(db, audit)
+            crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
         except Exception:
             pass
 
@@ -186,3 +186,102 @@ def refresh_token(request: RefreshTokenRequest):
 def logout():
     """User logout endpoint."""
     return {"message": "Logout successful (stateless JWT)"}
+
+# === Day 19: RBAC User Management ===
+from backend.dependencies import get_current_admin
+
+@router.get("/users")
+def list_users(current_user=Depends(get_current_admin), db: Session = Depends(get_db)):
+    """
+    List all users in the current tenant (admin only).
+    Returns user list with roles for admin panel.
+    """
+    from backend.dependencies import get_current_admin
+    users = crud.list_users_by_tenant(db, current_user["tenant_id"])
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "tenant_id": user.tenant_id,
+            "created_at": user.created_at.isoformat() if hasattr(user, 'created_at') else None,
+        }
+        for user in users
+    ]
+
+@router.put("/users/{user_id}/role")
+def update_user_role(
+    user_id: int,
+    request: Request,
+    current_user=Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a user's role (admin only, within same tenant).
+    Prevents privilege escalation by verifying tenant ownership.
+    """
+    import asyncio
+    
+    async def get_new_role():
+        try:
+            body = await request.json()
+            return body.get("role")
+        except:
+            return None
+    
+    # Run async operation
+    new_role = asyncio.run(get_new_role())
+    
+    if not new_role or new_role not in ["admin", "viewer", "auditor", "operator"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
+    # Get target user
+    user = crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Verify same tenant (security)
+    if user.tenant_id != current_user["tenant_id"]:
+        raise HTTPException(status_code=403, detail="Cannot modify users from other tenants")
+    
+    # Prevent self-demotion
+    if user_id == current_user.get("id") and new_role != "admin":
+        raise HTTPException(status_code=400, detail="Cannot remove your own admin privileges")
+    
+    # Update role
+    updated_user = crud.update_user_role(db, user_id, new_role)
+    
+    return {
+        "id": updated_user.id,
+        "email": updated_user.email,
+        "role": updated_user.role,
+        "message": f"User role updated to {new_role}"
+    }
+
+@router.delete("/users/{user_id}")
+def delete_user_endpoint(
+    user_id: int,
+    current_user=Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a user (admin only, within same tenant).
+    """
+    # Get target user
+    user = crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Verify same tenant
+    if user.tenant_id != current_user["tenant_id"]:
+        raise HTTPException(status_code=403, detail="Cannot delete users from other tenants")
+    
+    # Prevent self-deletion
+    if user_id == current_user.get("id"):
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    
+    success = crud.delete_user(db, user_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete user")
+    
+    return {"message": f"User {user.email} deleted successfully"}

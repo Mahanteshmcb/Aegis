@@ -67,9 +67,9 @@ async def create_zone(zone: ZoneCreate, db: Session = Depends(get_db), current_a
     )
     try:
         from backend import crud
-        crud.create_audit_log(db, audit)
+        crud.create_audit_log(db, audit, tenant_id=current_admin["tenant_id"])
     except Exception:
-        pass  
+        pass
     return db_zone
 
 
