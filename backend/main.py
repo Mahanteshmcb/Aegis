@@ -59,20 +59,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         raise
     
-    # Check Vryndara connectivity
-    try:
-        import sys, os
-        vryndara_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../ai'))
-        if vryndara_path not in sys.path:
-            sys.path.insert(0, vryndara_path)
-        from vryndara_connector import VryndaraConnector
-        vryndara = VryndaraConnector()
-        if vryndara.health_check():
-            logger.info(f"Vryndara endpoint: {settings.vryndara_host}:{settings.vryndara_port} CONNECTED")
-        else:
-            logger.warning("Vryndara kernel unavailable, fallback mode enabled")
-    except Exception as e:
-        logger.error(f"Vryndara health check failed: {e}")
+    # Vryndara initialization deferred to first use (lazy loading)
+    # This prevents startup blockages from gRPC connection attempts
+    logger.info("Vryndara connector will initialize on first research endpoint call")
+
+
 
     # Start the Day 19 Background Monitor
     guard_task = asyncio.create_task(vryndara_guard_loop())

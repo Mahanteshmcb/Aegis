@@ -22,3 +22,17 @@ def test_vryndara_health_check_connected():
     connector = VryndaraConnector(fallback_mode=False)
     connector.is_connected = True
     assert connector.health_check() is True
+
+
+def test_vryndara_robotic_command_fallback():
+    from ai.vryndara_connector import VryndaraConnector
+    connector = VryndaraConnector(fallback_mode=True)
+    connector.is_connected = False
+    result = connector.send_robotic_command(
+        robot_type="AegisRover",
+        action="status_check",
+        parameters={"mode": "safe"},
+        security_token="token-123",
+    )
+    assert result["status"] == "fallback"
+    assert result["robot_type"] == "AegisRover"

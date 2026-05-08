@@ -2,3 +2,4 @@ langchain==0.0.335
 crewai==0.1.0
 openai==0.28.1
 python-dotenv==1.0.0
+grpcio-tools==1.48.2

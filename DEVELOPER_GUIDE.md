@@ -62,16 +62,6 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 - **Location:** `backend/`
 - **Entry Point:** `main.py`
 - **Dependencies:** `backend/requirements.txt`
-- **Run (Port 8001):**
-  ```sh
-  conda activate aegis
-  python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
-  ```
-- **Run (Default Port 8000):**
-  ```sh
-  conda activate aegis
-  python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
-  ```
 - **Run with Auto-Reload:**
   ```sh
   conda activate aegis

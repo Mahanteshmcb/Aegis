@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package vryndara;
+
+service VryndaraService {
+  rpc Register(AgentInfo) returns (Ack);
+  rpc Publish(Signal) returns (Ack);
+  rpc Subscribe(SubscribeRequest) returns (stream Signal);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message AgentInfo {
+  string id = 1;
+  repeated string capabilities = 2;
+}
+
+message Signal {
+  string id = 1;
+  string source_agent_id = 2;
+  string target_agent_id = 3;
+  string type = 4;
+  string payload = 5;
+  int64 timestamp = 6;
+}
+
+message SubscribeRequest {
+  string agent_id = 1;
+}
+
+message Ack {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message HealthCheckRequest {
+  string agent_id = 1;
+}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  string status = 2;
+  int64 timestamp = 3;
+}
+
+message RoboticCommand {
+  string command_id = 1;
+  string robot_type = 2;
+  string action = 3;
+  map<string, string> parameters = 4;
+  string security_token = 5;
+}
+
+message SensorTelemetry {
+  string sensor_id = 1;
+  string sensor_type = 2;
+  string location = 3;
+  string value = 4;
+  string unit = 5;
+  int64 timestamp = 6;
+}

@@ -3,14 +3,38 @@ Aegis Backend - Research Router
 Vryndara integration for compliance research and AI log analysis.
 """
 
+import os
+import sys
+import time
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Body
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from backend.models_db import AuditLog, Sensor
 from backend.dependencies import get_db, get_current_user
-from backend import schemas
+from backend.config import settings
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from ai.vryndara_connector import VryndaraConnector
 
 router = APIRouter(prefix="/api/v1/research", tags=["AI"])
+
+# Lazy connector initialization to avoid multiple reconnections on hot-reload
+_vryndara_connector = None
+
+def get_vryndara_connector():
+    """Get or create VryndaraConnector (lazy initialization)."""
+    global _vryndara_connector
+    if _vryndara_connector is None:
+        _vryndara_connector = VryndaraConnector(
+            kernel_address=f"{settings.vryndara_host}:{settings.vryndara_port}",
+            fallback_mode=settings.vryndara_fallback_enabled,
+        )
+    return _vryndara_connector
+
 
 # --- SCHEMAS ---
 
@@ -20,9 +44,20 @@ class ResearchRequest(BaseModel):
 
 class ResearchResponse(BaseModel):
     framework: str
-    findings: list = []
+    findings: List[Dict[str, Any]] = []
     summary: str = ""
     status: str
+
+class GenerateScriptRequest(BaseModel):
+    framework: str
+    check_type: str
+    zone_id: Optional[str] = None
+
+class RobotCommandRequest(BaseModel):
+    robot_type: str
+    action: str
+    parameters: Dict[str, str] = {}
+    security_token: Optional[str] = None
 
 class AuditScriptResponse(BaseModel):
     status: str
@@ -31,10 +66,29 @@ class AuditScriptResponse(BaseModel):
 
 class AnalyzeLogsResponse(BaseModel):
     status: str
-    findings: list = []
+    findings: List[str] = []
     message: str = ""
 
+class VryndaraHealthResponse(BaseModel):
+    status: str
+    connected: bool
+
+class RobotCommandResponse(BaseModel):
+    status: str
+    message: str = ""
+    result: Dict[str, Any] = {}
+
 # --- ENDPOINTS ---
+
+@router.get("/health", response_model=VryndaraHealthResponse)
+async def vryndara_health(current_user=Depends(get_current_user)):
+    """Return the current Vryndara connection status."""
+    connector = get_vryndara_connector()
+    healthy = connector.health_check()
+    return {
+        "status": "connected" if healthy else "fallback",
+        "connected": healthy,
+    }
 
 @router.post("/analysis/logs", response_model=AnalyzeLogsResponse)
 async def analyze_logs(
@@ -44,7 +98,6 @@ async def analyze_logs(
     """
     Vryndara Brain: Analyzes the last 50 audit logs for tenant-specific anomalies.
     """
-    # 1. Fetch recent logs for this tenant
     logs = (
         db.query(AuditLog)
         .join(Sensor, AuditLog.sensor_id == Sensor.id)
@@ -57,25 +110,31 @@ async def analyze_logs(
     if not logs:
         return {"status": "idle", "message": "No telemetry data found to analyze.", "findings": []}
 
-    # 2. Heuristic Analysis Logic (Simulating Vryndara's Thought Process)
-    findings = []
-    sensor_ids = set([log.sensor_id for log in logs])
-    
-    # Identify unique sensor activity
-    findings.append(f"Vryndara verified integrity for {len(sensor_ids)} active data streams.")
-    
-    # Check for rapid registration (Potential spoofing)
-    reg_events = [l for l in logs if l.event_type == "sensor_created"]
-    if len(reg_events) > 5:
-        findings.append("⚠️ ALERT: High frequency of sensor registrations detected in Sector.")
+    payload_logs = [
+        {
+            "event_type": log.event_type,
+            "sensor_id": log.sensor_id,
+            "timestamp": log.created_at.isoformat(),
+            "data_hash": log.data_hash,
+        }
+        for log in logs
+    ]
 
-    # 3. Final Summary
-    message = f"Vryndara processed {len(logs)} audit entries. Sector integrity: 98.2%. Status: NOMINAL."
+    connector = get_vryndara_connector()
+    result = connector.analyze_audit_logs(
+        logs=payload_logs,
+        zone_id=str(current_user["tenant_id"]),
+        project_id=f"tenant-{current_user['tenant_id']}-{int(time.time())}",
+    )
+
+    findings = result.get("anomalies", []) if result else []
+    if not isinstance(findings, list):
+        findings = [str(findings)]
 
     return {
-        "status": "success",
+        "status": result.get("status", "success") if result else "fallback",
         "findings": findings,
-        "message": message
+        "message": result.get("risk_assessment", {}).get("summary", "Vryndara processed logs.") if result else "Fallback analysis completed.",
     }
 
 @router.post("/research/framework", response_model=ResearchResponse)
@@ -84,25 +143,65 @@ async def research_framework(
     current_user=Depends(get_current_user),
 ):
     """Query Vryndara for compliance framework research."""
-    # Placeholder for actual RAG (Retrieval Augmented Generation) logic
+    project_id = f"tenant-{current_user['tenant_id']}-{int(time.time())}"
+    connector = get_vryndara_connector()
+    result = connector.research_compliance_framework(request.framework, project_id)
     return {
-        "framework": request.framework,
-        "findings": ["Control A.9: User Access Management applied", "Control A.12: Operations Security verified"],
-        "summary": f"Vryndara mapping completed for {request.framework}.",
-        "status": "completed"
+        "framework": result.get("framework", request.framework),
+        "findings": result.get("controls", []),
+        "summary": result.get("description", result.get("status", "")),
+        "status": result.get("status", "completed"),
     }
 
 @router.post("/generate/audit-script", response_model=AuditScriptResponse)
-async def generate_audit_script(current_user=Depends(get_current_user)):
+async def generate_audit_script(
+    request: GenerateScriptRequest,
+    current_user=Depends(get_current_user),
+):
     """Generate an automated audit validation script."""
-    script_template = """
-# Aegis Automated Audit Script
-import hashlib
-def verify_integrity(data_hash, expected):
-    return hashlib.sha256(data_hash.encode()).hexdigest() == expected
-    """
+    connector = get_vryndara_connector()
+    result = connector.generate_audit_script(
+        framework=request.framework,
+        check_type=request.check_type,
+        zone_id=request.zone_id,
+    )
     return {
-        "status": "success",
-        "message": "Validation script generated successfully.",
-        "script": script_template
+        "status": result.get("status", "success"),
+        "message": result.get("message", "Audit script generated successfully."),
+        "script": result.get("code", ""),
+    }
+
+@router.post("/robotic/command", response_model=RobotCommandResponse)
+async def robotic_command(
+    request: RobotCommandRequest,
+    current_user=Depends(get_current_user),
+):
+    """Dispatch a robotic command through Vryndara."""
+    connector = get_vryndara_connector()
+    result = connector.send_robotic_command(
+        robot_type=request.robot_type,
+        action=request.action,
+        parameters=request.parameters,
+        security_token=request.security_token,
+    )
+    return {
+        "status": result.get("status", "completed"),
+        "message": result.get("message", "Robotic command dispatched."),
+        "result": result,
+    }
+
+# Day 31 Test Endpoint (no auth required)
+@router.get("/test/connector", response_model=ResearchResponse)
+async def test_connector():
+    """Test Vryndara connector in fallback mode (Day 31)."""
+    connector = get_vryndara_connector()
+    result = connector.research_compliance_framework(
+        standard="ISO27001",
+        project_id="test-day31-001"
+    )
+    return {
+        "framework": "ISO27001",
+        "findings": result.get("controls", []) if result else [],
+        "summary": result.get("description", "Test fallback mode") if result else "Test fallback mode",
+        "status": "fallback" if not connector.is_connected else "connected",
     }

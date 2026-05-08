@@ -22,26 +22,39 @@ import os
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Add Vryndara SDK to path
-vryndara_path = os.path.join(os.path.dirname(__file__), '../../Vryndara')
+# Add Vryndara SDK and local protobuf definitions to path
+vryndara_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Vryndara'))
+ai_path = os.path.abspath(os.path.dirname(__file__))
+local_protos_path = os.path.join(ai_path, 'protos')
 if vryndara_path not in sys.path:
     sys.path.insert(0, vryndara_path)
+if ai_path not in sys.path:
+    sys.path.insert(0, ai_path)
+if local_protos_path not in sys.path:
+    sys.path.insert(0, local_protos_path)
 
 # Conditional import with fallback
 try:
-    from protos import vryndara_pb2, vryndara_pb2_grpc
     import grpc
+    from protos import vryndara_pb2, vryndara_pb2_grpc
     VRYNDARA_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     logger.warning(f"Vryndara protobuf import failed: {e}. Operating in offline mode.")
     VRYNDARA_AVAILABLE = False
-    # Create dummy classes for offline mode
+    grpc = None
+
     class vryndara_pb2:
-        class AgentRequest: pass
-        class AgentResponse: pass
+        class AgentInfo: pass
+        class Signal: pass
+        class SubscribeRequest: pass
+        class Ack: pass
+        class HealthCheckRequest: pass
+        class HealthCheckResponse: pass
+        class RoboticCommand: pass
+        class SensorTelemetry: pass
+
     class vryndara_pb2_grpc:
         class VryndaraServiceStub: pass
-    grpc = None
 
 # ═══════════════════════════════════════════════════════════════════
 # VRYNDARA CONNECTOR FOR AEGIS
@@ -398,6 +411,54 @@ class VryndaraConnector:
             timeout=timeout,
             fallback_data={"code": "# Remediation code", "status": "fallback"}
         )
+
+    def send_robotic_command(self,
+                             robot_type: str,
+                             action: str,
+                             parameters: Dict[str, str],
+                             security_token: Optional[str] = None,
+                             timeout: int = 30) -> Optional[Dict[str, Any]]:
+        """
+        Dispatch a robotic command through the Vryndara orchestration layer.
+
+        Args:
+            robot_type: Type of robotic asset (AegisRover, CanopyDrone, AgriSwarmBot)
+            action: Command action (navigate, inspect, harvest, charge, standby)
+            parameters: Command parameters as key/value pairs
+            security_token: Optional signed token for secure routing
+            timeout: Max wait time
+
+        Returns:
+            Command execution acknowledgement and metadata.
+        """
+        payload = {
+            "task": "Dispatch robotic command",
+            "command": {
+                "robot_type": robot_type,
+                "action": action,
+                "parameters": parameters,
+                "security_token": security_token,
+            },
+            "context": {
+                "source_app": "aegis",
+                "task_type": "robotic_command",
+                "robot_type": robot_type,
+                "action": action
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        return self._send_request_and_wait(
+            agent_id="engineer-1",
+            payload=payload,
+            timeout=timeout,
+            fallback_data={
+                "status": "fallback",
+                "robot_type": robot_type,
+                "action": action,
+                "message": "Robotic command queued in fallback mode"
+            }
+        )
     
     # ─────────────────────────────────────────────────────────────
     # ANALYSIS OPERATIONS
@@ -493,10 +554,18 @@ class VryndaraConnector:
     
     def health_check(self) -> bool:
         """Check if Vryndara kernel is accessible and healthy."""
+        if not self.is_connected:
+            logger.warning("⚠️ Vryndara kernel health check failed: no connection")
+            return False
         try:
-            # TODO: Implement gRPC health check
-            logger.info("✅ Vryndara kernel is healthy")
-            return self.is_connected
+            if VRYNDARA_AVAILABLE and hasattr(self.stub, "HealthCheck"):
+                request = vryndara_pb2.HealthCheckRequest(agent_id=self.app_id)
+                response = self.stub.HealthCheck(request)
+                healthy = getattr(response, "healthy", True)
+                logger.info(f"✅ Vryndara kernel health: {healthy}")
+                return healthy
+            logger.info("✅ Vryndara kernel is healthy (connected)")
+            return True
         except Exception as e:
             logger.error(f"❌ Vryndara health check failed: {e}")
             return False
