@@ -1,0 +1,379 @@
+// Aegis IoT Sensor Services
+// gRPC service definitions for IoT sensor mesh
+// Day 36: gRPC service definitions for IoT sensors
+
+syntax = "proto3";
+
+package aegis.sensors;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Common sensor data types
+message Coordinate3D {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message SensorLocation {
+  int32 zone_id = 1;
+  Coordinate3D position = 2;
+  string installation_depth = 3; // For sub-surface sensors
+}
+
+message SensorHealth {
+  string sensor_id = 1;
+  SensorStatus status = 2;
+  double battery_level = 3;
+  double signal_strength = 4;
+  google.protobuf.Timestamp last_calibration = 5;
+  google.protobuf.Timestamp last_reading = 6;
+  repeated string error_codes = 7;
+}
+
+enum SensorStatus {
+  SENSOR_OFFLINE = 0;
+  SENSOR_INITIALIZING = 1;
+  SENSOR_ACTIVE = 2;
+  SENSOR_CALIBRATING = 3;
+  SENSOR_ERROR = 4;
+  SENSOR_MAINTENANCE = 5;
+}
+
+// Sub-Surface Mycelial Probe Service
+service MycelialProbeService {
+  // Stream real-time mycelial network data
+  rpc StreamMycelialData(StreamMycelialDataRequest) returns (stream MycelialData);
+
+  // Get current mycelial network status
+  rpc GetMycelialStatus(SensorLocation) returns (MycelialStatus);
+
+  // Calibrate mycelial probe sensors
+  rpc CalibrateMycelialProbe(CalibrationRequest) returns (CalibrationResponse);
+
+  // Get mycelial probe health status
+  rpc GetMycelialProbeHealth(SensorLocation) returns (SensorHealth);
+}
+
+message StreamMycelialDataRequest {
+  SensorLocation location = 1;
+  int32 sampling_interval_ms = 2;
+  repeated MycelialDataType data_types = 3;
+}
+
+message MycelialData {
+  string sensor_id = 1;
+  SensorLocation location = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  repeated MycelialReading readings = 4;
+  SensorHealth health = 5;
+}
+
+message MycelialReading {
+  MycelialDataType data_type = 1;
+  double value = 2;
+  string unit = 3;
+  double confidence = 4;
+}
+
+enum MycelialDataType {
+  MYCELIAL_BIOMASS = 0;
+  NUTRIENT_TRANSPORT = 1;
+  WATER_CONTENT = 2;
+  PH_LEVEL = 3;
+  ELECTRICAL_ACTIVITY = 4;
+  SPORE_CONCENTRATION = 5;
+  ROOT_COLONIZATION = 6;
+  DECOMPOSITION_RATE = 7;
+}
+
+message MycelialStatus {
+  SensorLocation location = 1;
+  MycelialNetworkState network_state = 2;
+  double biomass_density = 3;
+  repeated MycelialAlert alerts = 4;
+  google.protobuf.Timestamp last_update = 5;
+}
+
+enum MycelialNetworkState {
+  NETWORK_INACTIVE = 0;
+  NETWORK_ESTABLISHING = 1;
+  NETWORK_ACTIVE = 2;
+  NETWORK_STRESSED = 3;
+  NETWORK_DEGRADED = 4;
+}
+
+message MycelialAlert {
+  MycelialAlertType alert_type = 1;
+  string message = 2;
+  AlertSeverity severity = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+enum MycelialAlertType {
+  BIOMASS_LOW = 0;
+  NUTRIENT_BLOCKAGE = 1;
+  WATER_STRESS = 2;
+  PH_IMBALANCE = 3;
+  PATHOGEN_DETECTED = 4;
+  ROOT_DAMAGE = 5;
+}
+
+enum AlertSeverity {
+  LOW = 0;
+  MEDIUM = 1;
+  HIGH = 2;
+  CRITICAL = 3;
+}
+
+// Acoustic Pest Monitor Service
+service AcousticPestMonitorService {
+  // Stream real-time acoustic pest detection data
+  rpc StreamAcousticData(StreamAcousticDataRequest) returns (stream AcousticData);
+
+  // Get current pest activity status
+  rpc GetPestActivityStatus(SensorLocation) returns (PestActivityStatus);
+
+  // Trigger acoustic pest scan
+  rpc TriggerPestScan(PestScanRequest) returns (PestScanResponse);
+
+  // Calibrate acoustic sensors
+  rpc CalibrateAcousticSensor(CalibrationRequest) returns (CalibrationResponse);
+
+  // Get acoustic sensor health
+  rpc GetAcousticSensorHealth(SensorLocation) returns (SensorHealth);
+}
+
+message StreamAcousticDataRequest {
+  SensorLocation location = 1;
+  int32 sampling_interval_ms = 2;
+  double sensitivity_threshold = 3;
+  repeated PestType target_pests = 4;
+}
+
+message AcousticData {
+  string sensor_id = 1;
+  SensorLocation location = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  repeated AcousticDetection detections = 4;
+  AcousticEnvironment environment = 5;
+  SensorHealth health = 6;
+}
+
+message AcousticDetection {
+  PestType pest_type = 1;
+  double confidence_score = 2;
+  double frequency_hz = 3;
+  double amplitude = 4;
+  Coordinate3D estimated_location = 5;
+  google.protobuf.Timestamp detection_time = 6;
+}
+
+enum PestType {
+  APHID = 0;
+  BEETLE = 1;
+  CATERPILLAR = 2;
+  WHITEFLY = 3;
+  THRIPS = 4;
+  SPIDER_MITE = 5;
+  NEMATODE = 6;
+  CUTWORM = 7;
+  ARMYWORM = 8;
+  LOCUST = 9;
+  UNKNOWN = 10;
+}
+
+message AcousticEnvironment {
+  double background_noise_level = 1;
+  double wind_speed_ms = 2;
+  double temperature_c = 3;
+  double humidity_percent = 4;
+  string weather_conditions = 5;
+}
+
+message PestActivityStatus {
+  SensorLocation location = 1;
+  repeated PestActivityLevel pest_levels = 2;
+  AcousticEnvironment environment = 3;
+  repeated PestAlert alerts = 4;
+  google.protobuf.Timestamp last_scan = 5;
+}
+
+message PestActivityLevel {
+  PestType pest_type = 1;
+  ActivityLevel level = 2;
+  double trend_direction = 3; // -1 (decreasing) to 1 (increasing)
+  google.protobuf.Timestamp last_detection = 4;
+}
+
+enum ActivityLevel {
+  ACTIVITY_NONE = 0;
+  ACTIVITY_LOW = 1;
+  ACTIVITY_MODERATE = 2;
+  ACTIVITY_HIGH = 3;
+  ACTIVITY_CRITICAL = 4;
+}
+
+message PestAlert {
+  PestType pest_type = 1;
+  string message = 2;
+  AlertSeverity severity = 3;
+  Coordinate3D location = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message PestScanRequest {
+  SensorLocation location = 1;
+  int32 scan_duration_seconds = 2;
+  repeated PestType target_pests = 3;
+  bool high_sensitivity = 4;
+}
+
+message PestScanResponse {
+  bool scan_started = 1;
+  string scan_id = 2;
+  int32 estimated_duration_seconds = 3;
+  repeated string target_frequencies = 4;
+}
+
+// General Sensor Management Service
+service SensorManagementService {
+  // Register a new sensor in the network
+  rpc RegisterSensor(SensorRegistration) returns (SensorRegistrationResponse);
+
+  // Get all sensors in a zone
+  rpc GetZoneSensors(GetZoneSensorsRequest) returns (ZoneSensorsResponse);
+
+  // Get sensor network health overview
+  rpc GetSensorNetworkHealth(google.protobuf.Empty) returns (SensorNetworkHealth);
+
+  // Bulk sensor calibration
+  rpc BulkCalibrateSensors(BulkCalibrationRequest) returns (BulkCalibrationResponse);
+
+  // Emergency sensor shutdown
+  rpc EmergencyShutdown(EmergencyShutdownRequest) returns (google.protobuf.Empty);
+}
+
+message SensorRegistration {
+  string sensor_id = 1;
+  SensorType sensor_type = 2;
+  SensorLocation location = 3;
+  SensorCapabilities capabilities = 4;
+  string firmware_version = 5;
+  google.protobuf.Timestamp installation_date = 6;
+}
+
+enum SensorType {
+  MYCELIAL_PROBE = 0;
+  ACOUSTIC_MONITOR = 1;
+  SOIL_MOISTURE = 2;
+  NUTRIENT_ANALYZER = 3;
+  WEATHER_STATION = 4;
+  VISUAL_CAMERA = 5;
+  THERMAL_IMAGER = 6;
+  GAS_ANALYZER = 7;
+}
+
+message SensorCapabilities {
+  repeated string supported_data_types = 1;
+  double sampling_rate_hz = 2;
+  double battery_capacity_mah = 3;
+  bool supports_streaming = 4;
+  bool supports_calibration = 5;
+  repeated string communication_protocols = 6;
+}
+
+message SensorRegistrationResponse {
+  bool registered = 1;
+  string assigned_network_id = 2;
+  SensorHealth initial_health = 3;
+  repeated string configuration_instructions = 4;
+}
+
+message GetZoneSensorsRequest {
+  int32 zone_id = 1;
+  repeated SensorType sensor_types = 2;
+  bool include_health_status = 3;
+}
+
+message ZoneSensorsResponse {
+  int32 zone_id = 1;
+  repeated SensorInfo sensors = 2;
+  int32 total_sensor_count = 3;
+  google.protobuf.Timestamp last_updated = 4;
+}
+
+message SensorInfo {
+  string sensor_id = 1;
+  SensorType sensor_type = 2;
+  SensorLocation location = 3;
+  SensorHealth health = 4;
+  SensorCapabilities capabilities = 5;
+  google.protobuf.Timestamp last_communication = 6;
+}
+
+message SensorNetworkHealth {
+  int32 total_sensors = 1;
+  int32 active_sensors = 2;
+  int32 offline_sensors = 3;
+  int32 error_sensors = 4;
+  double average_battery_level = 5;
+  double network_uptime_percent = 6;
+  repeated SensorHealthIssue health_issues = 7;
+  google.protobuf.Timestamp report_timestamp = 8;
+}
+
+message SensorHealthIssue {
+  string sensor_id = 1;
+  string issue_type = 2;
+  AlertSeverity severity = 3;
+  string description = 4;
+  google.protobuf.Timestamp detected_at = 5;
+}
+
+message BulkCalibrationRequest {
+  repeated string sensor_ids = 1;
+  CalibrationType calibration_type = 2;
+  bool force_calibration = 3;
+}
+
+enum CalibrationType {
+  STANDARD_CALIBRATION = 0;
+  FACTORY_RESET = 1;
+  FIELD_CALIBRATION = 2;
+  TEMPERATURE_COMPENSATION = 3;
+}
+
+message BulkCalibrationResponse {
+  int32 total_requested = 1;
+  int32 successfully_started = 2;
+  repeated CalibrationResult results = 3;
+}
+
+message CalibrationResult {
+  string sensor_id = 1;
+  bool calibration_started = 2;
+  string status_message = 3;
+  google.protobuf.Timestamp estimated_completion = 4;
+}
+
+message EmergencyShutdownRequest {
+  repeated string sensor_ids = 1;
+  string reason = 2;
+  bool immediate_shutdown = 3;
+}
+
+// Common calibration messages
+message CalibrationRequest {
+  string sensor_id = 1;
+  CalibrationType calibration_type = 2;
+  map<string, string> calibration_parameters = 3;
+}
+
+message CalibrationResponse {
+  bool calibration_started = 1;
+  string calibration_id = 2;
+  int32 estimated_duration_seconds = 3;
+  repeated string calibration_steps = 4;
+}

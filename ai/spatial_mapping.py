@@ -222,7 +222,36 @@ class SpatialMappingEngine:
             "recommendations": recommendations
         }
 
-    def optimize_zone_layout(self, zone_id: int, crop_instances: List[Dict]) -> Dict[str, any]:
+    def get_zone_utilization(self, zone_id: int) -> Dict[str, any]:
+        """
+        Get utilization statistics for a spatial zone.
+
+        Returns zone capacity, current occupancy, and utilization metrics.
+        """
+        zone = self.spatial_zones.get(zone_id)
+        if not zone:
+            return {"error": "Zone not found"}
+
+        occupied_positions = self.occupied_positions.get(zone_id, [])
+        total_positions = len(occupied_positions)
+
+        # Calculate volume utilization
+        zone_volume = (zone.max_x - zone.min_x) * (zone.max_y - zone.min_y) * (zone.max_z - zone.min_z)
+
+        # Estimate occupied volume (simplified)
+        occupied_volume = total_positions * 1.0  # Assume 1 cubic meter per plant
+
+        utilization_rate = min(occupied_volume / zone_volume, 1.0) if zone_volume > 0 else 0
+
+        return {
+            "zone_id": zone_id,
+            "total_positions": total_positions,
+            "utilization_rate": utilization_rate,
+            "capacity_remaining": max(0, 1.0 - utilization_rate),
+            "supports_ground": zone.supports_ground,
+            "supports_mid_canopy": zone.supports_mid_canopy,
+            "supports_upper": zone.supports_upper
+        }
         """
         Optimize the spatial layout of crops in a zone for maximum yield and health.
 
