@@ -1,0 +1,60 @@
+graph TB
+    subgraph "CONCURRENT MULTI-ROBOT OPERATION"
+        U["👤 Farm Manager<br/>Dashboard"]
+        C["☁️ Aegis Backend<br/>FastAPI"]
+        RS["🔗 Robotics Service<br/>gRPC Server"]
+        
+        MB["📨 MQTT Broker<br/>Message Queue"]
+        
+        R1["🤖 ROVER_001<br/>Zone A"]
+        R2["🤖 ROVER_002<br/>Zone B"]
+        R3["🤖 ROVER_003<br/>Zone C"]
+        R4["🤖 ROVER_004<br/>Zone D"]
+        
+        DB["💾 PostgreSQL<br/>Task History"]
+    end
+    
+    U -->|"Click: SPRAY all zones"| C
+    
+    C -->|"Validate Permissions<br/>Create 4 Tasks"| DB
+    
+    C -->|"Parallel gRPC Calls<br/>SendTask(R1,R2,R3,R4)"| RS
+    
+    RS -->|"Publish 4 msgs<br/>Concurrent"| MB
+    
+    MB -->|"Subscribe: robots/R1/cmd"| R1
+    MB -->|"Subscribe: robots/R2/cmd"| R2
+    MB -->|"Subscribe: robots/R3/cmd"| R3
+    MB -->|"Subscribe: robots/R4/cmd"| R4
+    
+    R1 -->|"Status: EXECUTING<br/>Battery: 85%"| MB
+    R2 -->|"Status: EXECUTING<br/>Battery: 82%"| MB
+    R3 -->|"Status: EXECUTING<br/>Battery: 88%"| MB
+    R4 -->|"Status: EXECUTING<br/>Battery: 90%"| MB
+    
+    MB -->|"Aggregate Status"| C
+    
+    C -->|"Update DB<br/>Task Status"| DB
+    
+    C -->|"Real-time WebSocket<br/>Live Status"| U
+    
+    R1 -->|"Complete Zone A<br/>Status: DONE"| MB
+    R2 -->|"Complete Zone B<br/>Status: DONE"| MB
+    R3 -->|"Battery Low!"| MB
+    R4 -->|"Complete Zone D<br/>Status: DONE"| MB
+    
+    MB -->|"Robot Status Updates"| C
+    
+    C -->|"Alert: R3 Low Batt<br/>Auto-dispatch R5"| RS
+    
+    C -->|"Dashboard Shows<br/>3/4 Complete"| U
+    
+    style U fill:#fff3e0
+    style C fill:#fff9c4
+    style RS fill:#e8f5e9
+    style MB fill:#f3e5f5
+    style R1 fill:#c8e6c9
+    style R2 fill:#c8e6c9
+    style R3 fill:#ffccbc
+    style R4 fill:#c8e6c9
+    style DB fill:#bbdefb

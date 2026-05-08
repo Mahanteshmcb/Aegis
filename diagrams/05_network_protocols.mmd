@@ -1,0 +1,86 @@
+graph TB
+    subgraph "COMMUNICATION PROTOCOLS & NETWORK STACK"
+        A["🌐 Arduino Sensor (Tier 1)"]
+        A1["WiFi 2.4GHz"]
+        A2["MQTT Publish"]
+        A3["Low Bandwidth<br/>< 1 Mbps"]
+        
+        R["🤖 ROS 2 Robot (Tier 2)"]
+        R1["WiFi 5GHz"]
+        R2["gRPC + HTTP/2"]
+        R3["High Speed<br/>10-100 Mbps"]
+        
+        D["🚁 Drone (Tier 3)"]
+        D1["WiFi 6 / LTE"]
+        D2["WebSocket +<br/>Manufacturer SDK"]
+        D3["Variable Speed<br/>1-10 Mbps"]
+        
+        GW["📡 Edge Gateway<br/>Raspberry Pi"]
+        GW1["MQTT Broker<br/>Port 1883"]
+        GW2["WiFi AP (2.4+5GHz)"]
+        
+        CLOUD["☁️ Cloud Backend"]
+        BACKEND["FastAPI<br/>Port 8000"]
+        DB["PostgreSQL<br/>Port 5432"]
+        CACHE["Redis<br/>Port 6379"]
+        
+        GRPC["gRPC Servers"]
+        RS["RoboticsService<br/>Port 50052"]
+        VS["VryndaraService<br/>Port 50051"]
+    end
+    
+    A -->|WiFi| A1
+    A1 -->|Publish| A2
+    A2 -->|Rate| A3
+    
+    R -->|WiFi| R1
+    R1 -->|Call| R2
+    R2 -->|Rate| R3
+    
+    D -->|Wireless| D1
+    D1 -->|Stream| D2
+    D2 -->|Rate| D3
+    
+    A2 -->|MQTT| GW1
+    R2 -->|gRPC| GRPC
+    D2 -->|API| CLOUD
+    
+    GW1 ---|ethernet| GW
+    GW2 ---|covers 100m| A
+    GW2 ---|covers 50m| R
+    
+    GW -->|HTTP REST| BACKEND
+    BACKEND -->|SQL| DB
+    BACKEND -->|Key-Value| CACHE
+    
+    GRPC -->|Query| DB
+    
+    RS ---|manages| R
+    VS ---|analyzes| D
+    
+    BACKEND -->|Coordinates| RS
+    BACKEND -->|Calls| VS
+    
+    subgraph "LATENCY PROFILE"
+        L1["Arduino → Aegis: 100-500ms"]
+        L2["Robot → Aegis: 50-200ms"]
+        L3["Drone → Aegis: 200-1000ms"]
+        L4["Dashboard Refresh: < 1s"]
+    end
+    
+    subgraph "NETWORK ARCHITECTURE"
+        N1["WIFI: Ubiquiti UniFi"]
+        N1A["Main AP: 5GHz for robots"]
+        N1B["Secondary: 2.4GHz for Arduino"]
+        N2["ETHERNET: Gigabit to cloud"]
+        N3["4G/5G: Backup uplink"]
+        N4["VPN: Secure tunnel"]
+    end
+    
+    style A fill:#e1f5ff
+    style R fill:#fff3e0
+    style D fill:#f3e5f5
+    style GW fill:#e8f5e9
+    style CLOUD fill:#fff9c4
+    style BACKEND fill:#ffe0b2
+    style GRPC fill:#f0f4c3

@@ -1,0 +1,125 @@
+graph TB
+    subgraph "TIER 1: IoT SENSORS - Arduino"
+        T1["Hardware Stack"]
+        T1A["Arduino MKR WiFi 1010<br/>32-bit ARM, 32KB RAM<br/>$40-60"]
+        T1B["Sensors"]
+        T1B1["🌡️ DHT22<br/>Temp/Humidity"]
+        T1B2["💧 Capacitive<br/>Soil Moisture"]
+        T1B3["☀️ BH1750<br/>Light Level"]
+        T1B4["💨 MH-Z19<br/>CO2"]
+        
+        T1C["Software"]
+        T1C1["Language: C++<br/>Arduino IDE"]
+        T1C1A["Read sensors<br/>every 30s"]
+        T1C1B["Publish MQTT"]
+        T1C1C["WiFi + Low Power"]
+        
+        T1D["Power"]
+        T1D1["3.3V @ 80mA<br/>30-day battery<br/>+ Solar"]
+        
+        T1 ---|contains| T1A
+        T1A ---|has| T1B
+        T1B ---|includes| T1B1
+        T1B ---|includes| T1B2
+        T1B ---|includes| T1B3
+        T1B ---|includes| T1B4
+        T1 ---|runs| T1C
+        T1C1 ---|implements| T1C1A
+        T1C1 ---|implements| T1C1B
+        T1C1 ---|implements| T1C1C
+        T1 ---|powered by| T1D
+    end
+    
+    subgraph "TIER 2: GROUND ROBOTS - ROS 2 Humble"
+        T2["Hardware Stack"]
+        T2A["Jetson Xavier NX<br/>8-core ARM, 8GB RAM<br/>$400"]
+        T2B["Sensors"]
+        T2B1["📡 RPLIDAR A2M8<br/>360° Scanning"]
+        T2B2["📸 RealSense D435i<br/>RGB-D Camera"]
+        T2B3["🧭 BNO055<br/>IMU"]
+        T2B4["⚙️ Wheel Encoders"]
+        
+        T2C["Actuators"]
+        T2C1["🔌 12V Motors<br/>+ PWM Driver"]
+        T2C2["💦 Spray Pump<br/>Solenoid"]
+        T2C3["🎯 Servo<br/>Gripper"]
+        
+        T2D["Software"]
+        T2D1["OS: Ubuntu 22.04<br/>ROS 2 Humble"]
+        T2D1A["Nav2: SLAM +<br/>Path Planning"]
+        T2D1B["Sensor Fusion:<br/>Multi-sensor"]
+        T2D1C["Task Executor:<br/>SPRAY/PLANT"]
+        
+        T2E["Power"]
+        T2E1["24V LiPo<br/>8S Battery<br/>4-6 hour ops"]
+        
+        T2 ---|contains| T2A
+        T2A ---|has| T2B
+        T2B ---|includes| T2B1
+        T2B ---|includes| T2B2
+        T2B ---|includes| T2B3
+        T2B ---|includes| T2B4
+        T2A ---|controls| T2C
+        T2C ---|includes| T2C1
+        T2C ---|includes| T2C2
+        T2C ---|includes| T2C3
+        T2 ---|runs| T2D
+        T2D1 ---|implements| T2D1A
+        T2D1 ---|implements| T2D1B
+        T2D1 ---|implements| T2D1C
+        T2 ---|powered by| T2E
+    end
+    
+    subgraph "TIER 3: AERIAL DRONES - Commercial SDK"
+        T3["Hardware Stack"]
+        T3A["DJI Matrice 300 RTK<br/>Quad Rotor<br/>$15,000"]
+        T3B["Payload"]
+        T3B1["📷 Zenmuse P1<br/>45MP Full-frame"]
+        T3B2["📡 RTK Module<br/>2cm Accuracy"]
+        T3B3["🔌 Power<br/>Payload Port"]
+        
+        T3C["Software"]
+        T3C1["SDK: DJI PSDK<br/>Language: Python"]
+        T3C1A["Waypoint<br/>Missions"]
+        T3C1B["Photo<br/>Capture"]
+        T3C1C["Real-time<br/>Telemetry"]
+        
+        T3D["Power"]
+        T3D1["3x TB65<br/>Batteries<br/>45min flight"]
+        
+        T3E["Range & Connectivity"]
+        T3E1["WiFi 6:<br/>2 km range<br/>OcuSync"]
+        
+        T3 ---|contains| T3A
+        T3A ---|carries| T3B
+        T3B ---|includes| T3B1
+        T3B ---|includes| T3B2
+        T3B ---|includes| T3B3
+        T3 ---|runs| T3C
+        T3C1 ---|enables| T3C1A
+        T3C1 ---|enables| T3C1B
+        T3C1 ---|enables| T3C1C
+        T3 ---|powered by| T3D
+        T3 ---|connects via| T3E
+    end
+    
+    MQTT_BROKER["🔄 MQTT Broker<br/>Raspberry Pi Gateway"]
+    ROBOTICS_SERVICE["🔄 Robotics Service<br/>Fleet Coordination"]
+    CLOUD_BACKEND["🔄 Cloud Backend<br/>Aegis FastAPI"]
+    DATABASE["💾 Aegis Database<br/>PostgreSQL"]
+    
+    T1 -->|MQTT| MQTT_BROKER
+    T2 -->|gRPC| ROBOTICS_SERVICE
+    T3 -->|WebSocket| CLOUD_BACKEND
+    
+    MQTT_BROKER -->|HTTP REST| DATABASE
+    ROBOTICS_SERVICE -->|Query/Update| DATABASE
+    CLOUD_BACKEND -->|Manage| DATABASE
+    
+    style T1 fill:#e1f5ff
+    style T2 fill:#fff3e0
+    style T3 fill:#f3e5f5
+    style MQTT_BROKER fill:#e8f5e9
+    style ROBOTICS_SERVICE fill:#e8f5e9
+    style CLOUD_BACKEND fill:#ffecb3
+    style DATABASE fill:#e0f7fa

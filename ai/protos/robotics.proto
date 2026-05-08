@@ -1,0 +1,308 @@
+syntax = "proto3";
+
+package robotics;
+
+/**
+ * Aegis Biosphere Protocol - Robotic Fleet Communication Contracts
+ * 
+ * Defines gRPC services and messages for:
+ * - AegisRover (heavy overseer, estate-wide navigation)
+ * - AgriSwarmBot (micro crawlers, precision ground operations)
+ * - CanopyDrone (vertical operations, canopy inspection and manipulation)
+ * 
+ * Date: May 8, 2026
+ * Protocol Version: 1.0
+ */
+
+// ============================================================================
+// CORE ROBOTIC UNIT DEFINITIONS
+// ============================================================================
+
+/**
+ * RobotType: Enumeration of supported robotic platforms in Aegis ecosystem
+ */
+enum RobotType {
+  ROBOT_TYPE_UNSPECIFIED = 0;
+  AEGIS_ROVER = 1;           // Heavy overseer: navigation, mapping, surveying
+  AGRI_SWARM_BOT = 2;        // Micro-bot: ground operations, harvesting, precision work
+  CANOPY_DRONE = 3;          // Aerial: vertical movement, inspection, pruning
+}
+
+/**
+ * RobotStatus: Operational state of a robotic unit
+ */
+enum RobotStatus {
+  STATUS_UNSPECIFIED = 0;
+  IDLE = 1;                  // Not executing tasks, ready for commands
+  EXECUTING = 2;             // Currently executing assigned task
+  CHARGING = 3;              // Connected to charging station
+  MAINTENANCE = 4;           // Undergoing maintenance or diagnostics
+  ERROR = 5;                 // System error, needs intervention
+  OFFLINE = 6;               // Communication lost or powered down
+}
+
+/**
+ * CommandResult: Outcome of a robotic command execution
+ */
+enum CommandResult {
+  RESULT_UNSPECIFIED = 0;
+  SUCCESS = 1;               // Command executed successfully
+  PARTIAL = 2;               // Command partially executed
+  FAILED = 3;                // Command execution failed
+  TIMEOUT = 4;               // Command execution timed out
+  CANCELLED = 5;             // Command was cancelled mid-execution
+  INVALID = 6;               // Command was invalid and rejected
+}
+
+// ============================================================================
+// ROBOTIC UNIT IDENTITY & HEALTH
+// ============================================================================
+
+/**
+ * RobotIdentity: Unique identifier and metadata for a robotic unit
+ */
+message RobotIdentity {
+  string robot_id = 1;                    // Unique ID (e.g., "ROVER-001", "BOT-045")
+  RobotType type = 2;                     // Type of robotic unit
+  string firmware_version = 3;            // Current firmware version
+  int32 model_year = 4;                   // Manufacturing year
+  map<string, string> capabilities = 5;   // Key capabilities (e.g., "max_payload_kg": "50")
+}
+
+/**
+ * RobotHealth: Health metrics and diagnostics for a robotic unit
+ */
+message RobotHealth {
+  RobotStatus status = 1;                 // Current operational status
+  int32 battery_percent = 2;              // Battery level (0-100)
+  float cpu_temp_celsius = 3;             // CPU temperature
+  int32 motor_health_percent = 4;         // Motor condition (0-100)
+  repeated string warnings = 5;           // Active warnings
+  repeated string errors = 6;             // Active errors
+  int64 uptime_seconds = 7;               // Time since last reboot
+  int64 last_heartbeat_timestamp_ms = 8;  // Timestamp of last communication
+}
+
+// ============================================================================
+// NAVIGATION & SPATIAL COMMANDS
+// ============================================================================
+
+/**
+ * Coordinate3D: 3D position in the biosphere ecosystem
+ * Uses absolute positioning relative to estate origin (0,0,0)
+ * Units: meters
+ */
+message Coordinate3D {
+  float x = 1;  // Horizontal (East-West)
+  float y = 2;  // Horizontal (North-South)
+  float z = 3;  // Vertical (Up-Down)
+}
+
+/**
+ * NavigationTarget: Target destination with optional waypoints for path planning
+ */
+message NavigationTarget {
+  Coordinate3D destination = 1;           // Final destination
+  repeated Coordinate3D waypoints = 2;    // Optional intermediate waypoints
+  float speed_percent = 3;                // Movement speed as percentage (1-100)
+  bool use_obstacles_map = 4;             // Whether to use stored obstacle maps
+}
+
+/**
+ * NavigationCommand: Instruction to move a robotic unit
+ */
+message NavigationCommand {
+  string command_id = 1;                  // Unique command identifier
+  NavigationTarget target = 2;            // Navigation target and path
+  int32 timeout_seconds = 3;              // Command timeout
+  string zone_id = 4;                     // Restricted zone for operations
+}
+
+/**
+ * NavigationStatus: Real-time navigation feedback
+ */
+message NavigationStatus {
+  string command_id = 1;                  // Corresponding command ID
+  Coordinate3D current_position = 2;      // Current robot position
+  float distance_to_target_m = 3;         // Distance to destination (meters)
+  float heading_degrees = 4;              // Heading angle (0-360)
+  float speed_mps = 5;                    // Current speed (meters/second)
+}
+
+// ============================================================================
+// TASK & OPERATION COMMANDS
+// ============================================================================
+
+/**
+ * OperationType: Categories of robotic operations beyond navigation
+ */
+enum OperationType {
+  OPERATION_UNSPECIFIED = 0;
+  HARVEST = 1;               // Crop harvesting
+  PLANT = 2;                 // Planting seeds/seedlings
+  INSPECT = 3;               // Visual inspection of crops
+  PRUNE = 4;                 // Pruning branches or leaves
+  SPRAY = 5;                 // Apply treatments (pesticide, fertilizer)
+  SAMPLE = 6;                // Collect samples (soil, plant tissue)
+  MAINTAIN = 7;              // Maintenance work on infrastructure
+}
+
+/**
+ * HarvestTask: Task definition for crop harvesting operations
+ */
+message HarvestTask {
+  string crop_id = 1;                     // ID of crop to harvest
+  Coordinate3D location = 2;              // Location of crop in 3D space
+  string crop_species = 3;                // Biological species (e.g., "Solanum lycopersicum")
+  int32 estimated_yield_kg = 4;           // Estimated weight of harvest
+  bool use_gentle_mode = 5;               // Gentle handling for delicate crops
+}
+
+/**
+ * InspectionTask: Task definition for visual inspection
+ */
+message InspectionTask {
+  string zone_id = 1;                     // Zone to inspect
+  string focus_area = 2;                  // Specific area of focus (e.g., "leaves", "root_system")
+  bool collect_images = 3;                // Whether to capture images
+  bool run_health_analysis = 4;           // Whether to perform ML-based health analysis
+  int32 inspection_resolution_megapixels = 5;  // Camera resolution
+}
+
+/**
+ * RoboticTask: General-purpose task command for robotic operations
+ */
+message RoboticTask {
+  string task_id = 1;                     // Unique task identifier
+  string robot_id = 2;                    // Target robot ID
+  OperationType operation_type = 3;       // Type of operation
+  int32 priority = 4;                     // Priority level (1-10, higher = more urgent)
+  
+  oneof task_detail {
+    NavigationCommand navigation = 5;     // Navigation-specific details
+    HarvestTask harvest = 6;              // Harvest operation
+    InspectionTask inspection = 7;        // Inspection operation
+  }
+  
+  int32 timeout_seconds = 8;              // Task timeout
+  map<string, string> metadata = 9;       // Additional metadata (e.g., "batch_id": "BATCH-2026-05")
+}
+
+/**
+ * TaskResult: Completion status and results of a robotic task
+ */
+message TaskResult {
+  string task_id = 1;                     // Corresponding task ID
+  CommandResult result = 2;               // Success/failure/partial status
+  string status_message = 3;              // Human-readable status
+  int32 completion_percent = 4;           // Percentage complete (0-100)
+  int64 execution_time_ms = 5;            // Time taken to execute (milliseconds)
+  map<string, string> metrics = 6;        // Operation metrics (e.g., "harvest_weight_kg": "12.5")
+}
+
+// ============================================================================
+// SENSOR & ENVIRONMENTAL DATA
+// ============================================================================
+
+/**
+ * EnvironmentalReading: Environmental data collected by robotic unit sensors
+ */
+message EnvironmentalReading {
+  Coordinate3D location = 1;              // Location where reading was taken
+  float temperature_celsius = 2;          // Ambient temperature
+  float humidity_percent = 3;             // Relative humidity (0-100)
+  float light_lux = 4;                    // Light intensity
+  float air_quality_ppm = 5;              // Air quality (CO2 or particulates)
+  int64 timestamp_ms = 6;                 // Reading timestamp
+}
+
+/**
+ * SensorData: Sensor readings from robotic unit
+ */
+message SensorData {
+  string robot_id = 1;                    // Reporting robot ID
+  RobotHealth health = 2;                 // Robot health metrics
+  EnvironmentalReading environment = 3;   // Environmental readings
+  repeated string observations = 4;       // Free-form observations from robot
+  int64 timestamp_ms = 5;                 // Data collection timestamp
+}
+
+// ============================================================================
+// AUTHENTICATION & AUTHORIZATION
+// ============================================================================
+
+/**
+ * RobotAuthRequest: Authentication request from robotic unit
+ */
+message RobotAuthRequest {
+  string robot_id = 1;                    // Robot identifier
+  string serial_number = 2;               // Physical serial number
+  string firmware_version = 3;            // Current firmware
+  bytes signature = 4;                    // Cryptographic signature of request
+  int64 timestamp_ms = 5;                 // Request timestamp
+}
+
+/**
+ * RobotAuthResponse: Authentication token and authorization info
+ */
+message RobotAuthResponse {
+  bool authenticated = 1;                 // Authentication success
+  string auth_token = 2;                  // Session token for commands
+  int32 token_expires_in_seconds = 3;     // Token expiration time
+  repeated string authorized_operations = 4;  // Allowed operations for this robot
+  repeated string authorized_zones = 5;   // Allowed zones for this robot
+}
+
+// ============================================================================
+// ROBOTIC FLEET SERVICE DEFINITION
+// ============================================================================
+
+service RoboticFleetService {
+  /**
+   * RegisterRobot: Initial registration and authentication of a robotic unit
+   */
+  rpc RegisterRobot(RobotIdentity) returns (RobotAuthResponse);
+
+  /**
+   * GetRobotHealth: Retrieve current health metrics for a robotic unit
+   */
+  rpc GetRobotHealth(RobotIdentity) returns (RobotHealth);
+
+  /**
+   * SendTask: Dispatch a task to a robotic unit
+   */
+  rpc SendTask(RoboticTask) returns (TaskResult);
+
+  /**
+   * NavigateTo: Direct a robot to a specific location
+   */
+  rpc NavigateTo(NavigationCommand) returns (NavigationStatus);
+
+  /**
+   * GetNavigationStatus: Get real-time navigation feedback
+   */
+  rpc GetNavigationStatus(RobotIdentity) returns (stream NavigationStatus);
+
+  /**
+   * ReportSensorData: Robotic unit sends sensor and health data to backend
+   */
+  rpc ReportSensorData(SensorData) returns (google.protobuf.Empty);
+
+  /**
+   * EmergencyStop: Immediately halt a robotic unit (safety critical)
+   */
+  rpc EmergencyStop(RobotIdentity) returns (google.protobuf.Empty);
+
+  /**
+   * CancelTask: Cancel an ongoing task execution
+   */
+  rpc CancelTask(RobotIdentity) returns (google.protobuf.Empty);
+
+  /**
+   * ListActiveRobots: Get list of currently active robotic units with status
+   */
+  rpc ListActiveRobots(google.protobuf.Empty) returns (stream RobotHealth);
+}
+
+// Import standard Google types
+import "google/protobuf/empty.proto";

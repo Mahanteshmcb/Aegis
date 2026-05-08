@@ -1,0 +1,41 @@
+graph LR
+    subgraph "SENSOR DATA FLOW"
+        S1["🌡️ Arduino Reads<br/>Temp: 22.5°C"]
+        S2["📤 MQTT Publish<br/>sensors/temp"]
+        S3["📨 Broker Receives"]
+        S4["🔄 REST to Aegis<br/>POST /sensors/data"]
+        S5["💾 PostgreSQL<br/>SensorData Table"]
+        S6["📊 Dashboard<br/>Chart Display"]
+    end
+    
+    S1 -->|every 30s| S2
+    S2 -->|WiFi| S3
+    S3 -->|Python Script| S4
+    S4 -->|HTTP| S5
+    S5 -->|JSON Query| S6
+    
+    subgraph "ACTUATOR CONTROL FLOW"
+        A1["👤 User Clicks<br/>Spray Task"]
+        A2["📝 REST Request<br/>POST /tasks"]
+        A3["🛡️ Validate JWT<br/>Check Permission"]
+        A4["📄 Store in DB<br/>Task = PENDING"]
+        A5["🔗 Send gRPC<br/>RoboticsService"]
+        A6["📢 MQTT Publish<br/>robots/cmd"]
+        A7["🤖 Robot Executes<br/>Activate Pump"]
+        A8["📊 Report Status<br/>Task = COMPLETED"]
+    end
+    
+    A1 -->|clicks| A2
+    A2 -->|HTTPS| A3
+    A3 -->|valid| A4
+    A4 -->|stored| A5
+    A5 -->|async| A6
+    A6 -->|subscribe| A7
+    A7 -->|feedback| A8
+    
+    style S1 fill:#e1f5ff
+    style S5 fill:#fff9c4
+    style S6 fill:#c8e6c9
+    style A1 fill:#ffe0b2
+    style A7 fill:#fff3e0
+    style A8 fill:#c8e6c9

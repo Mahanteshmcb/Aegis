@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     vryndara_port: int = Field(50051, env="VRYNDARA_PORT")
     vryndara_timeout: int = Field(5, env="VRYNDARA_TIMEOUT")
     vryndara_fallback_enabled: bool = Field(True, env="VRYNDARA_FALLBACK_ENABLED")
+
+    # Robotics Configuration
+    robotics_host: str = Field("localhost", env="ROBOTICS_HOST")
+    robotics_port: int = Field(50052, env="ROBOTICS_PORT")
+    robotics_timeout: int = Field(5, env="ROBOTICS_TIMEOUT")
+    robotics_fallback_enabled: bool = Field(True, env="ROBOTICS_FALLBACK_ENABLED")
     
     # Logging Configuration
     log_level: str = Field("INFO", env="LOG_LEVEL")

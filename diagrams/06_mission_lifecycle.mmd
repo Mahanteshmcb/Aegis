@@ -1,0 +1,111 @@
+graph LR
+    subgraph "COMPLETE MISSION LIFECYCLE"
+        P["📋 PLANNING PHASE"]
+        P1["User defines mission<br/>in dashboard"]
+        P2["Select zones,<br/>robots, operation"]
+        P3["Set parameters<br/>SPRAY: 50L"]
+        
+        V["🛡️ VALIDATION PHASE"]
+        V1["Authenticate JWT"]
+        V2["Check permissions<br/>RBAC"]
+        V3["Verify robot<br/>availability"]
+        V4["Weather check<br/>Wind < 10 kts"]
+        
+        D["📝 DATABASE PHASE"]
+        D1["Create RoboticTask<br/>status=PENDING"]
+        D2["Record mission<br/>in audit log"]
+        D3["Save parameters<br/>in task_detail"]
+        
+        C["📢 COORDINATION PHASE"]
+        C1["Call gRPC<br/>SendTask"]
+        C2["Parallel dispatch<br/>to all robots"]
+        C3["Publish MQTT<br/>robots/cmd"]
+        
+        E["⚙️ EXECUTION PHASE"]
+        E1["Robot receives<br/>task from MQTT"]
+        E2["Activate motors<br/>& sensors"]
+        E3["Navigate to zone<br/>via Nav2 SLAM"]
+        E4["Execute operation<br/>SPRAY liquid"]
+        E5["Collect sensor<br/>data during task"]
+        
+        M["📊 MONITORING PHASE"]
+        M1["Robot publishes<br/>status every 5s"]
+        M2["Aegis receives<br/>via MQTT"]
+        M3["Update DB<br/>task progress"]
+        M4["Dashboard<br/>live refresh"]
+        M5["Alert on anomalies<br/>battery, error"]
+        
+        CM["🔄 COMPLETION PHASE"]
+        CM1["Robot finishes<br/>task, deactivates"]
+        CM2["Reports final<br/>status COMPLETED"]
+        CM3["Aegis stores<br/>mission results"]
+        CM4["AI analyzes<br/>collected data"]
+        CM5["Generate report<br/>efficiency, yield"]
+        
+        A["📈 ANALYSIS PHASE"]
+        A1["Vryndara processes<br/>images"]
+        A2["Detect issues<br/>pests, disease"]
+        A3["Compare vs<br/>baseline"]
+        A4["Store findings<br/>in research DB"]
+        
+        F["✅ FINALIZATION PHASE"]
+        F1["Archive mission<br/>in database"]
+        F2["Export report<br/>PDF/JSON"]
+        F3["Notify user<br/>mission complete"]
+        F4["Update KPIs<br/>fleet performance"]
+    end
+    
+    P1 --> P2
+    P2 --> P3
+    P3 -->|submit| V
+    
+    V1 --> V2
+    V2 --> V3
+    V3 --> V4
+    V4 -->|all pass| D
+    
+    D1 --> D2
+    D2 --> D3
+    D3 -->|ready| C
+    
+    C1 --> C2
+    C2 --> C3
+    C3 -->|sent| E
+    
+    E1 --> E2
+    E2 --> E3
+    E3 --> E4
+    E4 --> E5
+    E5 -->|executing| M
+    
+    M1 --> M2
+    M2 --> M3
+    M3 --> M4
+    M4 --> M5
+    M5 -->|task done| CM
+    
+    CM1 --> CM2
+    CM2 --> CM3
+    CM3 --> CM4
+    CM4 --> CM5
+    CM5 -->|results ready| A
+    
+    A1 --> A2
+    A2 --> A3
+    A3 --> A4
+    A4 -->|analysis done| F
+    
+    F1 --> F2
+    F2 --> F3
+    F3 --> F4
+    F4 -->|archived|done
+    
+    style P fill:#fff3e0
+    style V fill:#ffe0b2
+    style D fill:#fff9c4
+    style C fill:#f0f4c3
+    style E fill:#c8e6c9
+    style M fill:#b2dfdb
+    style CM fill:#b3e5fc
+    style A fill:#f8bbd0
+    style F fill:#e1bee7

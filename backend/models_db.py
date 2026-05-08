@@ -20,7 +20,7 @@ class Tenant(Base):
 
     sensors = relationship("Sensor", back_populates="tenant")
     zones = relationship("Zone", back_populates="tenant")
-    users = relationship("User", back_populates="users")
+    users = relationship("User", back_populates="tenant")
     audit_logs = relationship("AuditLog", back_populates="tenant")
 
 

@@ -1,0 +1,54 @@
+graph TB
+    subgraph "IoT & Device Layer"
+        A1["🔧 Arduino Sensors<br/>DHT22, Soil, pH<br/>WiFi/MQTT"]
+        A2["🤖 ROS 2 Robots<br/>Jetson + LiDAR<br/>Autonomous Ops"]
+        A3["🚁 Commercial Drones<br/>DJI RTK<br/>Survey/Inspect"]
+    end
+    
+    subgraph "Edge Gateway"
+        B1["Raspberry Pi Gateway<br/>MQTT Broker<br/>Local Aggregation"]
+    end
+    
+    subgraph "Cloud Backend Layer"
+        C1["FastAPI Server<br/>REST APIs<br/>Authentication"]
+        C2["PostgreSQL DB<br/>Multi-tenant<br/>Time-series Data"]
+        C3["Redis Cache<br/>Session Storage<br/>Task Queue"]
+    end
+    
+    subgraph "Specialized Services"
+        D1["RoboticsService<br/>gRPC<br/>Fleet Coordination"]
+        D2["Vryndara<br/>AI/ML Engine<br/>Image Analysis"]
+        D3["Audit Service<br/>Compliance<br/>Logging"]
+    end
+    
+    subgraph "Frontend & Integration"
+        E1["Web Dashboard<br/>React/Next.js<br/>Real-time UI"]
+        E2["Mobile App<br/>iOS/Android<br/>Field Control"]
+    end
+    
+    A1 -->|MQTT| B1
+    A2 -->|gRPC| D1
+    A3 -->|WebSocket| C1
+    
+    B1 -->|HTTP REST| C1
+    C1 -->|Queries| C2
+    C1 -->|Session| C3
+    
+    C1 -.->|Task Commands| D1
+    D1 -->|MQTT| A2
+    D1 -.->|MQTT| A3
+    
+    C1 -->|Images| D2
+    D2 -->|Results| C1
+    
+    C1 -.->|Audit Logs| D3
+    
+    C1 -->|API| E1
+    C1 -->|API| E2
+    
+    style A1 fill:#e1f5ff
+    style A2 fill:#fff3e0
+    style A3 fill:#f3e5f5
+    style D1 fill:#e8f5e9
+    style D2 fill:#fce4ec
+    style C1 fill:#fff9c4
