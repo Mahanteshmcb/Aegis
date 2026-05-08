@@ -17,7 +17,7 @@ from backend.exceptions import AegisException
 from backend.middleware import setup_cors_middleware, setup_custom_middleware, setup_production_security_middleware
 
 # Import routers
-from backend.routers import auth, zones, sensors, research, health, audit, tenants, robotics
+from backend.routers import auth, zones, sensors, research, health, audit, tenants, robotics, spatial
 
 # Configure logging
 logging.basicConfig(
@@ -186,6 +186,7 @@ app.include_router(zones.router)
 app.include_router(sensors.router)
 app.include_router(research.router)
 app.include_router(robotics.router)
+app.include_router(spatial.router)
 app.include_router(audit.router)
 
 if __name__ == "__main__":
