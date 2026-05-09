@@ -2,14 +2,17 @@
 # Succession & Orchestration Engine for Autonomous Agricultural Management
 
 import asyncio
+import json
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from enum import Enum
-import json
 
 from ai.spatial_mapping import spatial_engine, VerticalLayer, Coordinate3D, CropProfile
+from ai.acoustic_pest_recognition import AcousticPestRecognitionEngine
+from ai.soil_health_prediction import SoilHealthPredictionEngine
 from ai.vryndara_connector import VryndaraConnector
 from ai.robotics_connector import RoboticsConnector
 
@@ -78,6 +81,8 @@ class SuccessionOrchestrationEngine:
         self.succession_plans: Dict[int, SuccessionPlan] = {}
         self.active_triggers: List[OrchestrationTrigger] = []
         self.decision_history: List[Dict[str, Any]] = []
+        self.acoustic_recognition = AcousticPestRecognitionEngine()
+        self.soil_health_prediction = SoilHealthPredictionEngine()
 
     async def initialize_succession_plans(self, zone_configs: List[Dict[str, Any]]):
         """Initialize succession plans for all zones based on configuration."""
@@ -232,23 +237,32 @@ class SuccessionOrchestrationEngine:
         return triggers
 
     async def _evaluate_soil_depletion(self, context: DecisionContext) -> List[OrchestrationTrigger]:
-        """Evaluate soil nutrient depletion and trigger remediation."""
+        """Evaluate soil nutrient depletion and trigger remediation using ML predictions."""
         triggers = []
 
         for nutrient, current_level in context.soil_conditions.items():
             target_level = self.succession_plans[context.zone_id].soil_health_targets.get(nutrient, 0.5)
 
             if current_level < target_level * 0.7:  # 30% below target
+                # Get ML-based recommendations
+                status = "CRITICAL" if current_level < target_level * 0.3 else "DEFICIENT"
+                recommendations = self.soil_health_prediction.get_rehabilitation_recommendations({
+                    nutrient: current_level
+                })
+
+                priority = 8 if status == "CRITICAL" else 7
                 trigger = OrchestrationTrigger(
                     event_type=SuccessionEvent.SOIL_DEPLETION,
                     zone_id=context.zone_id,
                     crop_instance_id=None,
-                    priority=7,
+                    priority=priority,
                     trigger_time=context.current_time,
                     parameters={
                         'nutrient': nutrient,
                         'current_level': current_level,
-                        'target_level': target_level
+                        'target_level': target_level,
+                        'status': status,
+                        'recommendations': recommendations
                     },
                     robotic_actions=[RoboticAction.APPLY_FERTILIZER, RoboticAction.SOIL_TESTING]
                 )
@@ -429,7 +443,65 @@ class SuccessionOrchestrationEngine:
 
     # Placeholder methods for sensor integration (would be implemented with actual sensors)
     async def _gather_sensor_data(self, zone_id: int) -> Dict[str, Any]:
-        return {'mock': True}  # Placeholder
+        # Generate pseudo-real acoustic anomalies using the acoustic recognition engine.
+        acoustic_anomalies = []
+        for _ in range(2):
+            habitat_data = {
+                'background_noise_level': random.uniform(20, 40),
+                'temperature_c': random.uniform(18, 30),
+                'humidity_percent': random.uniform(45, 80),
+                'wind_speed_ms': random.uniform(0, 4)
+            }
+            frequency_hz = random.uniform(20, 2000)
+            amplitude = random.uniform(0.1, 1.0)
+            prediction = self.acoustic_recognition.predict_from_detection_features(
+                frequency_hz=frequency_hz,
+                amplitude=amplitude,
+                background_noise=habitat_data['background_noise_level'],
+                temperature_c=habitat_data['temperature_c'],
+                humidity_percent=habitat_data['humidity_percent'],
+                wind_speed_ms=habitat_data['wind_speed_ms']
+            )
+
+            acoustic_anomalies.append({
+                'pest_type': prediction['pest_type'],
+                'confidence': prediction['confidence'],
+                'location': {
+                    'x': random.uniform(0.0, 10.0),
+                    'y': random.uniform(0.0, 10.0),
+                    'z': 0.0
+                },
+                'severity': 'critical' if prediction['confidence'] > 0.85 else 'elevated',
+                'frequency_hz': frequency_hz,
+                'amplitude': amplitude,
+                'environment': habitat_data
+            })
+
+        # Generate soil health predictions from mycelial sensor data
+        soil_predictions = self.soil_health_prediction.predict_from_mycelial_data(
+            biomass=random.uniform(0.2, 0.8),
+            nutrient_transport=random.uniform(20.0, 80.0),
+            water_content=random.uniform(0.3, 0.9),
+            ph_level=random.uniform(5.5, 7.5),
+            electrical_activity=random.uniform(1.0, 5.0),
+            spore_concentration=random.uniform(100.0, 1000.0),
+            root_colonization=random.uniform(0.2, 0.8),
+            decomposition_rate=random.uniform(0.01, 0.1)
+        )
+
+        soil_recommendations = self.soil_health_prediction.get_rehabilitation_recommendations(soil_predictions)
+
+        return {
+            'acoustic_anomalies': acoustic_anomalies,
+            'soil_predictions': {
+                'nitrogen': soil_predictions.get('nitrogen'),
+                'phosphorus': soil_predictions.get('phosphorus'),
+                'potassium': soil_predictions.get('potassium'),
+                'status': soil_predictions.get('status'),
+                'recommendations': soil_recommendations
+            },
+            'mock': True
+        }
 
     async def _analyze_spatial_layout(self, zone_id: int) -> Dict[str, Any]:
         return spatial_engine.get_zone_utilization(zone_id)

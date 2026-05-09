@@ -31,6 +31,7 @@ from ai.protos.sensors_pb2_grpc import (
     add_AcousticPestMonitorServiceServicer_to_server,
     add_SensorManagementServiceServicer_to_server
 )
+from ai.acoustic_pest_recognition import AcousticPestRecognitionEngine
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,7 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
 
     def __init__(self):
         self.active_scans: Dict[str, Dict] = {}
+        self.recognition_engine = AcousticPestRecognitionEngine()
 
     async def StreamAcousticData(self, request: StreamAcousticDataRequest,
                                 context) -> AsyncGenerator[AcousticData, None]:
@@ -209,16 +211,38 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
             while not context.is_active():
                 await asyncio.sleep(request.sampling_interval_ms / 1000.0)
 
-                # Generate mock acoustic detections
+                # Generate mock acoustic detections using the recognition engine
                 detections = []
+                frequency_hz = random.uniform(20, 2000)
+                amplitude = random.uniform(0.1, 1.0)
+                environment = AcousticEnvironment(
+                    background_noise_level=random.uniform(20, 40),
+                    wind_speed_ms=random.uniform(0, 5),
+                    temperature_c=random.uniform(15, 30),
+                    humidity_percent=random.uniform(40, 80),
+                    weather_conditions="clear"
+                )
+
                 if random.random() < 0.3:  # 30% chance of detection
-                    pest_type = random.choice(list(PestType))
+                    prediction = self.recognition_engine.predict_from_detection_features(
+                        frequency_hz=frequency_hz,
+                        amplitude=amplitude,
+                        background_noise=environment.background_noise_level,
+                        temperature_c=environment.temperature_c,
+                        humidity_percent=environment.humidity_percent,
+                        wind_speed_ms=environment.wind_speed_ms
+                    )
+
+                    pest_type_name = prediction.get('pest_type', 'UNKNOWN')
+                    pest_type = getattr(PestType, pest_type_name, PestType.UNKNOWN)
+                    confidence_score = prediction.get('confidence', 0.0)
+
                     if pest_type != PestType.UNKNOWN:
                         detection = AcousticDetection(
                             pest_type=pest_type,
-                            confidence_score=random.uniform(0.6, 0.95),
-                            frequency_hz=random.uniform(20, 2000),
-                            amplitude=random.uniform(0.1, 1.0),
+                            confidence_score=confidence_score,
+                            frequency_hz=frequency_hz,
+                            amplitude=amplitude,
                             estimated_location=Coordinate3D(
                                 x=request.location.position.x + random.uniform(-2, 2),
                                 y=request.location.position.y + random.uniform(-2, 2),
@@ -228,15 +252,6 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
                         )
                         detection.detection_time.FromDatetime(datetime.now())
                         detections.append(detection)
-
-                # Create environment data
-                environment = AcousticEnvironment(
-                    background_noise_level=random.uniform(20, 40),
-                    wind_speed_ms=random.uniform(0, 5),
-                    temperature_c=random.uniform(15, 30),
-                    humidity_percent=random.uniform(40, 80),
-                    weather_conditions="clear"
-                )
 
                 # Create health status
                 health = SensorHealth(

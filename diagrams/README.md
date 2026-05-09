@@ -1,43 +1,55 @@
-﻿# Diagrams Folder
+# Aegis Architecture Diagrams
 
-This directory contains Mermaid source files (.mmd) and generated images.
+This directory contains Mermaid source files (`.mmd`) and generated high-resolution PNG images.
 
-## How to Add a New Diagram
+## Current Diagrams
 
-1. Add your Mermaid file to diagrams/, for example:
-   - diagrams/my_new_diagram.mmd
-2. Run the conversion command below to generate a high-resolution PNG.
+- `01_system_architecture.mmd` → `01_system_architecture_hires.png`
+- `02_sensor_actuator_flow.mmd` → `02_sensor_actuator_flow_hires.png`
+- `03_hardware_stack.mmd` → `03_hardware_stack_hires.png`
+- `04_multi_robot_coordination.mmd` → `04_multi_robot_coordination_hires.png`
+- `05_network_protocols.mmd` → `05_network_protocols_hires.png`
+- `06_mission_lifecycle.mmd` → `06_mission_lifecycle_hires.png`
 
-## Recommended Conversion Command
+## Converting a Single New Diagram
 
-Use this command from the repository root:
+When you add a new `.mmd` file (e.g., `my_new_diagram.mmd`), convert it to high-resolution PNG with this command:
 
-`cmd
-set  PUPPETEER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
-npx @mermaid-js/mermaid-cli -i diagrams\my_new_diagram.mmd -o diagrams\my_new_diagram_hires.png -w 2400 -H 1800 -s 2
-`
+```cmd
+cd /d C:\Users\Mahantesh\DevelopmentProjects\Aegis
+set "PUPPETEER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe"
+node_modules\.bin\mmdc -i diagrams\my_new_diagram.mmd -o diagrams\my_new_diagram_hires.png -w 2400 -H 1800 -s 2
+```
 
-## Batch Convert All .mmd Files
+**Replace `my_new_diagram` with your actual filename.**
 
-If you want to convert every Mermaid file in diagrams/ to a high-resolution PNG, run:
+## Batch Convert All Diagrams
 
-`cmd
-set PUPPETEER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
-for %F in (diagrams\*.mmd) do npx @mermaid-js/mermaid-cli -i %F -o %~dpnF_hires.png -w 2400 -H 1800 -s 2
-`
+To convert all `.mmd` files in this folder to high-resolution PNGs:
 
-> Note: In PowerShell, use $env:PUPPETEER_EXECUTABLE_PATH='C:\Program Files\Google\Chrome\Application\chrome.exe' instead of set.
+```cmd
+cd /d C:\Users\Mahantesh\DevelopmentProjects\Aegis
+set "PUPPETEER_EXECUTABLE_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe"
+for %F in (diagrams\*.mmd) do node_modules\.bin\mmdc -i "%F" -o "%~dpnF_hires.png" -w 2400 -H 1800 -s 2
+```
 
-## Install Mermaid CLI Once
+## Mermaid CLI Installation
 
-If you have not installed Mermaid CLI in this repo yet, run:
+If Mermaid CLI is not installed, run this once:
 
-`cmd
+```cmd
 npm install @mermaid-js/mermaid-cli --save-dev
-`
+```
 
 ## Notes
 
-- -w 2400 -H 1800 sets a larger canvas size.
-- -s 2 increases render scaling for sharper output.
-- Output files are named with _hires.png to avoid overwriting the low-res originals.
+- `-w 2400 -H 1800` sets a large canvas size for high resolution
+- `-s 2` doubles the render scale for crisp text and lines
+- Output files use `_hires.png` suffix to avoid overwriting originals
+- Requires Chrome browser installed at default location
+
+## Viewing Diagrams
+
+- **High-res PNGs**: Open directly in any image viewer
+- **Mermaid source**: Edit `.mmd` files and re-convert
+- **GitHub**: `.mmd` files render automatically as diagrams
