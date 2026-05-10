@@ -87,6 +87,24 @@ def create_audit_log(db: Session, audit: schemas.AuditLogCreate, tenant_id: int 
     return db_log
 
 
+def create_audit_log_with_transaction(
+    db: Session,
+    event_type: str,
+    data_hash: str,
+    tenant_id: int,
+    blockchain_tx: str | None = None,
+    sensor_id: int | None = None,
+) -> models.AuditLog:
+    """Create an audit log record with an optional blockchain transaction hash."""
+    audit = schemas.AuditLogCreate(
+        event_type=event_type,
+        data_hash=data_hash,
+        blockchain_tx=blockchain_tx,
+    )
+    audit.sensor_id = sensor_id
+    return create_audit_log(db, audit, tenant_id=tenant_id)
+
+
 def list_audit_logs(db: Session, tenant_id: int, sensor_id: int | None = None, skip: int = 0, limit: int = 100) -> list[models.AuditLog]:
     query = db.query(models.AuditLog).filter(models.AuditLog.tenant_id == tenant_id)
     if sensor_id is not None:

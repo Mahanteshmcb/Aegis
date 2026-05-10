@@ -90,3 +90,45 @@ def test_robotics_concurrent_multi_robot_dispatch(client):
     # All 10 concurrent requests should succeed
     assert all(results), f"Some requests failed: {results}"
     assert len(results) == 10
+
+
+def test_robotics_fleet_coordination_and_optimization(client):
+    headers = auth_headers(client)
+
+    fleet_request = {
+        "task_type": "HARVEST",
+        "zone_id": "ZONE-1",
+        "priority": 7,
+        "robot_count": 3,
+        "task_parameters": {"crop_type": "tomato", "harvest_priority": "high"}
+    }
+    fleet_response = client.post("/api/v1/robotics/fleet/coordinate", json=fleet_request, headers=headers)
+    assert fleet_response.status_code == 200
+    coord_data = fleet_response.json()
+    assert coord_data["task_id"].startswith("fleet-HARVEST")
+    assert coord_data["coordination_status"] in ("QUEUED", "STATUS_UNSPECIFIED")
+    assert isinstance(coord_data["assigned_robots"], list)
+
+    optimize_request = {
+        "zone_id": "ZONE-1",
+        "optimization_criteria": {"efficiency": 0.9, "safety": 0.95, "energy": 0.85}
+    }
+    optimize_response = client.post("/api/v1/robotics/fleet/optimize", json=optimize_request, headers=headers)
+    assert optimize_response.status_code == 200
+    opt_data = optimize_response.json()
+    assert "optimization_id" in opt_data
+    assert opt_data["zone_id"] == "ZONE-1"
+    assert isinstance(opt_data["recommended_deployments"], list)
+
+    status_response = client.get("/api/v1/robotics/fleet/status?zone_id=ZONE-1", headers=headers)
+    assert status_response.status_code == 200
+    status_data = status_response.json()
+    assert status_data["total_robots"] >= 0
+    assert "zone_status" in status_data
+
+    emergency_request = {"zone_id": "ZONE-1", "reason": "maintenance"}
+    emergency_response = client.post("/api/v1/robotics/fleet/emergency-stop", json=emergency_request, headers=headers)
+    assert emergency_response.status_code == 200
+    emergency_data = emergency_response.json()
+    assert emergency_data["emergency_stop_issued"] is True
+    assert emergency_data["reason"] == "maintenance"

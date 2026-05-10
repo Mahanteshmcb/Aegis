@@ -261,7 +261,7 @@ Before deployment, ensure you have:
 ### Software Setup
 - [ ] Arduino IDE 2.0 installed
 - [ ] ROS 2 Humble workspace created
-- [ ] Aegis backend running (FastAPI 8000)
+- [ ] Aegis backend running (FastAPI 8001)
 - [ ] RoboticsService running (gRPC 50052)
 - [ ] MQTT broker running (Mosquitto 1883)
 - [ ] PostgreSQL database initialized

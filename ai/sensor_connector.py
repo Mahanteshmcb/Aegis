@@ -122,7 +122,7 @@ class SensorConnector:
             return False
 
     async def get_zone_sensors(self, zone_id: int,
-                              sensor_types: List[SensorType] = None) -> ZoneSensorsResponse:
+                              sensor_types: List[int] = None) -> ZoneSensorsResponse:
         """Get all sensors in a specific zone."""
         try:
             request = GetZoneSensorsRequest(
@@ -250,7 +250,7 @@ class SensorConnector:
             logger.error(f"Failed to trigger pest scan: {e}")
             return False
 
-    async def calibrate_sensor(self, sensor_id: str, calibration_type: CalibrationType) -> bool:
+    async def calibrate_sensor(self, sensor_id: str, calibration_type: int) -> bool:
         """Calibrate a specific sensor."""
         try:
             request = CalibrationRequest(
@@ -281,7 +281,7 @@ class SensorConnector:
             return False
 
     async def bulk_calibrate_sensors(self, sensor_ids: List[str],
-                                    calibration_type: CalibrationType) -> int:
+                                    calibration_type: int) -> int:
         """Calibrate multiple sensors at once."""
         try:
             request = BulkCalibrationRequest(

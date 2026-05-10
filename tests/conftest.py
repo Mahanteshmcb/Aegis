@@ -4,6 +4,7 @@ Global pytest configuration and reusable fixtures.
 """
 
 import pytest
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,6 +17,30 @@ from backend.dependencies import get_db
 
 
 # Test database setup
+
+def _mock_blockchain_connector():
+    """Create a mock blockchain connector that simulates successful operations."""
+    mock_bc = MagicMock()
+    mock_bc.is_connected = True
+    mock_bc.connect = MagicMock(return_value=True)
+    mock_bc.submit_audit_log = MagicMock(return_value="0x" + "a" * 64)
+    return mock_bc
+
+
+@pytest.fixture(scope="function", autouse=True)
+def mock_blockchain(monkeypatch):
+    """Auto-mock blockchain connector for all tests."""
+    mock_bc = _mock_blockchain_connector()
+    monkeypatch.setattr(
+        "backend.routers.robotics.get_blockchain_connector",
+        lambda: mock_bc
+    )
+    monkeypatch.setattr(
+        "backend.blockchain_connector.get_blockchain_connector",
+        lambda: mock_bc
+    )
+    return mock_bc
+
 
 @pytest.fixture(scope="function")
 def test_db():

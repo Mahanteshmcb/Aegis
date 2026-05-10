@@ -4,13 +4,14 @@ pydantic==2.13.1
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.11
 # Blockchain/Ethereum stack (compatible versions)
-web3==5.29.2
-eth-account==0.5.9
-eth-typing==2.2.2
-eth-utils==1.10.0
-eth-keys==0.3.4
-protobuf==3.20.3
-grpcio==1.48.2
+web3==7.16.0
+eth-account==0.13.6
+eth-typing==5.0.0
+eth-utils==5.0.0
+eth-keys==0.6.0
+protobuf==6.33.6
+grpcio==1.80.0
+grpcio-tools==1.80.0
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.1

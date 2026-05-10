@@ -322,7 +322,7 @@ Edge Gateway (Raspberry Pi 4)
 └─ Location: Central field location
 
 Cloud Backend (AWS/GCP/On-Prem)
-├─ FastAPI Server (Port 8000)
+├─ FastAPI Server (Port 8001)
 ├─ PostgreSQL Database (Port 5432)
 ├─ Redis Cache (Port 6379)
 ├─ gRPC Services (Ports 50051, 50052)
@@ -456,7 +456,7 @@ Mission Report:
 - **IoT Integration Guide:** `/AEGIS_IOT_INTEGRATION_GUIDE.md`
 - **System Architecture:** `/SYSTEM_ARCHITECTURE.md`
 - **Diagrams:** `/diagrams/` (6 comprehensive system diagrams)
-- **API Docs:** `http://localhost:8000/docs` (when running)
+- **API Docs:** `http://localhost:8001/docs` (when running)
 - **ROS 2 Humble:** https://docs.ros.org/en/humble
 - **DJI SDK:** https://developer.dji.com/doc
 

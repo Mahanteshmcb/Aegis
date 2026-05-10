@@ -157,6 +157,56 @@ class BlockchainConnector:
             logger.error(f"Failed to submit requirement request: {e}")
             return None
 
+    def submit_audit_log(self, event_type: str, data_hash: str,
+                         metadata: str, tenant_id: int) -> Optional[str]:
+        """
+        Submit a generic audit log to the blockchain.
+        """
+        if not self.contract or not self.account or not self.private_key:
+            logger.error("Contract not loaded or account not configured")
+            return None
+
+        try:
+            tx = self.contract.functions.createLog(
+                event_type,
+                data_hash,
+                metadata,
+                tenant_id
+            ).build_transaction({
+                'from': self.account,
+                'gas': 200000,
+                'gasPrice': self.w3.eth.gas_price,
+                'nonce': self.w3.eth.get_transaction_count(self.account)
+            })
+
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.private_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+
+            from backend.blockchain_monitor import get_blockchain_monitor
+            monitor = get_blockchain_monitor(self)
+            monitor.record_transaction(str(tx_hash.hex()), "submit_audit_log", tenant_id)
+
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+            logger.info(f"✅ Audit log submitted: {tx_hash.hex()}")
+
+            log_created_event = None
+            for log in receipt.logs:
+                try:
+                    event = self.contract.events.LogCreated().process_log(log)
+                    log_created_event = event
+                    break
+                except:
+                    continue
+
+            if log_created_event:
+                return log_created_event.args.logId.hex()
+
+            return tx_hash.hex()
+
+        except Exception as e:
+            logger.error(f"Failed to submit audit log: {e}")
+            return None
+
     def approve_requirement(self, log_id: str, approval_metadata: str,
                                 tenant_id: int) -> Optional[str]:
         """

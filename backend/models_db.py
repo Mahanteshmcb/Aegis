@@ -246,6 +246,8 @@ class CropInstance(Base):
     # Relationships
     species = relationship("BiologicalSpecies", back_populates="crop_instances")
     spatial_zone = relationship("SpatialZone", back_populates="crop_instances")
+    lifecycle_events = relationship("CropLifecycleEvent", back_populates="crop_instance")
+    biological_metrics = relationship("BiologicalMetric", back_populates="crop_instance")
 
 
 # Add relationships to existing models
@@ -265,3 +267,172 @@ class VryndaraRequest(Base):
     status = Column(String(50), default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============================================================================
+# DAY 41: AGRICULTURAL DATA MODELS - Crops, Metrics, and Specialized Sensors
+# ============================================================================
+
+class AgriculturalSensor(Base):
+    """
+    Specialized agricultural sensor types beyond standard environmental sensors.
+    Tracks mycelial probes, acoustic monitors, spectral cameras, etc.
+    """
+    __tablename__ = "agricultural_sensors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    zone_id = Column(Integer, ForeignKey("zones.id"), nullable=True, index=True)
+    
+    # Sensor type and specification
+    sensor_type = Column(String(100), nullable=False, index=True)  # "mycelial_probe", "acoustic_pest_monitor", "ndvi_camera", "thermal_camera", "chlorophyll_meter"
+    model = Column(String(255))
+    manufacturer = Column(String(255))
+    
+    # Physical location
+    location_x = Column(Float)  # Grid X coordinate (m)
+    location_y = Column(Float)  # Grid Y coordinate (m)
+    location_z = Column(Float)  # Height (m)
+    
+    # Sensor specifications
+    measurement_unit = Column(String(50))  # "mg/g", "Hz", "SPAD", "°C", "ratio", etc.
+    min_range = Column(Float)
+    max_range = Column(Float)
+    accuracy = Column(Float)  # ±% accuracy
+    sampling_rate_hz = Column(Float)  # Samples per second
+    
+    # Status tracking
+    is_active = Column(Boolean, default=True)
+    last_calibration = Column(DateTime)
+    battery_level = Column(Float)  # % (if battery-powered)
+    signal_strength = Column(Float)  # dBm or % signal quality
+    
+    # Metadata
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+    zone = relationship("Zone", foreign_keys=[zone_id])
+    sensor_readings = relationship("AgriculturalSensorReading", back_populates="sensor")
+
+
+class AgriculturalSensorReading(Base):
+    """
+    Time-series readings from agricultural sensors for biological metrics tracking.
+    """
+    __tablename__ = "agricultural_sensor_readings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sensor_id = Column(Integer, ForeignKey("agricultural_sensors.id"), nullable=False, index=True)
+    
+    # Reading data
+    timestamp = Column(DateTime, nullable=False, index=True)
+    value = Column(Float, nullable=False)
+    unit = Column(String(50))
+    
+    # Data quality
+    confidence = Column(Float)  # 0-1 confidence score
+    is_anomaly = Column(Boolean, default=False)
+    notes = Column(Text)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    sensor = relationship("AgriculturalSensor", back_populates="sensor_readings")
+
+
+class CropLifecycleEvent(Base):
+    """
+    Track crop lifecycle events: planting, growth stage transitions, pest detection, disease, harvest, etc.
+    Supports traceability and compliance reporting.
+    """
+    __tablename__ = "crop_lifecycle_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    crop_instance_id = Column(Integer, ForeignKey("crop_instances.id"), nullable=False, index=True)
+    
+    # Event details
+    event_type = Column(String(100), nullable=False, index=True)  # "planting", "germination", "disease_detected", "pest_detected", "fertilized", "pruned", "harvested", "stage_transition"
+    event_date = Column(DateTime, nullable=False, index=True)
+    
+    # Event data
+    description = Column(Text)
+    data = Column(JSON, default=dict)  # Event-specific data (pest name, disease type, fertilizer amount, etc.)
+    
+    # Action taken
+    action_taken = Column(String(255))  # e.g., "Applied fungicide", "Pruned affected branches"
+    action_date = Column(DateTime)
+    
+    # Blockchain record
+    blockchain_tx = Column(String(255))  # Blockchain transaction hash for immutability
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    crop_instance = relationship("CropInstance", back_populates="lifecycle_events")
+
+
+class BiologicalMetric(Base):
+    """
+    Aggregated biological and health metrics for crop instances.
+    Stores computed metrics from ML models and sensor fusion.
+    """
+    __tablename__ = "biological_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    crop_instance_id = Column(Integer, ForeignKey("crop_instances.id"), nullable=False, index=True)
+    
+    # Time period for aggregation
+    measurement_date = Column(DateTime, nullable=False, index=True)
+    
+    # ML Model Predictions (from orchestrator engines)
+    health_score = Column(Float)  # Visual crop health: 0-1
+    health_status = Column(String(50))  # "HEALTHY", "STRESS_EARLY", "STRESS_MODERATE", "STRESS_SEVERE", "DISEASE", "CRITICAL"
+    
+    ndvi = Column(Float)  # Normalized Difference Vegetation Index
+    chlorophyll_content = Column(Float)  # SPAD units
+    canopy_coverage_percent = Column(Float)
+    leaf_area_index = Column(Float)  # m²/m²
+    
+    # Soil Metrics (from mycelial sensors)
+    nitrogen_level = Column(Float)  # Normalized 0-1
+    phosphorus_level = Column(Float)  # Normalized 0-1
+    potassium_level = Column(Float)  # Normalized 0-1
+    soil_health_status = Column(String(50))  # "OPTIMAL", "SUBOPTIMAL", "DEFICIENT", "CRITICAL"
+    
+    # Pest and Disease Detection (from acoustic/visual monitors)
+    pest_detected = Column(Boolean, default=False)
+    pest_types = Column(JSON, default=list)  # List of detected pest names
+    pest_severity = Column(String(50))  # "none", "low", "moderate", "high", "critical"
+    
+    disease_detected = Column(Boolean, default=False)
+    disease_types = Column(JSON, default=list)  # List of detected disease names
+    disease_severity = Column(String(50))  # "none", "low", "moderate", "high", "critical"
+    
+    # Growth and Development
+    height_cm = Column(Float)
+    stem_diameter_cm = Column(Float)
+    leaf_count = Column(Integer)
+    flower_count = Column(Integer)
+    fruit_count = Column(Integer)
+    
+    # Environmental conditions
+    temperature_avg_c = Column(Float)
+    humidity_avg_percent = Column(Float)
+    soil_moisture_percent = Column(Float)
+    light_hours = Column(Float)  # Daily light exposure hours
+    
+    # Recommendations from ML models
+    recommendations = Column(JSON, default=dict)  # Priority actions needed
+    
+    # Data quality
+    data_sources = Column(JSON, default=list)  # Sensors/models used for this metric
+    confidence_score = Column(Float)  # 0-1 confidence in aggregated metrics
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    crop_instance = relationship("CropInstance", back_populates="biological_metrics")

@@ -82,15 +82,15 @@ Retrieve audit logs directly from the blockchain:
 ```bash
 # Get recent logs for current tenant
 curl -H "Authorization: Bearer <token>" \
-     http://localhost:8000/api/v1/audit/blockchain
+     http://localhost:8001/api/v1/audit/blockchain
 
 # Filter by event type
 curl -H "Authorization: Bearer <token>" \
-     "http://localhost:8000/api/v1/audit/blockchain?event_type=REQUIREMENT_REQUEST"
+     "http://localhost:8001/api/v1/audit/blockchain?event_type=REQUIREMENT_REQUEST"
 
 # Limit results
 curl -H "Authorization: Bearer <token>" \
-     "http://localhost:8000/api/v1/audit/blockchain?limit=10"
+     "http://localhost:8001/api/v1/audit/blockchain?limit=10"
 ```
 
 ### Submit Requirement Request
@@ -106,7 +106,7 @@ curl -X POST \
      -d "event_type=REQUIREMENT_REQUEST" \
      -d "data_hash=0x123..." \
      -d "metadata=New security requirement for zone access" \
-     http://localhost:8000/api/v1/audit/requirement/request
+     http://localhost:8001/api/v1/audit/requirement/request
 ```
 
 ### Approve/Reject Requirements
@@ -118,7 +118,7 @@ curl -X POST \
      -H "Authorization: Bearer <token>" \
      -H "Content-Type: application/x-www-form-urlencoded" \
      -d "approval_metadata=Approved by security team" \
-     http://localhost:8000/api/v1/audit/requirement/0x123.../approve
+     http://localhost:8001/api/v1/audit/requirement/0x123.../approve
 ```
 
 **POST** `/api/v1/audit/requirement/{log_id}/reject`
@@ -128,7 +128,7 @@ curl -X POST \
      -H "Authorization: Bearer <token>" \
      -H "Content-Type: application/x-www-form-urlencoded" \
      -d "rejection_metadata=Insufficient evidence provided" \
-     http://localhost:8000/api/v1/audit/requirement/0x123.../reject
+     http://localhost:8001/api/v1/audit/requirement/0x123.../reject
 ```
 
 ### Compliance Reports
@@ -139,7 +139,7 @@ Get compliance summary for a tenant:
 
 ```bash
 curl -H "Authorization: Bearer <token>" \
-     http://localhost:8000/api/v1/audit/compliance/1
+     http://localhost:8001/api/v1/audit/compliance/1
 ```
 
 Response:
@@ -163,7 +163,7 @@ Get system-wide audit statistics:
 
 ```bash
 curl -H "Authorization: Bearer <token>" \
-     http://localhost:8000/api/v1/audit/statistics
+     http://localhost:8001/api/v1/audit/statistics
 ```
 
 ### Blockchain Status
@@ -173,7 +173,7 @@ curl -H "Authorization: Bearer <token>" \
 Check blockchain connection and network info:
 
 ```bash
-curl http://localhost:8000/api/v1/blockchain/status
+curl http://localhost:8001/api/v1/blockchain/status
 ```
 
 ## Security Considerations

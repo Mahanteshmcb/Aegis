@@ -224,7 +224,7 @@ class AegisTaskExecutor(Node):
         super().__init__('aegis_task_executor')
         
         self.robot_id = "ROVER_001"
-        self.api_base = "http://aegis-backend:8000/api/v1"
+        self.api_base = "http://aegis-backend:8001/api/v1"
         self.jwt_token = self.authenticate()
         
         # Publishers
@@ -564,7 +564,7 @@ Main Gateway (Raspberry Pi 4):
 
 Aegis Backend Server:
 ├─ Location:     Cloud (AWS/GCP) or On-prem
-├─ API:          FastAPI on port 8000
+├─ API:          FastAPI on port 8001
 ├─ Database:     PostgreSQL for production
 ├─ gRPC:         Port 50051 (Vryndara), 50052 (Robotics)
 └─ Security:     HTTPS, JWT, CORS
@@ -762,7 +762,7 @@ Task 4: Field Operations
 # 1. Aegis Backend
 cd backend
 pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 8000
+python -m uvicorn main:app --reload --port 8001
 
 # 2. RoboticsService (gRPC)
 cd ../ai
@@ -793,7 +793,7 @@ Server 1: Aegis Backend
 ├─ RAM: 16 GB
 ├─ Storage: SSD 500 GB
 ├─ Services:
-│   ├─ FastAPI (port 8000)
+│   ├─ FastAPI (port 8001)
 │   ├─ PostgreSQL (port 5432)
 │   ├─ Redis (caching)
 │   └─ nginx (reverse proxy)
@@ -836,7 +836,7 @@ services:
   aegis-backend:
     image: aegis-backend:latest
     ports:
-      - "8000:8000"
+      - "8000:8001"
     environment:
       DATABASE_URL: postgresql://user:pass@db:5432/aegis
       ROBOTICS_HOST: robotics-service

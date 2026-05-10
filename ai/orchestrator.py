@@ -13,6 +13,7 @@ from enum import Enum
 from ai.spatial_mapping import spatial_engine, VerticalLayer, Coordinate3D, CropProfile
 from ai.acoustic_pest_recognition import AcousticPestRecognitionEngine
 from ai.soil_health_prediction import SoilHealthPredictionEngine
+from ai.visual_crop_health import VisualCropHealthEngine
 from ai.vryndara_connector import VryndaraConnector
 from ai.robotics_connector import RoboticsConnector
 
@@ -83,6 +84,7 @@ class SuccessionOrchestrationEngine:
         self.decision_history: List[Dict[str, Any]] = []
         self.acoustic_recognition = AcousticPestRecognitionEngine()
         self.soil_health_prediction = SoilHealthPredictionEngine()
+        self.visual_crop_health = VisualCropHealthEngine()
 
     async def initialize_succession_plans(self, zone_configs: List[Dict[str, Any]]):
         """Initialize succession plans for all zones based on configuration."""
@@ -510,7 +512,43 @@ class SuccessionOrchestrationEngine:
         return {'precipitation_mm': 2.5, 'temperature_c': 22.0}  # Mock data
 
     async def _assess_crop_health(self, zone_id: int) -> Dict[int, float]:
-        return {1: 0.85, 2: 0.92}  # Mock health scores
+        """Assess crop health using visual crop health prediction engine."""
+        crop_health = {}
+        
+        # Get crops in this zone from spatial data
+        zone_crops = spatial_engine.get_zone_crops(zone_id) if hasattr(spatial_engine, 'get_zone_crops') else []
+        
+        # If no spatial data available, use mock data
+        if not zone_crops:
+            return {1: 0.85, 2: 0.92}
+        
+        # Predict health for each crop using visual features
+        for crop_id in zone_crops:
+            # Simulate image analysis features (would come from drone cameras in production)
+            ndvi = 0.75 + random.uniform(-0.15, 0.15)  # Normalized Difference Vegetation Index
+            chlorophyll = 70 + random.uniform(-20, 15)  # SPAD units
+            canopy_temp = 24 + random.uniform(-3, 3)  # °C
+            ambient_temp = 23
+            canopy_cover = 80 + random.uniform(-15, 10)  # %
+            leaf_area_index = 3.5 + random.uniform(-1, 1)  # m²/m²
+            color_index = ndvi  # Use NDVI as color health proxy
+            biomass = 0.75 + random.uniform(-0.2, 0.2)
+            
+            # Get health prediction from visual crop health engine
+            prediction = self.visual_crop_health.predict_from_image_features(
+                ndvi=ndvi,
+                chlorophyll_content=max(0, chlorophyll),
+                canopy_temperature=canopy_temp,
+                ambient_temperature=ambient_temp,
+                canopy_cover=max(0, min(100, canopy_cover)),
+                leaf_area_index=max(0, leaf_area_index),
+                color_index=color_index,
+                biomass_estimate=biomass
+            )
+            
+            crop_health[crop_id] = prediction['health_score']
+        
+        return crop_health
 
     async def _analyze_soil_conditions(self, zone_id: int) -> Dict[str, float]:
         return {'nitrogen': 0.6, 'phosphorus': 0.4, 'potassium': 0.7}  # Mock NPK levels

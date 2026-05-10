@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     
     # Server Configuration
     server_host: str = Field("127.0.0.1", env="SERVER_HOST")
-    server_port: int = Field(8000, env="SERVER_PORT")
-    
+    server_port: int = Field(8001, env="SERVER_PORT")
+
     # Database Configuration
     # Example for PostgreSQL: "postgresql+psycopg2://user:password@localhost:5432/aegis"
     database_url: str = Field("sqlite:///./aegis.db", env="DATABASE_URL")
@@ -50,6 +50,18 @@ class Settings(BaseSettings):
     robotics_port: int = Field(50052, env="ROBOTICS_PORT")
     robotics_timeout: int = Field(5, env="ROBOTICS_TIMEOUT")
     robotics_fallback_enabled: bool = Field(True, env="ROBOTICS_FALLBACK_ENABLED")
+    
+    # gRPC Performance Configuration
+    grpc_max_workers: int = Field(10, env="GRPC_MAX_WORKERS")
+    grpc_keepalive_time_ms: int = Field(30000, env="GRPC_KEEPALIVE_TIME_MS")
+    grpc_keepalive_timeout_ms: int = Field(5000, env="GRPC_KEEPALIVE_TIMEOUT_MS")
+    grpc_max_concurrent_streams: int = Field(100, env="GRPC_MAX_CONCURRENT_STREAMS")
+    grpc_compression_enabled: bool = Field(True, env="GRPC_COMPRESSION_ENABLED")
+    
+    # Load Testing Configuration
+    load_test_concurrent_users: int = Field(50, env="LOAD_TEST_CONCURRENT_USERS")
+    load_test_duration_seconds: int = Field(60, env="LOAD_TEST_DURATION_SECONDS")
+    load_test_ramp_up_seconds: int = Field(10, env="LOAD_TEST_RAMP_UP_SECONDS")
     
     # Logging Configuration
     log_level: str = Field("INFO", env="LOG_LEVEL")
