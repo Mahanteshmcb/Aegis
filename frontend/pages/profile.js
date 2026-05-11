@@ -1,10 +1,10 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
-import Sidebar from '../components/Sidebar';
-import ProtectedRoute from '../components/ProtectedRoute';
 import useCurrentUser from '../hooks/useCurrentUser';
 
-function ProfileContent() {
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+
+export default function ProfilePage() {
   const router = useRouter();
   const { user, loading } = useCurrentUser();
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -53,16 +53,13 @@ function ProfileContent() {
     try {
       setIsSubmitting(true);
       const token = localStorage.getItem('aegis_token');
-      const resp = await fetch('http://localhost:8001/api/v1/auth/change-password', {
+      const resp = await fetch(`${API_URL}/api/v1/auth/change-password`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword,
-        }),
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
       });
 
       if (!resp.ok) {
@@ -86,82 +83,48 @@ function ProfileContent() {
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen bg-[#0b1120]">
-        <Sidebar />
-        <main className="flex-1 p-8 flex items-center justify-center">
-          <div className="text-aegis-muted">Loading profile...</div>
-        </main>
-      </div>
-    );
+    return <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center text-aegis-muted">Loading profile...</div>;
   }
 
   if (!user) {
-    return (
-      <div className="flex min-h-screen bg-[#0b1120]">
-        <Sidebar />
-        <main className="flex-1 p-8 flex items-center justify-center">
-          <div className="text-red-400">Unable to load profile. Please login again.</div>
-        </main>
-      </div>
-    );
+    return <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center text-red-400">Unable to load profile. Please login again.</div>;
   }
 
   return (
-    <div className="flex min-h-screen bg-[#0b1120]">
-      <Sidebar />
-      <main className="flex-1 p-8">
-        {/* Header */}
-        <div className="mb-8">
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="mb-6 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-aegis-primary rounded-lg transition-colors duration-200 flex items-center gap-2"
-          >
-            ← Back to Dashboard
-          </button>
-          <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Profile</h1>
-          <p className="text-aegis-muted">Manage your account settings and preferences</p>
-        </div>
+    <div className="min-h-[calc(100vh-4rem)] space-y-8">
+      <div>
+        <button onClick={() => router.push('/dashboard')} className="mb-6 rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-2 text-aegis-primary hover:border-aegis-primary transition-all">← Back to Dashboard</button>
+        <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Profile</h1>
+        <p className="text-aegis-muted">Manage your account settings and security posture.</p>
+      </div>
 
-        {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Left Column - Profile Info */}
-          <div className="lg:col-span-2 space-y-6">
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-lg p-8">
+      <div className="grid gap-8 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-8">
             <h2 className="text-lg font-semibold text-aegis-primary mb-6">Account Identity</h2>
-            <div className="space-y-6">
+            <div className="space-y-6 text-sm text-aegis-muted">
               <div>
-                <p className="text-xs text-aegis-muted font-semibold uppercase tracking-[0.15em] mb-2">
-                  Email Address
-                </p>
-                <p className="text-lg text-white font-mono">{user.email}</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2">Email Address</p>
+                <p className="text-white font-mono">{user.email}</p>
               </div>
               <div>
-                <p className="text-xs text-aegis-muted font-semibold uppercase tracking-[0.15em] mb-2">
-                  Role
-                </p>
-                <div>
-                  <span className={`inline-block px-4 py-2 rounded-full border font-bold text-sm ${getRoleColor(user.role)}`}>
-                    {user.role?.toUpperCase()}
-                  </span>
-                </div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2">Role</p>
+                <span className={`inline-flex rounded-full border px-4 py-2 text-sm font-semibold ${getRoleColor(user.role)}`}>
+                  {user.role?.toUpperCase()}
+                </span>
               </div>
               <div>
-                <p className="text-xs text-aegis-muted font-semibold uppercase tracking-[0.15em] mb-2">
-                  Tenant ID
-                </p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2">Tenant ID</p>
                 <p className="text-white font-mono">{user.tenant_id}</p>
               </div>
               <div>
-                <p className="text-xs text-aegis-muted font-semibold uppercase tracking-[0.15em] mb-2">
-                  User ID
-                </p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500 mb-2">User ID</p>
                 <p className="text-white font-mono text-sm">{user.id}</p>
               </div>
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-lg p-8">
+          <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-8">
             <h2 className="text-lg font-semibold text-aegis-primary mb-6">Access & Permissions</h2>
             <div className="space-y-4 text-sm text-aegis-muted">
               <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
@@ -188,124 +151,44 @@ function ProfileContent() {
           </div>
         </div>
 
-        {/* Security Settings */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-lg p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-aegis-primary">Security</h2>
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-8">
+            <h2 className="text-lg font-semibold text-aegis-primary mb-4">Security</h2>
             {!showChangePassword && (
-              <button
-                onClick={() => setShowChangePassword(true)}
-                className="px-4 py-2 bg-aegis-primary hover:bg-aegis-primary/80 text-white rounded-lg font-semibold text-sm transition-all"
-              >
-                Change Password
-              </button>
+              <button onClick={() => setShowChangePassword(true)} className="rounded-2xl bg-aegis-primary px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400 transition-all">Change Password</button>
             )}
           </div>
-
-          {showChangePassword ? (
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              {error && (
-                <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-400 text-sm">
-                  {error}
+          <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-8">
+            {showChangePassword ? (
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                {error && <div className="rounded-2xl border border-red-700 bg-red-900/20 p-3 text-red-300">{error}</div>}
+                {success && <div className="rounded-2xl border border-green-700 bg-green-900/20 p-3 text-green-300">Password changed successfully!</div>}
+                <div>
+                  <label className="block text-sm text-aegis-muted mb-2">Current Password</label>
+                  <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
                 </div>
-              )}
-              {success && (
-                <div className="p-3 bg-green-900/30 border border-green-700 rounded-lg text-green-400 text-sm">
-                  Password changed successfully!
+                <div>
+                  <label className="block text-sm text-aegis-muted mb-2">New Password</label>
+                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
                 </div>
-              )}
-              <div>
-                <label className="block text-sm text-aegis-muted font-semibold mb-2">Current Password</label>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Enter your current password"
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-aegis-primary focus:outline-none"
-                />
+                <div>
+                  <label className="block text-sm text-aegis-muted mb-2">Confirm New Password</label>
+                  <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button type="submit" disabled={isSubmitting} className="rounded-2xl bg-green-600 px-6 py-3 text-white font-semibold hover:bg-green-500 transition-all">{isSubmitting ? 'Saving...' : 'Save Password'}</button>
+                  <button type="button" onClick={() => { setShowChangePassword(false); setError(null); }} className="rounded-2xl border border-slate-700 px-6 py-3 text-slate-300 hover:border-aegis-primary transition-all">Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-4 text-sm text-aegis-muted">
+                <p>Secure your account by keeping your passphrase unique and complex.</p>
+                <p className="text-slate-500">Password rotation is recommended every 90 days.</p>
               </div>
-              <div>
-                <label className="block text-sm text-aegis-muted font-semibold mb-2">New Password</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password (min 8 characters)"
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-aegis-primary focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-aegis-muted font-semibold mb-2">Confirm New Password</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-aegis-primary focus:outline-none"
-                />
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white rounded-lg font-semibold text-sm"
-                >
-                  {isSubmitting ? 'Updating...' : 'Update Password'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowChangePassword(false);
-                    setCurrentPassword('');
-                    setNewPassword('');
-                    setConfirmPassword('');
-                    setError(null);
-                    setSuccess(false);
-                  }}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold text-sm"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          ) : (
-            <p className="text-sm text-aegis-muted">
-              Keep your account secure by changing your password regularly. Use a strong password with a mix of letters, numbers, and special characters.
-            </p>
-          )}
-        </div>
-
-        {/* Role Descriptions */}
-        <div className="mt-8 p-6 bg-slate-900/50 border border-slate-800 rounded-lg">
-          <h3 className="text-aegis-primary font-semibold mb-4">Role Descriptions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="p-4 bg-red-900/20 border border-red-700/30 rounded-lg">
-              <p className="font-bold text-red-400 mb-1">Admin</p>
-              <p className="text-aegis-muted">Full access to all features, user management, and system configuration</p>
-            </div>
-            <div className="p-4 bg-yellow-900/20 border border-yellow-700/30 rounded-lg">
-              <p className="font-bold text-yellow-400 mb-1">Auditor</p>
-              <p className="text-aegis-muted">Can view compliance reports, audit logs, and monitoring dashboards</p>
-            </div>
-            <div className="p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
-              <p className="font-bold text-blue-400 mb-1">Operator</p>
-              <p className="text-aegis-muted">Can manage zones, sensors, and handle operational workflows</p>
-            </div>
-            <div className="p-4 bg-slate-900/20 border border-slate-700/30 rounded-lg">
-              <p className="font-bold text-slate-400 mb-1">Viewer</p>
-              <p className="text-aegis-muted">Read-only access to dashboards and system information</p>
-            </div>
+            )}
           </div>
         </div>
-      </main>
+      </div>
     </div>
-  );
-}
-
-export default function ProfilePage() {
-  return (
-    <ProtectedRoute>
-      <ProfileContent />
-    </ProtectedRoute>
   );
 }

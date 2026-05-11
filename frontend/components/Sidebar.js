@@ -8,6 +8,7 @@ export default function Sidebar() {
     { name: 'Zones', path: '/zones' },
     { name: 'Sensors', path: '/sensors' },
     { name: 'Audit Logs', path: '/audit-logs' },
+    { name: 'System Control', path: '/system-control' },
     { name: 'Vryndara AI', path: '/ai' },
     { name: 'Profile', path: '/profile' },
   ];

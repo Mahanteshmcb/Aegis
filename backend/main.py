@@ -18,7 +18,7 @@ from backend.middleware import setup_cors_middleware, setup_custom_middleware, s
 
 # Import routers
 from backend.routers import auth, zones, sensors, research, health, audit, tenants, robotics, spatial, orchestration, iot_sensors
-from backend.routers import crops, agricultural_sensors, crop_lifecycle, biological_metrics
+from backend.routers import crops, agricultural_sensors, crop_lifecycle, biological_metrics, succession
 
 # Configure logging
 logging.basicConfig(
@@ -194,6 +194,7 @@ app.include_router(crops.router)
 app.include_router(agricultural_sensors.router)
 app.include_router(crop_lifecycle.router)
 app.include_router(biological_metrics.router)
+app.include_router(succession.router)
 app.include_router(audit.router)
 
 if __name__ == "__main__":

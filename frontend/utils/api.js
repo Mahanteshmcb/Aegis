@@ -98,6 +98,166 @@ export const getCurrentUser = async (token) => {
   }
 };
 
+export const getSystemHealthStatus = async (token) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/health`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Health check failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error fetching health status:', error);
+    throw error;
+  }
+};
+
+export const createBackupSnapshot = async (token, payload) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/robotics/sync/backups`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Backup snapshot creation failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error creating backup snapshot:', error);
+    throw error;
+  }
+};
+
+export const createDataSyncJob = async (token, payload) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/robotics/sync/jobs`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Data sync job creation failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error creating data sync job:', error);
+    throw error;
+  }
+};
+
+export const completeDataSyncJob = async (token, syncId, payload) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/robotics/sync/jobs/${syncId}/complete`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Data sync job completion failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error completing data sync job:', error);
+    throw error;
+  }
+};
+
+export const emergencyStop = async (token, payload) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/robotics/emergency-stop`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Emergency stop failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error calling emergency stop:', error);
+    throw error;
+  }
+};
+
+export const fleetEmergencyStop = async (token, payload) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/robotics/fleet/emergency-stop`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Fleet emergency stop failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error calling fleet emergency stop:', error);
+    throw error;
+  }
+};
+
+export const manualOverride = async (token, payload) => {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/robotics/emergency/manual-override`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Manual override failed');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('API Error calling manual override:', error);
+    throw error;
+  }
+};
+
 /**
  * Fetch specific Tenant (Estate) information using a Bearer token.
  */

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = Field(7, env="JWT_REFRESH_TOKEN_EXPIRE_DAYS")
     
     # CORS Configuration
-    cors_origins: list = Field(["http://localhost:3000", "http://localhost:8000"], env="CORS_ORIGINS")
+    cors_origins: list = Field(["http://localhost:3000", "http://localhost:8001"], env="CORS_ORIGINS")
     cors_allow_credentials: bool = Field(True, env="CORS_ALLOW_CREDENTIALS")
     cors_allow_methods: list = Field(["*"], env="CORS_ALLOW_METHODS")
     cors_allow_headers: list = Field(["*"], env="CORS_ALLOW_HEADERS")

@@ -308,7 +308,7 @@ app.include_router(example.router)
 ```powershell
 $env:ENVIRONMENT=prod
 $env:DEBUG=false
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
 ```
 
 ---

@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Sidebar from '../components/Sidebar';
-import ProtectedRoute from '../components/ProtectedRoute';
 import useCurrentUser from '../hooks/useCurrentUser';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
-function AuditLogsContent() {
+export default function AuditLogsPage() {
   const router = useRouter();
   const { user, loading } = useCurrentUser();
   const [logs, setLogs] = useState([]);
@@ -26,11 +24,8 @@ function AuditLogsContent() {
     try {
       setLoadingLogs(true);
       const token = localStorage.getItem('aegis_token');
-      const resp = await fetch(`${API_URL}/api/v1/audit-logs`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+      const resp = await fetch(`${API_URL}/api/v1/audit`, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
 
       if (resp.status === 401) {
@@ -53,21 +48,10 @@ function AuditLogsContent() {
     }
   }
 
-  const getEventColor = (eventType) => {
-    if (!eventType) return 'text-slate-400';
-    const lower = eventType.toLowerCase();
-    if (lower.includes('auth') || lower.includes('login')) return 'text-blue-400';
-    if (lower.includes('delete')) return 'text-red-400';
-    if (lower.includes('create')) return 'text-green-400';
-    if (lower.includes('update')) return 'text-yellow-400';
-    if (lower.includes('error')) return 'text-red-500';
-    return 'text-slate-400';
-  };
-
   const filteredLogs = logs
-    .filter(log => {
-      const matchesType = filterType === 'all' || (log.event_type || '').includes(filterType);
-      const matchesSearch = !searchQuery || 
+    .filter((log) => {
+      const matchesType = filterType === 'all' || (log.event_type || '').toLowerCase().includes(filterType.toLowerCase());
+      const matchesSearch = !searchQuery ||
         (log.event_type || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (log.data_hash || '').toLowerCase().includes(searchQuery.toLowerCase());
       return matchesType && matchesSearch;
@@ -79,143 +63,79 @@ function AuditLogsContent() {
     });
 
   return (
-    <div className="flex min-h-screen bg-[#0b1120]">
-      <Sidebar />
-      <main className="flex-1 p-8">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Audit Logs</h1>
-            <p className="text-aegis-muted">Compliance and security event history</p>
-          </div>
-          <button
-            onClick={() => { setLoadingLogs(true); fetchLogs(); }}
-            className="px-4 py-2 bg-aegis-primary hover:bg-aegis-primary/80 text-white rounded-lg font-semibold transition-colors"
-          >
-            ↻ Refresh
-          </button>
+    <div className="min-h-[calc(100vh-4rem)] space-y-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Audit Logs</h1>
+          <p className="text-aegis-muted">Compliance and security event history.</p>
         </div>
+        <button onClick={fetchLogs} className="px-5 py-3 rounded-2xl bg-aegis-primary text-white font-semibold hover:bg-sky-400 transition-all">
+          Refresh
+        </button>
+      </div>
 
-        {/* Error Alert */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-400 flex items-center justify-between">
-            <span>✗ {error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300">✕</button>
+      {error && <div className="rounded-3xl border border-red-700 bg-red-900/20 p-4 text-red-300">{error}</div>}
+
+      <div className="grid gap-4 md:grid-cols-3 mb-6">
+        <div>
+          <label className="block text-sm text-aegis-muted font-semibold mb-2">Search Events</label>
+          <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by event type or hash..." className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
+        </div>
+        <div>
+          <label className="block text-sm text-aegis-muted font-semibold mb-2">Event Type</label>
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary">
+            <option value="all">All Events</option>
+            <option value="auth">Authentication</option>
+            <option value="create">Created</option>
+            <option value="update">Updated</option>
+            <option value="delete">Deleted</option>
+            <option value="error">Errors</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm text-aegis-muted font-semibold mb-2">Sort Order</label>
+          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary">
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-700 bg-slate-900/80 overflow-hidden">
+        {loadingLogs ? (
+          <div className="p-8 text-center text-aegis-muted">Loading audit logs...</div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="p-8 text-center text-aegis-muted">{logs.length === 0 ? 'No audit logs found.' : 'No logs match your filters.'}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-700 bg-slate-800/50">
+                <tr>
+                  <th className="px-6 py-3 font-semibold text-aegis-primary">Event Type</th>
+                  <th className="px-6 py-3 font-semibold text-aegis-primary">Hash</th>
+                  <th className="px-6 py-3 font-semibold text-aegis-primary">Blockchain TX</th>
+                  <th className="px-6 py-3 font-semibold text-aegis-primary">Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLogs.map((log, idx) => (
+                  <tr key={idx} className="border-b border-slate-800 hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-3 font-semibold text-white">{log.event_type || 'Unknown'}</td>
+                    <td className="px-6 py-3 font-mono text-xs text-aegis-muted">{log.data_hash ? `${log.data_hash.slice(0, 16)}...` : 'N/A'}</td>
+                    <td className="px-6 py-3 font-mono text-xs text-aegis-muted">{log.blockchain_tx ? `${log.blockchain_tx.slice(0, 12)}...` : '—'}</td>
+                    <td className="px-6 py-3 text-xs text-aegis-muted">{log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+      </div>
 
-        {/* Filters & Search */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div>
-            <label className="block text-sm text-aegis-muted font-semibold mb-2">Search Events</label>
-            <input
-              type="text"
-              placeholder="Search by event type or hash..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-aegis-primary focus:outline-none transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-aegis-muted font-semibold mb-2">Event Type</label>
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:border-aegis-primary focus:outline-none transition-colors"
-            >
-              <option value="all">All Events</option>
-              <option value="auth">Authentication</option>
-              <option value="create">Created</option>
-              <option value="update">Updated</option>
-              <option value="delete">Deleted</option>
-              <option value="error">Errors</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm text-aegis-muted font-semibold mb-2">Sort By</label>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:border-aegis-primary focus:outline-none transition-colors"
-            >
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Logs Table */}
-        <div className="bg-slate-900/50 border border-slate-800 rounded-lg overflow-hidden">
-          {loadingLogs ? (
-            <div className="p-8 text-center text-aegis-muted">Loading audit logs...</div>
-          ) : filteredLogs.length === 0 ? (
-            <div className="p-8 text-center text-aegis-muted">
-              {logs.length === 0 ? 'No audit logs found.' : 'No logs match your filters.'}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-700 bg-slate-800/50">
-                  <tr>
-                    <th className="px-6 py-3 font-semibold text-aegis-primary">Event Type</th>
-                    <th className="px-6 py-3 font-semibold text-aegis-primary">Hash</th>
-                    <th className="px-6 py-3 font-semibold text-aegis-primary">Blockchain TX</th>
-                    <th className="px-6 py-3 font-semibold text-aegis-primary">Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLogs.map((log, idx) => (
-                    <tr key={idx} className="border-b border-slate-800 hover:bg-slate-800/30">
-                      <td className="px-6 py-3">
-                        <span className={`font-semibold ${getEventColor(log.event_type)}`}>
-                          {log.event_type || 'Unknown'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3 font-mono text-xs text-aegis-muted">
-                        {log.data_hash ? log.data_hash.substring(0, 16) + '...' : 'N/A'}
-                      </td>
-                      <td className="px-6 py-3 font-mono text-xs text-aegis-muted">
-                        {log.blockchain_tx ? log.blockchain_tx.substring(0, 12) + '...' : '—'}
-                      </td>
-                      <td className="px-6 py-3 text-xs text-aegis-muted">
-                        {log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Footer with count */}
-          {!loadingLogs && logs.length > 0 && (
-            <div className="px-6 py-3 bg-slate-800/30 border-t border-slate-800 text-xs text-aegis-muted">
-              Showing {filteredLogs.length} of {logs.length} events
-            </div>
-          )}
-        </div>
-
-        {/* Info Section */}
-        <div className="mt-8 p-6 bg-slate-900/50 border border-slate-800 rounded-lg">
-          <h3 className="text-aegis-primary font-semibold mb-3">About Audit Logs</h3>
-          <ul className="text-sm text-aegis-muted space-y-2">
-            <li>• All events are logged for compliance and security purposes</li>
-            <li>• Blockchain transaction hashes link to immutable records (when enabled)</li>
-            <li>• Data hashes provide integrity verification</li>
-            <li>• Events are retained according to your compliance requirements</li>
-          </ul>
-        </div>
-      </main>
+      {!loadingLogs && logs.length > 0 && (
+        <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-4 text-xs text-aegis-muted">Showing {filteredLogs.length} of {logs.length} events.</div>
+      )}
     </div>
   );
 }
 
-export default function AuditLogsPage() {
-  return (
-    <ProtectedRoute>
-      <AuditLogsContent />
-    </ProtectedRoute>
-  );
-}

@@ -578,6 +578,38 @@ class RoboticsConnector:
             return response
         return {"status": "success", "message": "Task cancel issued"}
 
+    def dispatch_action(self,
+                        action_type: str,
+                        zone_id: int,
+                        parameters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Dispatch a high-level action through the robotics task pipeline."""
+        mapped_action = action_type.upper()
+        action_aliases = {
+            "PLANT_SEED": "PLANT",
+            "HARVEST_CROP": "HARVEST",
+            "PEST_CONTROL": "SPRAY",
+            "SOIL_TESTING": "SAMPLE",
+            "IRRIGATION": "MAINTAIN",
+            "PRUNING": "PRUNE",
+            "SCOUTING": "INSPECT"
+        }
+        mapped_action = action_aliases.get(mapped_action, mapped_action)
+        task_id = f"{mapped_action}-{zone_id}-{int(time.time())}"
+        task_detail = {"action_parameters": parameters or {}}
+        robot_id = None
+        if parameters and isinstance(parameters.get("robot_id"), str):
+            robot_id = parameters.get("robot_id")
+
+        return self.send_task(
+            task_id=task_id,
+            robot_id=robot_id or f"robot-{zone_id}",
+            operation_type=mapped_action,
+            priority=int(parameters.get("priority", 5)) if parameters else 5,
+            task_detail=task_detail,
+            timeout_seconds=int(parameters.get("timeout_seconds", 60)) if parameters else 60,
+            metadata={"zone_id": str(zone_id)}
+        )
+
     def list_active_robots(self) -> List[Dict[str, Any]]:
         if not self.is_connected:
             return [

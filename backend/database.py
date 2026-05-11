@@ -3,7 +3,8 @@ Aegis Backend - Database Configuration
 SQLAlchemy setup and session management.
 """
 
-from sqlalchemy import create_engine, event
+import logging
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -48,9 +49,34 @@ SessionLocal = sessionmaker(
 )
 
 
+def _ensure_audit_log_tenant_column_sqlite() -> None:
+    """Ensure SQLite audit_logs has tenant_id and backfill it from sensors."""
+    with engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info('audit_logs')"))
+        columns = [row[1] for row in result]
+        if 'tenant_id' in columns:
+            return
+
+        with conn.begin():
+            conn.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN tenant_id INTEGER")
+            conn.exec_driver_sql(
+                "UPDATE audit_logs SET tenant_id = "
+                "(SELECT tenant_id FROM sensors WHERE sensors.id = audit_logs.sensor_id) "
+                "WHERE sensor_id IS NOT NULL"
+            )
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_audit_logs_tenant_id ON audit_logs (tenant_id)")
+
+
 def init_db():
     """Initialize database - create all tables."""
     Base.metadata.create_all(bind=engine)
+    if settings.database_url.startswith('sqlite'):
+        try:
+            _ensure_audit_log_tenant_column_sqlite()
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "SQLite audit_logs tenant_id patch failed: %s", exc
+            )
 
 
 def drop_db():
