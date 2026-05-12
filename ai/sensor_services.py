@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import time
 from typing import Dict, List, AsyncGenerator, Any
 from datetime import datetime, timedelta
 import random
@@ -42,16 +43,17 @@ class MockMycelialProbeService(MycelialProbeServiceServicer):
         self.active_sensors: Dict[str, Dict] = {}
         self.mycelial_data_history: Dict[str, List] = {}
 
-    async def StreamMycelialData(self, request: StreamMycelialDataRequest,
-                                context) -> AsyncGenerator[MycelialData, None]:
+    def StreamMycelialData(self, request: StreamMycelialDataRequest,
+                                context):
         """Stream real-time mycelial data."""
         sensor_id = f"myco_{request.location.zone_id}_{request.location.position.x}_{request.location.position.y}"
 
         logger.info(f"Starting mycelial data stream for sensor {sensor_id}")
 
         try:
-            while not context.is_active():
-                await asyncio.sleep(request.sampling_interval_ms / 1000.0)
+            count = 0
+            while count < 10:  # Stream 10 messages
+                time.sleep(request.sampling_interval_ms / 1000.0)
 
                 # Generate mock mycelial readings
                 readings = []
@@ -89,11 +91,12 @@ class MockMycelialProbeService(MycelialProbeServiceServicer):
                 data.timestamp.FromDatetime(datetime.now())
 
                 yield data
+                count += 1
 
         except Exception as e:
             logger.error(f"Error in mycelial data stream: {e}")
 
-    async def GetMycelialStatus(self, request: SensorLocation, context) -> MycelialStatus:
+    def GetMycelialStatus(self, request: SensorLocation, context) -> MycelialStatus:
         """Get current mycelial network status."""
         # Generate mock status
         biomass_density = random.uniform(0.3, 0.8)
@@ -126,7 +129,7 @@ class MockMycelialProbeService(MycelialProbeServiceServicer):
 
         return status
 
-    async def CalibrateMycelialProbe(self, request: CalibrationRequest, context) -> CalibrationResponse:
+    def CalibrateMycelialProbe(self, request: CalibrationRequest, context) -> CalibrationResponse:
         """Calibrate mycelial probe sensor."""
         logger.info(f"Calibrating mycelial probe {request.sensor_id}")
 
@@ -144,7 +147,7 @@ class MockMycelialProbeService(MycelialProbeServiceServicer):
 
         return response
 
-    async def GetMycelialProbeHealth(self, request: SensorLocation, context) -> SensorHealth:
+    def GetMycelialProbeHealth(self, request: SensorLocation, context) -> SensorHealth:
         """Get mycelial probe health status."""
         sensor_id = f"myco_{request.zone_id}_{request.position.x}_{request.position.y}"
 
@@ -200,16 +203,17 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
         self.active_scans: Dict[str, Dict] = {}
         self.recognition_engine = AcousticPestRecognitionEngine()
 
-    async def StreamAcousticData(self, request: StreamAcousticDataRequest,
-                                context) -> AsyncGenerator[AcousticData, None]:
+    def StreamAcousticData(self, request: StreamAcousticDataRequest,
+                                context):
         """Stream real-time acoustic pest detection data."""
         sensor_id = f"acoustic_{request.location.zone_id}_{request.location.position.x}_{request.location.position.y}"
 
         logger.info(f"Starting acoustic data stream for sensor {sensor_id}")
 
         try:
-            while not context.is_active():
-                await asyncio.sleep(request.sampling_interval_ms / 1000.0)
+            count = 0
+            while count < 10:  # Stream 10 messages
+                time.sleep(request.sampling_interval_ms / 1000.0)
 
                 # Generate mock acoustic detections using the recognition engine
                 detections = []
@@ -274,11 +278,12 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
                 data.timestamp.FromDatetime(datetime.now())
 
                 yield data
+                count += 1
 
         except Exception as e:
             logger.error(f"Error in acoustic data stream: {e}")
 
-    async def GetPestActivityStatus(self, request: SensorLocation, context) -> PestActivityStatus:
+    def GetPestActivityStatus(self, request: SensorLocation, context) -> PestActivityStatus:
         """Get current pest activity status."""
         # Generate mock pest activity levels
         pest_levels = []
@@ -329,7 +334,7 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
 
         return status
 
-    async def TriggerPestScan(self, request: PestScanRequest, context) -> PestScanResponse:
+    def TriggerPestScan(self, request: PestScanRequest, context) -> PestScanResponse:
         """Trigger an acoustic pest scan."""
         scan_id = f"scan_{request.location.zone_id}_{datetime.now().timestamp()}"
 
@@ -344,7 +349,7 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
 
         return response
 
-    async def CalibrateAcousticSensor(self, request: CalibrationRequest, context) -> CalibrationResponse:
+    def CalibrateAcousticSensor(self, request: CalibrationRequest, context) -> CalibrationResponse:
         """Calibrate acoustic sensor."""
         logger.info(f"Calibrating acoustic sensor {request.sensor_id}")
 
@@ -362,7 +367,7 @@ class MockAcousticPestMonitorService(AcousticPestMonitorServiceServicer):
 
         return response
 
-    async def GetAcousticSensorHealth(self, request: SensorLocation, context) -> SensorHealth:
+    def GetAcousticSensorHealth(self, request: SensorLocation, context) -> SensorHealth:
         """Get acoustic sensor health status."""
         sensor_id = f"acoustic_{request.zone_id}_{request.position.x}_{request.position.y}"
 
@@ -397,7 +402,7 @@ class MockSensorManagementService(SensorManagementServiceServicer):
             report_timestamp=timestamp_pb2.Timestamp()
         )
 
-    async def RegisterSensor(self, request: SensorRegistration, context) -> SensorRegistrationResponse:
+    def RegisterSensor(self, request: SensorRegistration, context) -> SensorRegistrationResponse:
         """Register a new sensor in the network."""
         logger.info(f"Registering sensor {request.sensor_id} of type {request.sensor_type}")
 
@@ -439,7 +444,7 @@ class MockSensorManagementService(SensorManagementServiceServicer):
 
         return response
 
-    async def GetZoneSensors(self, request: GetZoneSensorsRequest, context) -> ZoneSensorsResponse:
+    def GetZoneSensors(self, request: GetZoneSensorsRequest, context) -> ZoneSensorsResponse:
         """Get all sensors in a zone."""
         zone_sensors = [
             sensor for sensor in self.registered_sensors.values()
@@ -457,7 +462,7 @@ class MockSensorManagementService(SensorManagementServiceServicer):
 
         return response
 
-    async def GetSensorNetworkHealth(self, request: empty_pb2.Empty, context) -> SensorNetworkHealth:
+    def GetSensorNetworkHealth(self, request: empty_pb2.Empty, context) -> SensorNetworkHealth:
         """Get overall sensor network health."""
         # Update health metrics
         self.network_health.report_timestamp.FromDatetime(datetime.now())
@@ -476,7 +481,7 @@ class MockSensorManagementService(SensorManagementServiceServicer):
 
         return self.network_health
 
-    async def BulkCalibrateSensors(self, request: BulkCalibrationRequest, context) -> BulkCalibrationResponse:
+    def BulkCalibrateSensors(self, request: BulkCalibrationRequest, context) -> BulkCalibrationResponse:
         """Bulk calibrate multiple sensors."""
         logger.info(f"Bulk calibrating {len(request.sensor_ids)} sensors")
 
@@ -504,7 +509,7 @@ class MockSensorManagementService(SensorManagementServiceServicer):
 
         return response
 
-    async def EmergencyShutdown(self, request: EmergencyShutdownRequest, context) -> empty_pb2.Empty:
+    def EmergencyShutdown(self, request: EmergencyShutdownRequest, context) -> empty_pb2.Empty:
         """Emergency shutdown of sensors."""
         logger.warning(f"Emergency shutdown requested for {len(request.sensor_ids)} sensors: {request.reason}")
 

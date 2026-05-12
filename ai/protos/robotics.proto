@@ -254,6 +254,51 @@ message RobotAuthResponse {
 }
 
 // ============================================================================
+// MOCK CLIENT COMPATIBILITY MESSAGES
+// ============================================================================
+
+enum CommandType {
+  CMD_NAVIGATE = 0;
+  CMD_HARVEST = 1;
+  CMD_MAINTAIN = 2;
+}
+
+message RoboticCommand {
+  string robot_id = 1;
+  CommandType command_type = 2;
+  NavigationCommand navigation_command = 3;
+  HarvestCommand harvest_command = 4;
+  MaintenanceCommand maintenance_command = 5;
+}
+
+message HarvestCommand {
+  string crop_type = 1;
+  float area_m2 = 2;
+  Coordinate3D start_position = 3;
+}
+
+message MaintenanceCommand {
+  string maintenance_type = 1;
+  string component = 2;
+}
+
+message RoboticStatus {
+  string robot_id = 1;
+  RobotStatus status = 2;
+  Coordinate3D position = 3;
+  int32 battery_level = 4;
+  string current_task = 5;
+}
+
+message FleetStatus {
+  int32 total_robots = 1;
+  int32 active_robots = 2;
+  int32 idle_robots = 3;
+  int32 error_robots = 4;
+  float average_battery_level = 5;
+}
+
+// ============================================================================
 // ROBOTIC FLEET SERVICE DEFINITION
 // ============================================================================
 
@@ -302,6 +347,22 @@ service RoboticFleetService {
    * ListActiveRobots: Get list of currently active robotic units with status
    */
   rpc ListActiveRobots(google.protobuf.Empty) returns (stream RobotHealth);
+}
+
+// ============================================================================
+// INDIVIDUAL ROBOT SERVICE DEFINITIONS
+// ============================================================================
+
+service AegisRoverService {
+  rpc SendCommand(RoboticCommand) returns (RoboticStatus);
+}
+
+service AgriSwarmService {
+  rpc SendCommand(RoboticCommand) returns (RoboticStatus);
+}
+
+service CanopyDroneService {
+  rpc SendCommand(RoboticCommand) returns (RoboticStatus);
 }
 
 // Import standard Google types

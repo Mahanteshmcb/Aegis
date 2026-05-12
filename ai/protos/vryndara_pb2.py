@@ -24,33 +24,37 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0evryndara.proto\x12\x08vryndara\"-\n\tAgentInfo\x12\n\n\x02id\x18\x01 \x01(\t\x12\x14\n\x0c\x63\x61pabilities\x18\x02 \x03(\t\"x\n\x06Signal\x12\n\n\x02id\x18\x01 \x01(\t\x12\x17\n\x0fsource_agent_id\x18\x02 \x01(\t\x12\x17\n\x0ftarget_agent_id\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0f\n\x07payload\x18\x05 \x01(\t\x12\x11\n\ttimestamp\x18\x06 \x01(\x03\"$\n\x10SubscribeRequest\x12\x10\n\x08\x61gent_id\x18\x01 \x01(\t\"6\n\x03\x41\x63k\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\r\n\x05\x65rror\x18\x03 \x01(\t\"&\n\x12HealthCheckRequest\x12\x10\n\x08\x61gent_id\x18\x01 \x01(\t\"I\n\x13HealthCheckResponse\x12\x0f\n\x07healthy\x18\x01 \x01(\x08\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x11\n\ttimestamp\x18\x03 \x01(\x03\"\xd1\x01\n\x0eRoboticCommand\x12\x12\n\ncommand_id\x18\x01 \x01(\t\x12\x12\n\nrobot_type\x18\x02 \x01(\t\x12\x0e\n\x06\x61\x63tion\x18\x03 \x01(\t\x12<\n\nparameters\x18\x04 \x03(\x0b\x32(.vryndara.RoboticCommand.ParametersEntry\x12\x16\n\x0esecurity_token\x18\x05 \x01(\t\x1a\x31\n\x0fParametersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"{\n\x0fSensorTelemetry\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x13\n\x0bsensor_type\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\x12\r\n\x05value\x18\x04 \x01(\t\x12\x0c\n\x04unit\x18\x05 \x01(\t\x12\x11\n\ttimestamp\x18\x06 \x01(\x03\x32\xf6\x01\n\x0fVryndaraService\x12.\n\x08Register\x12\x13.vryndara.AgentInfo\x1a\r.vryndara.Ack\x12*\n\x07Publish\x12\x10.vryndara.Signal\x1a\r.vryndara.Ack\x12;\n\tSubscribe\x12\x1a.vryndara.SubscribeRequest\x1a\x10.vryndara.Signal0\x01\x12J\n\x0bHealthCheck\x12\x1c.vryndara.HealthCheckRequest\x1a\x1d.vryndara.HealthCheckResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0evryndara.proto\x12\x08vryndara\"=\n\tAgentInfo\x12\n\n\x02id\x18\x01 \x01(\t\x12\x14\n\x0c\x63\x61pabilities\x18\x02 \x03(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\"x\n\x06Signal\x12\n\n\x02id\x18\x01 \x01(\t\x12\x17\n\x0fsource_agent_id\x18\x02 \x01(\t\x12\x17\n\x0ftarget_agent_id\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0f\n\x07payload\x18\x05 \x01(\t\x12\x11\n\ttimestamp\x18\x06 \x01(\x03\"%\n\x03\x41\x63k\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"i\n\x0eSpatialRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x11\n\tobject_id\x18\x02 \x01(\t\x12\x0f\n\x07gesture\x18\x03 \x01(\t\x12\t\n\x01x\x18\x04 \x01(\x02\x12\t\n\x01y\x18\x05 \x01(\x02\x12\t\n\x01z\x18\x06 \x01(\x02\"Y\n\x0fHologramCommand\x12\x0e\n\x06\x61\x63tion\x18\x01 \x01(\t\x12\x15\n\rtarget_object\x18\x02 \x01(\t\x12\t\n\x01x\x18\x03 \x01(\x02\x12\t\n\x01y\x18\x04 \x01(\x02\x12\t\n\x01z\x18\x05 \x01(\x02\"q\n\rNodeHeartbeat\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x11\n\tcpu_usage\x18\x02 \x01(\x02\x12\x11\n\tram_usage\x18\x03 \x01(\x02\x12\x12\n\non_battery\x18\x04 \x01(\x08\x12\x15\n\rbattery_level\x18\x05 \x01(\x05\"J\n\x0cWorkflowStep\x12\x10\n\x08\x61gent_id\x18\x01 \x01(\t\x12\x14\n\x0ctask_payload\x18\x02 \x01(\t\x12\x12\n\nstep_order\x18\x03 \x01(\x05\"M\n\x0fWorkflowRequest\x12\x13\n\x0bworkflow_id\x18\x01 \x01(\t\x12%\n\x05steps\x18\x02 \x03(\x0b\x32\x16.vryndara.WorkflowStep\",\n\x0b\x43hatMessage\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\"n\n\x0b\x43hatRequest\x12\r\n\x05model\x18\x01 \x01(\t\x12\'\n\x08messages\x18\x02 \x03(\x0b\x32\x15.vryndara.ChatMessage\x12\x13\n\x0btemperature\x18\x03 \x01(\x02\x12\x12\n\nmax_tokens\x18\x04 \x01(\x05\"Q\n\x0c\x43hatResponse\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\x12\x15\n\rprompt_tokens\x18\x02 \x01(\x05\x12\x19\n\x11\x63ompletion_tokens\x18\x03 \x01(\x05\"=\n\x0f\x43hatStreamChunk\x12\x15\n\rdelta_content\x18\x01 \x01(\t\x12\x13\n\x0bis_finished\x18\x02 \x01(\x08\x32\xda\x03\n\x06Kernel\x12.\n\x08Register\x12\x13.vryndara.AgentInfo\x1a\r.vryndara.Ack\x12*\n\x07Publish\x12\x10.vryndara.Signal\x1a\r.vryndara.Ack\x12\x34\n\tSubscribe\x12\x13.vryndara.AgentInfo\x1a\x10.vryndara.Signal0\x01\x12;\n\x0f\x45xecuteWorkflow\x12\x19.vryndara.WorkflowRequest\x1a\r.vryndara.Ack\x12L\n\x11StreamSpatialData\x12\x18.vryndara.SpatialRequest\x1a\x19.vryndara.HologramCommand(\x01\x30\x01\x12\x32\n\x08NodePing\x12\x17.vryndara.NodeHeartbeat\x1a\r.vryndara.Ack\x12=\n\x0cGenerateChat\x12\x15.vryndara.ChatRequest\x1a\x16.vryndara.ChatResponse\x12@\n\nStreamChat\x12\x15.vryndara.ChatRequest\x1a\x19.vryndara.ChatStreamChunk0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'vryndara_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_ROBOTICCOMMAND_PARAMETERSENTRY']._loaded_options = None
-  _globals['_ROBOTICCOMMAND_PARAMETERSENTRY']._serialized_options = b'8\001'
   _globals['_AGENTINFO']._serialized_start=28
-  _globals['_AGENTINFO']._serialized_end=73
-  _globals['_SIGNAL']._serialized_start=75
-  _globals['_SIGNAL']._serialized_end=195
-  _globals['_SUBSCRIBEREQUEST']._serialized_start=197
-  _globals['_SUBSCRIBEREQUEST']._serialized_end=233
-  _globals['_ACK']._serialized_start=235
-  _globals['_ACK']._serialized_end=289
-  _globals['_HEALTHCHECKREQUEST']._serialized_start=291
-  _globals['_HEALTHCHECKREQUEST']._serialized_end=329
-  _globals['_HEALTHCHECKRESPONSE']._serialized_start=331
-  _globals['_HEALTHCHECKRESPONSE']._serialized_end=404
-  _globals['_ROBOTICCOMMAND']._serialized_start=407
-  _globals['_ROBOTICCOMMAND']._serialized_end=616
-  _globals['_ROBOTICCOMMAND_PARAMETERSENTRY']._serialized_start=567
-  _globals['_ROBOTICCOMMAND_PARAMETERSENTRY']._serialized_end=616
-  _globals['_SENSORTELEMETRY']._serialized_start=618
-  _globals['_SENSORTELEMETRY']._serialized_end=741
-  _globals['_VRYNDARASERVICE']._serialized_start=744
-  _globals['_VRYNDARASERVICE']._serialized_end=990
+  _globals['_AGENTINFO']._serialized_end=89
+  _globals['_SIGNAL']._serialized_start=91
+  _globals['_SIGNAL']._serialized_end=211
+  _globals['_ACK']._serialized_start=213
+  _globals['_ACK']._serialized_end=250
+  _globals['_SPATIALREQUEST']._serialized_start=252
+  _globals['_SPATIALREQUEST']._serialized_end=357
+  _globals['_HOLOGRAMCOMMAND']._serialized_start=359
+  _globals['_HOLOGRAMCOMMAND']._serialized_end=448
+  _globals['_NODEHEARTBEAT']._serialized_start=450
+  _globals['_NODEHEARTBEAT']._serialized_end=563
+  _globals['_WORKFLOWSTEP']._serialized_start=565
+  _globals['_WORKFLOWSTEP']._serialized_end=639
+  _globals['_WORKFLOWREQUEST']._serialized_start=641
+  _globals['_WORKFLOWREQUEST']._serialized_end=718
+  _globals['_CHATMESSAGE']._serialized_start=720
+  _globals['_CHATMESSAGE']._serialized_end=764
+  _globals['_CHATREQUEST']._serialized_start=766
+  _globals['_CHATREQUEST']._serialized_end=876
+  _globals['_CHATRESPONSE']._serialized_start=878
+  _globals['_CHATRESPONSE']._serialized_end=959
+  _globals['_CHATSTREAMCHUNK']._serialized_start=961
+  _globals['_CHATSTREAMCHUNK']._serialized_end=1022
+  _globals['_KERNEL']._serialized_start=1025
+  _globals['_KERNEL']._serialized_end=1499
 # @@protoc_insertion_point(module_scope)

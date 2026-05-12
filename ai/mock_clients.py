@@ -108,7 +108,7 @@ class MockAcousticPestMonitor(MockSensorSimulator):
     """Simulator for Acoustic Pest Monitors"""
 
     def __init__(self, sensor_id: str, zone_id: int = 1):
-        super().__init__(sensor_id, SensorType.ACOUSTIC_PEST_MONITOR, zone_id)
+        super().__init__(sensor_id, SensorType.ACOUSTIC_MONITOR, zone_id)
         self.frequency_spectrum = {}
         self.pest_activity_level = 0.0
         self.dominant_frequency = 0.0

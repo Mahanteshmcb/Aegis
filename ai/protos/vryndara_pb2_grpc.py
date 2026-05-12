@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import vryndara_pb2 as vryndara__pb2
+from . import vryndara_pb2 as vryndara__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class VryndaraServiceStub(object):
+class KernelStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -35,32 +35,53 @@ class VryndaraServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Register = channel.unary_unary(
-                '/vryndara.VryndaraService/Register',
+                '/vryndara.Kernel/Register',
                 request_serializer=vryndara__pb2.AgentInfo.SerializeToString,
                 response_deserializer=vryndara__pb2.Ack.FromString,
                 _registered_method=True)
         self.Publish = channel.unary_unary(
-                '/vryndara.VryndaraService/Publish',
+                '/vryndara.Kernel/Publish',
                 request_serializer=vryndara__pb2.Signal.SerializeToString,
                 response_deserializer=vryndara__pb2.Ack.FromString,
                 _registered_method=True)
         self.Subscribe = channel.unary_stream(
-                '/vryndara.VryndaraService/Subscribe',
-                request_serializer=vryndara__pb2.SubscribeRequest.SerializeToString,
+                '/vryndara.Kernel/Subscribe',
+                request_serializer=vryndara__pb2.AgentInfo.SerializeToString,
                 response_deserializer=vryndara__pb2.Signal.FromString,
                 _registered_method=True)
-        self.HealthCheck = channel.unary_unary(
-                '/vryndara.VryndaraService/HealthCheck',
-                request_serializer=vryndara__pb2.HealthCheckRequest.SerializeToString,
-                response_deserializer=vryndara__pb2.HealthCheckResponse.FromString,
+        self.ExecuteWorkflow = channel.unary_unary(
+                '/vryndara.Kernel/ExecuteWorkflow',
+                request_serializer=vryndara__pb2.WorkflowRequest.SerializeToString,
+                response_deserializer=vryndara__pb2.Ack.FromString,
+                _registered_method=True)
+        self.StreamSpatialData = channel.stream_stream(
+                '/vryndara.Kernel/StreamSpatialData',
+                request_serializer=vryndara__pb2.SpatialRequest.SerializeToString,
+                response_deserializer=vryndara__pb2.HologramCommand.FromString,
+                _registered_method=True)
+        self.NodePing = channel.unary_unary(
+                '/vryndara.Kernel/NodePing',
+                request_serializer=vryndara__pb2.NodeHeartbeat.SerializeToString,
+                response_deserializer=vryndara__pb2.Ack.FromString,
+                _registered_method=True)
+        self.GenerateChat = channel.unary_unary(
+                '/vryndara.Kernel/GenerateChat',
+                request_serializer=vryndara__pb2.ChatRequest.SerializeToString,
+                response_deserializer=vryndara__pb2.ChatResponse.FromString,
+                _registered_method=True)
+        self.StreamChat = channel.unary_stream(
+                '/vryndara.Kernel/StreamChat',
+                request_serializer=vryndara__pb2.ChatRequest.SerializeToString,
+                response_deserializer=vryndara__pb2.ChatStreamChunk.FromString,
                 _registered_method=True)
 
 
-class VryndaraServiceServicer(object):
+class KernelServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Register(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Standard Agent routing
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -77,14 +98,40 @@ class VryndaraServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def HealthCheck(self, request, context):
+    def ExecuteWorkflow(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StreamSpatialData(self, request_iterator, context):
+        """Real-time streams for the 3D Engine
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def NodePing(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GenerateChat(self, request, context):
+        """NEW: AI Inference Endpoints
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StreamChat(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_VryndaraServiceServicer_to_server(servicer, server):
+def add_KernelServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Register': grpc.unary_unary_rpc_method_handler(
                     servicer.Register,
@@ -98,23 +145,43 @@ def add_VryndaraServiceServicer_to_server(servicer, server):
             ),
             'Subscribe': grpc.unary_stream_rpc_method_handler(
                     servicer.Subscribe,
-                    request_deserializer=vryndara__pb2.SubscribeRequest.FromString,
+                    request_deserializer=vryndara__pb2.AgentInfo.FromString,
                     response_serializer=vryndara__pb2.Signal.SerializeToString,
             ),
-            'HealthCheck': grpc.unary_unary_rpc_method_handler(
-                    servicer.HealthCheck,
-                    request_deserializer=vryndara__pb2.HealthCheckRequest.FromString,
-                    response_serializer=vryndara__pb2.HealthCheckResponse.SerializeToString,
+            'ExecuteWorkflow': grpc.unary_unary_rpc_method_handler(
+                    servicer.ExecuteWorkflow,
+                    request_deserializer=vryndara__pb2.WorkflowRequest.FromString,
+                    response_serializer=vryndara__pb2.Ack.SerializeToString,
+            ),
+            'StreamSpatialData': grpc.stream_stream_rpc_method_handler(
+                    servicer.StreamSpatialData,
+                    request_deserializer=vryndara__pb2.SpatialRequest.FromString,
+                    response_serializer=vryndara__pb2.HologramCommand.SerializeToString,
+            ),
+            'NodePing': grpc.unary_unary_rpc_method_handler(
+                    servicer.NodePing,
+                    request_deserializer=vryndara__pb2.NodeHeartbeat.FromString,
+                    response_serializer=vryndara__pb2.Ack.SerializeToString,
+            ),
+            'GenerateChat': grpc.unary_unary_rpc_method_handler(
+                    servicer.GenerateChat,
+                    request_deserializer=vryndara__pb2.ChatRequest.FromString,
+                    response_serializer=vryndara__pb2.ChatResponse.SerializeToString,
+            ),
+            'StreamChat': grpc.unary_stream_rpc_method_handler(
+                    servicer.StreamChat,
+                    request_deserializer=vryndara__pb2.ChatRequest.FromString,
+                    response_serializer=vryndara__pb2.ChatStreamChunk.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'vryndara.VryndaraService', rpc_method_handlers)
+            'vryndara.Kernel', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('vryndara.VryndaraService', rpc_method_handlers)
+    server.add_registered_method_handlers('vryndara.Kernel', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class VryndaraService(object):
+class Kernel(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
@@ -131,7 +198,7 @@ class VryndaraService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/vryndara.VryndaraService/Register',
+            '/vryndara.Kernel/Register',
             vryndara__pb2.AgentInfo.SerializeToString,
             vryndara__pb2.Ack.FromString,
             options,
@@ -158,7 +225,7 @@ class VryndaraService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/vryndara.VryndaraService/Publish',
+            '/vryndara.Kernel/Publish',
             vryndara__pb2.Signal.SerializeToString,
             vryndara__pb2.Ack.FromString,
             options,
@@ -185,8 +252,8 @@ class VryndaraService(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/vryndara.VryndaraService/Subscribe',
-            vryndara__pb2.SubscribeRequest.SerializeToString,
+            '/vryndara.Kernel/Subscribe',
+            vryndara__pb2.AgentInfo.SerializeToString,
             vryndara__pb2.Signal.FromString,
             options,
             channel_credentials,
@@ -199,7 +266,7 @@ class VryndaraService(object):
             _registered_method=True)
 
     @staticmethod
-    def HealthCheck(request,
+    def ExecuteWorkflow(request,
             target,
             options=(),
             channel_credentials=None,
@@ -212,9 +279,117 @@ class VryndaraService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/vryndara.VryndaraService/HealthCheck',
-            vryndara__pb2.HealthCheckRequest.SerializeToString,
-            vryndara__pb2.HealthCheckResponse.FromString,
+            '/vryndara.Kernel/ExecuteWorkflow',
+            vryndara__pb2.WorkflowRequest.SerializeToString,
+            vryndara__pb2.Ack.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StreamSpatialData(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_stream(
+            request_iterator,
+            target,
+            '/vryndara.Kernel/StreamSpatialData',
+            vryndara__pb2.SpatialRequest.SerializeToString,
+            vryndara__pb2.HologramCommand.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def NodePing(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/vryndara.Kernel/NodePing',
+            vryndara__pb2.NodeHeartbeat.SerializeToString,
+            vryndara__pb2.Ack.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GenerateChat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/vryndara.Kernel/GenerateChat',
+            vryndara__pb2.ChatRequest.SerializeToString,
+            vryndara__pb2.ChatResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StreamChat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/vryndara.Kernel/StreamChat',
+            vryndara__pb2.ChatRequest.SerializeToString,
+            vryndara__pb2.ChatStreamChunk.FromString,
             options,
             channel_credentials,
             insecure,

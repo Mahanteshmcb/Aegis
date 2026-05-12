@@ -2,60 +2,101 @@ syntax = "proto3";
 
 package vryndara;
 
-service VryndaraService {
-  rpc Register(AgentInfo) returns (Ack);
-  rpc Publish(Signal) returns (Ack);
-  rpc Subscribe(SubscribeRequest) returns (stream Signal);
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
-}
-
 message AgentInfo {
-  string id = 1;
-  repeated string capabilities = 2;
+    string id = 1;
+    repeated string capabilities = 2;
+    string status = 3;
 }
 
 message Signal {
-  string id = 1;
-  string source_agent_id = 2;
-  string target_agent_id = 3;
-  string type = 4;
-  string payload = 5;
-  int64 timestamp = 6;
-}
-
-message SubscribeRequest {
-  string agent_id = 1;
+    string id = 1;
+    string source_agent_id = 2;
+    string target_agent_id = 3;
+    string type = 4;
+    string payload = 5;
+    int64 timestamp = 6;
 }
 
 message Ack {
-  bool success = 1;
-  string message = 2;
-  string error = 3;
+    bool success = 1;
+    string error = 2;
 }
 
-message HealthCheckRequest {
-  string agent_id = 1;
+// --- Spatial & Vision Data ---
+message SpatialRequest {
+    string session_id = 1;
+    string object_id = 2;      // The 3D object being interacted with
+    string gesture = 3;        // e.g., "PINCH", "SWIPE_LEFT"
+    float x = 4;
+    float y = 5;
+    float z = 6;
 }
 
-message HealthCheckResponse {
-  bool healthy = 1;
-  string status = 2;
-  int64 timestamp = 3;
+message HologramCommand {
+    string action = 1;         // "SPAWN", "ROTATE", "MOVE"
+    string target_object = 2;
+    float x = 3;
+    float y = 4;
+    float z = 5;
 }
 
-message RoboticCommand {
-  string command_id = 1;
-  string robot_type = 2;
-  string action = 3;
-  map<string, string> parameters = 4;
-  string security_token = 5;
+// --- Hardware Node Management ---
+message NodeHeartbeat {
+    string node_id = 1;
+    float cpu_usage = 2;
+    float ram_usage = 3;
+    bool on_battery = 4;
+    int32 battery_level = 5;
 }
 
-message SensorTelemetry {
-  string sensor_id = 1;
-  string sensor_type = 2;
-  string location = 3;
-  string value = 4;
-  string unit = 5;
-  int64 timestamp = 6;
+// --- Workflow Definitions ---
+message WorkflowStep {
+    string agent_id = 1;
+    string task_payload = 2;
+    int32 step_order = 3;
+}
+
+message WorkflowRequest {
+    string workflow_id = 1;
+    repeated WorkflowStep steps = 2;
+}
+
+// --- NEW: AI Inference Bridge (VrindaAI LLM) ---
+message ChatMessage {
+    string role = 1; // "system", "user", or "assistant"
+    string content = 2;
+}
+
+message ChatRequest {
+    string model = 1; 
+    repeated ChatMessage messages = 2;
+    float temperature = 3;
+    int32 max_tokens = 4;
+}
+
+message ChatResponse {
+    string content = 1;
+    int32 prompt_tokens = 2;
+    int32 completion_tokens = 3;
+}
+
+message ChatStreamChunk {
+    string delta_content = 1; // The individual token
+    bool is_finished = 2;
+}
+
+service Kernel {
+    // Standard Agent routing
+    rpc Register (AgentInfo) returns (Ack);
+    rpc Publish (Signal) returns (Ack);
+    rpc Subscribe (AgentInfo) returns (stream Signal);
+    rpc ExecuteWorkflow (WorkflowRequest) returns (Ack);
+    
+    // Real-time streams for the 3D Engine
+    rpc StreamSpatialData (stream SpatialRequest) returns (stream HologramCommand);
+    rpc NodePing (NodeHeartbeat) returns (Ack);
+
+    // NEW: AI Inference Endpoints
+    rpc GenerateChat (ChatRequest) returns (ChatResponse);
+    rpc StreamChat (ChatRequest) returns (stream ChatStreamChunk);
 }

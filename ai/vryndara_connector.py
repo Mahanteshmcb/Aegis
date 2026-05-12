@@ -46,15 +46,21 @@ except Exception as e:
     class vryndara_pb2:
         class AgentInfo: pass
         class Signal: pass
-        class SubscribeRequest: pass
         class Ack: pass
-        class HealthCheckRequest: pass
-        class HealthCheckResponse: pass
         class RoboticCommand: pass
         class SensorTelemetry: pass
+        class SpatialRequest: pass
+        class HologramCommand: pass
+        class NodeHeartbeat: pass
+        class WorkflowStep: pass
+        class WorkflowRequest: pass
+        class ChatMessage: pass
+        class ChatRequest: pass
+        class ChatResponse: pass
+        class ChatStreamChunk: pass
 
     class vryndara_pb2_grpc:
-        class VryndaraServiceStub: pass
+        class KernelStub: pass
 
 # ═══════════════════════════════════════════════════════════════════
 # VRYNDARA CONNECTOR FOR AEGIS
@@ -137,7 +143,7 @@ class VryndaraConnector:
             
         try:
             self.channel = grpc.insecure_channel(self.kernel_address)
-            self.stub = vryndara_pb2_grpc.VryndaraServiceStub(self.channel)
+            self.stub = vryndara_pb2_grpc.KernelStub(self.channel)
             
             # Test connection by registering
             info = vryndara_pb2.AgentInfo(

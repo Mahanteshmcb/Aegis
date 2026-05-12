@@ -41,6 +41,12 @@ enum SensorStatus {
   SENSOR_MAINTENANCE = 5;
 }
 
+enum HealthStatus {
+  HEALTHY = 0;
+  DEGRADED = 1;
+  CRITICAL_HEALTH = 2;
+}
+
 // Sub-Surface Mycelial Probe Service
 service MycelialProbeService {
   // Stream real-time mycelial network data
@@ -235,6 +241,39 @@ message PestScanResponse {
   string scan_id = 2;
   int32 estimated_duration_seconds = 3;
   repeated string target_frequencies = 4;
+}
+
+// Mock client data structures
+message MycelialProbeData {
+  double biomass_density = 1;
+  double ph_level = 2;
+  double electrical_activity = 3;
+  map<string, double> nutrient_levels = 4;
+}
+
+message AcousticPestMonitorData {
+  map<string, double> frequency_spectrum = 1;
+  double pest_activity_level = 2;
+  double dominant_frequency = 3;
+  repeated PestClassification pest_classifications = 4;
+}
+
+message PestClassification {
+  string pest_type = 1;
+  double confidence = 2;
+  double activity_level = 3;
+}
+
+message SensorData {
+  string sensor_id = 1;
+  SensorType sensor_type = 2;
+  int32 zone_id = 3;
+  map<string, double> position = 4;
+  int64 timestamp = 5;
+  MycelialProbeData mycelial_probe_data = 6;
+  AcousticPestMonitorData acoustic_pest_data = 7;
+  double battery_level = 8;
+  double signal_strength = 9;
 }
 
 // General Sensor Management Service
