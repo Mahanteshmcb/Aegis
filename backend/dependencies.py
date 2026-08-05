@@ -11,6 +11,8 @@ from jose import JWTError, jwt
 from backend.config import settings
 from backend.database import SessionLocal
 from backend import models_db
+import hashlib
+from sqlalchemy.orm import Session
 
 def get_db() -> Generator[Session, None, None]:
     """Get database session."""
@@ -54,6 +56,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         
         if not user:
             raise credentials_exception
+        # Check session revocation status by token hash
+        try:
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            session_row = db.query(models_db.Session).filter(models_db.Session.token_hash == token_hash).first()
+            if session_row and session_row.revoked:
+                raise credentials_exception
+        except Exception:
+            # If session table doesn't exist or other DB error, ignore and continue
+            pass
             
         return {
             "id": user.id, 

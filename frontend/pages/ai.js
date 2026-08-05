@@ -64,7 +64,7 @@ export default function AiPage() {
       )}
 
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-6 text-sm text-aegis-muted">
-        <Link href="/dashboard" className="text-aegis-primary hover:text-sky-300">← Back to Dashboard</Link>
+        <Link href="/estate-dashboard" className="text-aegis-primary hover:text-sky-300">← Back to Estate Dashboard</Link>
       </div>
     </div>
   );

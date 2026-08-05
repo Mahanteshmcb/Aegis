@@ -6,7 +6,7 @@ export default function AuditorReportsPage() {
     <RoleBasedRoute requiredRole="auditor">
       <div className="min-h-[calc(100vh-4rem)] space-y-8">
         <div>
-          <Link href="/dashboard" className="mb-6 inline-flex items-center gap-2 text-sm text-aegis-primary hover:text-sky-300">← Back to Dashboard</Link>
+          <Link href="/estate-dashboard" className="mb-6 inline-flex items-center gap-2 text-sm text-aegis-primary hover:text-sky-300">← Back to Estate Dashboard</Link>
           <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Compliance Reports</h1>
           <p className="text-aegis-muted">Review audit findings, event summaries, and compliance status for tenant operations.</p>
         </div>

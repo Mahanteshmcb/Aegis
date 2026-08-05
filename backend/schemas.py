@@ -29,12 +29,15 @@ class Tenant(TenantBase):
 
 
 class SensorBase(BaseModel):
+    name: Optional[str] = None
     type: Optional[str] = None
     location: Optional[str] = None
+    zone_id: Optional[int] = None
 
 
 class SensorCreate(SensorBase):
-    tenant_id: int
+    # Require `type` for creation to ensure sensors are categorized
+    type: str
 
 
 class SensorUpdate(SensorBase):
@@ -215,6 +218,43 @@ class BiologicalMetricBase(BaseModel):
 
 class BiologicalMetricCreate(BiologicalMetricBase):
     pass
+
+
+# --- Day 67: Telemetry Playback Schemas ---
+class TelemetryPlaybackBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+    filters: Optional[Dict[str, Any]] = {}
+    playback_speed: Optional[float] = 1.0
+    recurring: Optional[bool] = False
+    schedule_cron: Optional[str] = None
+
+
+class TelemetryPlaybackCreate(TelemetryPlaybackBase):
+    pass
+
+
+class TelemetryPlaybackUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    filters: Optional[Dict[str, Any]] = None
+    playback_speed: Optional[float] = None
+    recurring: Optional[bool] = None
+    schedule_cron: Optional[str] = None
+
+
+class TelemetryPlaybackResponse(TelemetryPlaybackBase):
+    id: int
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
 
 
 class BiologicalMetricResponse(BiologicalMetricBase):

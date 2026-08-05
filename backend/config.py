@@ -4,10 +4,12 @@ Supports dev, test, and production configurations with Pydantic.
 """
 
 import os
+from pathlib import Path
 from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     """Application settings from environment variables."""
@@ -74,7 +76,15 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     """Get application settings (singleton)."""
-    return Settings()
+    settings = Settings()
+
+    if settings.database_url.startswith("sqlite:///"):
+        sqlite_path = settings.database_url[len("sqlite:///"):]
+        if sqlite_path and not Path(sqlite_path).is_absolute():
+            absolute_path = (BASE_DIR / sqlite_path).resolve()
+            settings.database_url = f"sqlite:///{absolute_path.as_posix()}"
+
+    return settings
 
 
 # Global settings instance

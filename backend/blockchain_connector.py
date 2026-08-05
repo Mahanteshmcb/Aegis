@@ -7,11 +7,22 @@ import os
 import json
 import logging
 from typing import Dict, List, Optional, Any
-from web3 import Web3
-from web3.contract import Contract
-from web3.exceptions import ContractLogicError
-from eth_account import Account
 from datetime import datetime
+
+# Optional imports for blockchain functionality
+try:
+    from web3 import Web3
+    from web3.contract import Contract
+    from web3.exceptions import ContractLogicError
+    from eth_account import Account
+    WEB3_AVAILABLE = True
+except Exception as e:
+    logging.warning(f"Web3 import failed: {e}. Blockchain features will be disabled.")
+    WEB3_AVAILABLE = False
+    Web3 = None
+    Contract = None
+    ContractLogicError = Exception
+    Account = None
 
 logger = logging.getLogger(__name__)
 

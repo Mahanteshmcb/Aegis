@@ -12,9 +12,9 @@ html {
 
 body {
   min-height: 100vh;
-  background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 28%),
-              radial-gradient(circle at bottom right, rgba(124, 58, 237, 0.14), transparent 20%),
-              linear-gradient(180deg, #050816 0%, #0b1120 50%, #071021 100%);
+  background: radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.15), transparent 20%),
+              radial-gradient(circle at 85% 10%, rgba(124, 58, 237, 0.12), transparent 18%),
+              linear-gradient(180deg, #020615 0%, #050814 45%, #08101b 100%);
   color: #e2e8f0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -23,7 +23,8 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: radial-gradient(circle at top center, rgba(56, 189, 248, 0.08), transparent 28%),
+              radial-gradient(circle at bottom left, rgba(124, 58, 237, 0.06), transparent 22%);
   pointer-events: none;
 }
 

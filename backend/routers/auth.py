@@ -5,7 +5,7 @@ Login, token refresh, user management.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from typing import Optional
 
@@ -29,15 +29,15 @@ class RegisterRequest(schemas.UserCreate):
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
-    to_encode.update({"exp": expire})
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes))
+    to_encode.update({"exp": int(expire.timestamp())})
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 
 def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(days=settings.jwt_refresh_token_expire_days))
-    to_encode.update({"exp": expire})
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(days=settings.jwt_refresh_token_expire_days))
+    to_encode.update({"exp": int(expire.timestamp())})
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 
@@ -131,11 +131,26 @@ async def login(
                 detail="Invalid request format"
             )
 
-    if not email or not password:
-         raise AuthenticationError("Missing email or password")
+        if not email or not password:
+            raise AuthenticationError("Missing email or password")
 
     # Authenticate via CRUD
-    user = crud.authenticate_user(db, email, password)
+    try:
+        user = crud.authenticate_user(db, email, password)
+    except Exception as e:
+        # If the DB isn't initialized (no tables), attempt to initialize and retry once.
+        err_str = str(e).lower()
+        if "no such table" in err_str or "operationalerror" in e.__class__.__name__.lower():
+            try:
+                from backend.database import init_db
+                init_db()
+                user = crud.authenticate_user(db, email, password)
+            except Exception as e2:
+                raise HTTPException(status_code=500, detail=f"Authentication backend error: {str(e2)}")
+        else:
+            # Defensive: map unexpected errors to 500 with clear message
+            raise HTTPException(status_code=500, detail=f"Authentication backend error: {str(e)}")
+
     if not user:
         raise AuthenticationError("Invalid email or password")
 
@@ -148,7 +163,24 @@ async def login(
     
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
-    
+    # Record session for revocation support
+    try:
+        import hashlib as _hashlib
+        from backend import crud as _crud
+        from datetime import datetime
+        # Compute token hash and expiry
+        token_hash = _hashlib.sha256(access_token.encode()).hexdigest()
+        # decode to get exp
+        payload_decoded = jwt.decode(access_token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        exp_ts = payload_decoded.get("exp")
+        expires_at = datetime.utcfromtimestamp(exp_ts) if exp_ts else None
+        try:
+            _crud.create_session(db, user.tenant_id, user.id, token_hash, token_type="access", expires_at=expires_at)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
     return TokenResponse(
         access_token=access_token, 
         refresh_token=refresh_token, 
@@ -209,10 +241,107 @@ def list_users(current_user=Depends(get_current_admin), db: Session = Depends(ge
         for user in users
     ]
 
+@router.get("/auth/users")
+def list_users_auth(current_user=Depends(get_current_admin), db: Session = Depends(get_db)):
+    """
+    List all users in the current tenant (admin only) - /auth path.
+    Returns user list with roles for admin panel.
+    """
+    from backend.dependencies import get_current_admin
+    users = crud.list_users_by_tenant(db, current_user["tenant_id"])
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "tenant_id": user.tenant_id,
+            "created_at": user.created_at.isoformat() if hasattr(user, 'created_at') else None,
+        }
+        for user in users
+    ]
+
+@router.post("/auth/users")
+async def create_user_endpoint(
+    request: Request,
+    current_user=Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new user (admin only, within same tenant).
+    Expects: {"email": "user@example.com", "password": "password123", "role": "operator"}
+    """
+    try:
+        body = await request.json()
+    except:
+        raise HTTPException(status_code=400, detail="Invalid request format")
+    
+    if not body:
+        raise HTTPException(status_code=400, detail="Invalid request format")
+    
+    email = body.get("email", "").strip().lower()
+    password = body.get("password", "").strip()
+    role = body.get("role", "operator")
+    
+    # Validation
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    if not password:
+        raise HTTPException(status_code=400, detail="Password is required")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if role not in ["admin", "auditor", "operator", "viewer"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be: admin, auditor, operator, or viewer")
+    
+    # Check if user exists
+    existing_user = crud.get_user_by_email(db, email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail=f"User with email {email} already exists")
+    
+    # Create user
+    try:
+        user_create = schemas.UserCreate(
+            email=email,
+            password=password,
+            role=role,
+            tenant_id=current_user["tenant_id"]
+        )
+        new_user = crud.create_user(db, user_create)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+    
+    # Audit log
+    import hashlib
+    user_data = f"email={new_user.email}|tenant_id={new_user.tenant_id}|role={new_user.role}"
+    data_hash = hashlib.sha256(user_data.encode()).hexdigest()
+    
+    audit = schemas.AuditLogCreate(
+        event_type="user_created_by_admin",
+        data_hash=data_hash,
+        blockchain_tx=None,
+    )
+    
+    try:
+        crud.create_audit_log(db, audit, tenant_id=current_user["tenant_id"])
+    except Exception:
+        pass
+    
+    return {
+        "id": new_user.id,
+        "email": new_user.email,
+        "role": new_user.role,
+        "tenant_id": new_user.tenant_id,
+        "message": f"User {new_user.email} created successfully"
+    }
+
+from fastapi import Body
+
+
 @router.put("/users/{user_id}/role")
 def update_user_role(
     user_id: int,
-    request: Request,
+    body: dict = Body(...),
     current_user=Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
@@ -220,37 +349,27 @@ def update_user_role(
     Update a user's role (admin only, within same tenant).
     Prevents privilege escalation by verifying tenant ownership.
     """
-    import asyncio
-    
-    async def get_new_role():
-        try:
-            body = await request.json()
-            return body.get("role")
-        except:
-            return None
-    
-    # Run async operation
-    new_role = asyncio.run(get_new_role())
-    
+    new_role = body.get("role")
+
     if not new_role or new_role not in ["admin", "viewer", "auditor", "operator"]:
         raise HTTPException(status_code=400, detail="Invalid role")
-    
+
     # Get target user
     user = crud.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     # Verify same tenant (security)
     if user.tenant_id != current_user["tenant_id"]:
         raise HTTPException(status_code=403, detail="Cannot modify users from other tenants")
-    
+
     # Prevent self-demotion
     if user_id == current_user.get("id") and new_role != "admin":
         raise HTTPException(status_code=400, detail="Cannot remove your own admin privileges")
-    
+
     # Update role
     updated_user = crud.update_user_role(db, user_id, new_role)
-    
+
     return {
         "id": updated_user.id,
         "email": updated_user.email,

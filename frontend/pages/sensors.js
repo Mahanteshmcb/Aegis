@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import useCurrentUser from '../hooks/useCurrentUser';
+import ConfirmModal from '../components/ConfirmModal';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
@@ -13,6 +14,10 @@ export default function SensorsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [editingSensorId, setEditingSensorId] = useState(null);
+  const [editSensorData, setEditSensorData] = useState({ location: '', name: '' });
+  const [confirmDeleteSensorId, setConfirmDeleteSensorId] = useState(null);
+  const [confirmDeleteSensorName, setConfirmDeleteSensorName] = useState('');
 
   useEffect(() => {
     if (!loading && user) {
@@ -51,6 +56,60 @@ export default function SensorsPage() {
       console.error('Fetch sensors error:', err);
     } finally {
       setLoadingSensors(false);
+    }
+  }
+
+  function openDeleteSensorConfirm(sensor) {
+    setConfirmDeleteSensorId(sensor.id);
+    setConfirmDeleteSensorName(sensor.location || sensor.name || 'this sensor');
+  }
+
+  function closeDeleteSensorConfirm() {
+    setConfirmDeleteSensorId(null);
+    setConfirmDeleteSensorName('');
+  }
+
+  async function handleSaveSensor(sensorId) {
+    if (!sensorId) return;
+    try {
+      const token = localStorage.getItem('aegis_token');
+      const resp = await fetch(`${API_URL}/api/v1/sensors/${sensorId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(editSensorData),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to update sensor');
+      }
+      console.log('Sensor updated successfully');
+      setEditingSensorId(null);
+      fetchSensors();
+    } catch (err) {
+      setError(err.message);
+      console.error('Error updating sensor:', err.message);
+    }
+  }
+
+  async function handleConfirmDeleteSensor() {
+    if (!confirmDeleteSensorId) return;
+    try {
+      const token = localStorage.getItem('aegis_token');
+      const resp = await fetch(`${API_URL}/api/v1/sensors/${confirmDeleteSensorId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to delete sensor');
+      }
+      console.log('Sensor deleted successfully');
+      setConfirmDeleteSensorId(null);
+      setConfirmDeleteSensorName('');
+      fetchSensors();
+    } catch (err) {
+      setError(err.message);
+      console.error('Error deleting sensor:', err.message);
     }
   }
 
@@ -127,12 +186,19 @@ export default function SensorsPage() {
                   <th className="px-6 py-4 text-aegis-muted font-semibold">Status</th>
                   <th className="px-6 py-4 text-aegis-muted font-semibold">Last Reading</th>
                   <th className="px-6 py-4 text-aegis-muted font-semibold">Sensor ID</th>
+                  <th className="px-6 py-4 text-aegis-muted font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {filteredSensors.map((sensor) => (
                   <tr key={sensor.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="px-6 py-4 text-white font-medium">{sensor.location || 'Unnamed Sensor'}</td>
+                    <td className="px-6 py-4 text-white font-medium">
+                      {editingSensorId === sensor.id ? (
+                        <input value={editSensorData.location} onChange={(e) => setEditSensorData({ ...editSensorData, location: e.target.value })} className="w-full rounded-md bg-slate-900 px-2 py-1 text-white border border-slate-700" />
+                      ) : (
+                        sensor.location || 'Unnamed Sensor'
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-slate-400">{sensor.type || 'Unknown'}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${sensor.status === 'offline' ? 'bg-red-900/30 text-red-400' : 'bg-green-900/30 text-green-400'}`}>
@@ -142,6 +208,19 @@ export default function SensorsPage() {
                     </td>
                     <td className="px-6 py-4 text-slate-400 text-xs">{sensor.last_reading ? new Date(sensor.last_reading).toLocaleString() : 'N/A'}</td>
                     <td className="px-6 py-4 text-slate-500 font-mono text-xs">{sensor.id}</td>
+                    <td className="px-6 py-4">
+                      {editingSensorId === sensor.id ? (
+                        <div className="flex gap-2">
+                          <button onClick={() => handleSaveSensor(sensor.id)} className="rounded-xl bg-aegis-primary px-3 py-1 text-xs text-white">Save</button>
+                          <button onClick={() => setEditingSensorId(null)} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted">Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button onClick={() => { setEditingSensorId(sensor.id); setEditSensorData({ location: sensor.location || '', name: sensor.name || '' }); }} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted hover:border-aegis-primary hover:text-aegis-primary">Edit</button>
+                          <button onClick={() => openDeleteSensorConfirm(sensor)} className="rounded-xl border border-rose-700 px-3 py-1 text-xs text-rose-400 hover:bg-rose-900/20">Delete</button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -155,4 +234,15 @@ export default function SensorsPage() {
           Showing {filteredSensors.length} of {sensors.length} sensors • {autoRefresh ? 'Auto-refresh enabled' : 'Manual refresh mode'}
         </div>
       )}
+      <ConfirmModal
+        open={Boolean(confirmDeleteSensorId)}
+        title="Confirm delete"
+        message={`Delete ${confirmDeleteSensorName} and remove its sensor record? This action cannot be undone.`}
+        confirmLabel="Delete Sensor"
+        loading={false}
+        onConfirm={handleConfirmDeleteSensor}
+        onCancel={closeDeleteSensorConfirm}
+      />
     </div>
+  );
+}

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import useCurrentUser from '../hooks/useCurrentUser';
+import ConfirmModal from '../components/ConfirmModal';
+import { useToast } from '../components/ToastContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
@@ -10,11 +12,16 @@ export default function ZonesPage() {
   const [zones, setZones] = useState([]);
   const [loadingZones, setLoadingZones] = useState(true);
   const [error, setError] = useState(null);
+  const { addToast } = useToast();
+  const [formError, setFormError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({ name: '', description: '' });
-  const [formError, setFormError] = useState(null);
+  const [editingZoneId, setEditingZoneId] = useState(null);
+  const [editFormData, setEditFormData] = useState({ name: '', description: '' });
+  const [confirmDeleteZoneId, setConfirmDeleteZoneId] = useState(null);
+  const [confirmDeleteZoneName, setConfirmDeleteZoneName] = useState('');
 
   useEffect(() => {
     if (!loading && user) {
@@ -81,11 +88,84 @@ export default function ZonesPage() {
       const createdZone = await resp.json();
       setFormData({ name: '', description: '' });
       setShowForm(false);
+      addToast(`Zone "${createdZone.name || formData.name}" created successfully!`, 'success');
       setSuccess(`Zone "${createdZone.name || formData.name}" created successfully!`);
       setTimeout(() => setSuccess(null), 4000);
       fetchZones();
     } catch (err) {
       setFormError(err.message);
+      addToast(err.message, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleEditClick(zone) {
+    setEditingZoneId(zone.id);
+    setEditFormData({ name: zone.name || '', description: zone.description || '' });
+  }
+
+  async function handleUpdateZone(zoneId) {
+    if (!editFormData.name.trim()) return setFormError('Zone name is required');
+    try {
+      setIsSubmitting(true);
+      const token = localStorage.getItem('aegis_token');
+      const resp = await fetch(`${API_URL}/api/v1/zones/${zoneId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to update zone');
+      }
+
+      setSuccess('Zone updated');
+      addToast('Zone updated', 'success');
+      setTimeout(() => setSuccess(null), 3000);
+      setEditingZoneId(null);
+      fetchZones();
+    } catch (err) {
+      setFormError(err.message);
+      addToast(err.message, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function openDeleteZoneConfirm(zone) {
+    setConfirmDeleteZoneId(zone.id);
+    setConfirmDeleteZoneName(zone.name || 'this zone');
+  }
+
+  function closeDeleteZoneConfirm() {
+    setConfirmDeleteZoneId(null);
+    setConfirmDeleteZoneName('');
+  }
+
+  async function handleConfirmDeleteZone() {
+    if (!confirmDeleteZoneId) return;
+    setIsSubmitting(true);
+    try {
+      const token = localStorage.getItem('aegis_token');
+      const resp = await fetch(`${API_URL}/api/v1/zones/${confirmDeleteZoneId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to delete zone');
+      }
+      addToast('Zone deleted', 'success');
+      setSuccess('Zone deleted');
+      setTimeout(() => setSuccess(null), 3000);
+      setConfirmDeleteZoneId(null);
+      setConfirmDeleteZoneName('');
+      fetchZones();
+    } catch (err) {
+      setError(err.message);
+      addToast(err.message, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -148,18 +228,33 @@ export default function ZonesPage() {
           </div>
         ) : (
           zones.map((zone) => (
-            <div key={zone.id} className="rounded-3xl border border-slate-700 bg-slate-900/80 p-6 transition hover:border-aegis-primary cursor-pointer">
+            <div key={zone.id} className="rounded-3xl border border-slate-700 bg-slate-900/80 p-6 transition hover:border-aegis-primary">
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
                   <h2 className="text-xl font-semibold text-white">{zone.name}</h2>
                   <p className="text-sm text-aegis-muted mt-2">{zone.description || 'No description provided.'}</p>
                 </div>
-                <span className="inline-flex items-center rounded-full border border-green-500/20 bg-green-900/20 px-3 py-1 text-xs font-semibold text-green-300">Active</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleEditClick(zone)} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted hover:border-aegis-primary hover:text-aegis-primary">Edit</button>
+                  <button onClick={() => openDeleteZoneConfirm(zone)} className="rounded-xl border border-rose-700 px-3 py-1 text-xs text-rose-400 hover:bg-rose-900/20">Delete</button>
+                </div>
               </div>
-              <div className="grid gap-2 text-xs text-slate-500">
-                <p>ID: <span className="font-mono text-slate-400">{zone.id}</span></p>
-                <p>Created: {zone.created_at ? new Date(zone.created_at).toLocaleDateString() : 'Unknown'}</p>
-              </div>
+
+              {editingZoneId === zone.id ? (
+                <div className="space-y-3 mb-4">
+                  <input value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-2 text-white" />
+                  <textarea value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} rows={3} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-2 text-white" />
+                  <div className="flex gap-3">
+                    <button onClick={() => handleUpdateZone(zone.id)} disabled={isSubmitting} className="rounded-2xl bg-aegis-primary px-4 py-2 text-white">Save</button>
+                    <button onClick={() => { setEditingZoneId(null); setFormError(null); }} className="rounded-2xl border border-slate-700 px-4 py-2 text-aegis-muted">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-2 text-xs text-slate-500">
+                  <p>ID: <span className="font-mono text-slate-400">{zone.id}</span></p>
+                  <p>Created: {zone.created_at ? new Date(zone.created_at).toLocaleDateString() : 'Unknown'}</p>
+                </div>
+              )}
             </div>
           ))
         )}
@@ -179,6 +274,15 @@ export default function ZonesPage() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={Boolean(confirmDeleteZoneId)}
+        title="Confirm delete"
+        message={`Delete ${confirmDeleteZoneName} and its environmental configuration? This action cannot be undone.`}
+        confirmLabel="Delete Zone"
+        loading={isSubmitting}
+        onConfirm={handleConfirmDeleteZone}
+        onCancel={closeDeleteZoneConfirm}
+      />
     </div>
   );
 }

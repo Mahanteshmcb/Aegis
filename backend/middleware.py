@@ -6,10 +6,11 @@ Request logging, error handling, request ID tracing, and CORS.
 import uuid
 import time
 import logging
-from fastapi import Request
+from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
+from backend.exceptions import AegisException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 
@@ -72,13 +73,30 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         except Exception as exc:
             logger.error(f"[{request_id}] Unhandled exception: {str(exc)}", extra={"request_id": request_id}, exc_info=True)
+            # Map known application exceptions to their status codes
+            if isinstance(exc, AegisException):
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={
+                        "error": exc.message,
+                        "request_id": request_id,
+                    },
+                )
+            if isinstance(exc, HTTPException):
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={
+                        "error": exc.detail if hasattr(exc, 'detail') else str(exc),
+                        "request_id": request_id,
+                    },
+                )
             return JSONResponse(
                 status_code=500,
                 content={
                     "error": "Internal server error",
                     "request_id": request_id,
-                    "detail": str(exc) if settings.debug else "An error occurred"
-                }
+                    "detail": str(exc) if settings.debug else "An error occurred",
+                },
             )
 
 def setup_cors_middleware(app):
@@ -87,14 +105,20 @@ def setup_cors_middleware(app):
         CORSMiddleware,
         allow_origins=[
             "http://localhost:3000",   # Your Next.js frontend
-            "http://127.0.0.1:3000",
             "http://localhost:3001",   # Next.js fallback port
             "http://localhost:3002",   # Next.js fallback port
+            "http://127.0.0.1:3000",   # 127.0.0.1 variants
+            "http://127.0.0.1:3001",
+            "http://127.0.0.1:3002",
+            "http://localhost:8001",   # Backend (for testing)
+            "http://127.0.0.1:8001",
             "http://localhost:8080",   # Swagger UI
+            "*",                       # Allow all origins in dev
         ],
         allow_credentials=True,
         allow_methods=["*"],           # Allows all methods (POST, GET, etc.)
         allow_headers=["*"],           # Allows all headers
+        expose_headers=["*"],          # Expose all headers
     )
     return app
 

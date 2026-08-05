@@ -93,7 +93,7 @@ export default function ProfilePage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] space-y-8">
       <div>
-        <button onClick={() => router.push('/dashboard')} className="mb-6 rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-2 text-aegis-primary hover:border-aegis-primary transition-all">← Back to Dashboard</button>
+        <button onClick={() => router.push('/estate-dashboard')} className="mb-6 rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-2 text-aegis-primary hover:border-aegis-primary transition-all">← Back to Estate Dashboard</button>
         <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Profile</h1>
         <p className="text-aegis-muted">Manage your account settings and security posture.</p>
       </div>

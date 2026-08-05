@@ -14,7 +14,7 @@ Supports:
 
 import numpy as np
 from enum import Enum
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional, Any, Union
 
 try:
     import torch
@@ -151,6 +151,46 @@ class VisualCropHealthEngine:
             "vegetation_health": round(vegetation_health, 3),
             "temperature_stress": round(temp_stress, 3),
             "canopy_health": round(canopy_health, 3)
+        }
+
+    def assess_health(self, features: Union[list, tuple, np.ndarray]) -> Dict[str, Any]:
+        """Compatibility wrapper used by tests: accepts a 5-element feature
+        vector `[ndvi, chlorophyll_content, canopy_temperature, leaf_area_index, stress_index]`.
+        Returns `status` and `confidence` (health_score).
+        """
+        arr = np.asarray(features, dtype=np.float32).flatten()
+        # Expect at least 5 values; pad if necessary
+        if arr.size < 5:
+            padded = np.zeros(5, dtype=np.float32)
+            padded[: arr.size] = arr
+            arr = padded
+
+        # Clamp and normalize inputs to expected ranges to be robust to noisy data
+        ndvi = float(max(0.0, min(1.0, arr[0])))
+        chlorophyll = float(max(0.0, min(100.0, arr[1])))
+        canopy_temp = float(arr[2])
+        lai = float(max(0.0, min(10.0, arr[3])))
+        stress_idx = float(max(-10.0, min(10.0, arr[4])))
+
+        # Derive ambient temp and canopy cover heuristically from stress index
+        ambient_temp = canopy_temp - (stress_idx * 2.0)
+        canopy_cover = max(0.0, min(100.0, 75.0 - (stress_idx * 10.0)))
+
+        res = self.predict_from_image_features(
+            ndvi=ndvi,
+            chlorophyll_content=chlorophyll,
+            canopy_temperature=canopy_temp,
+            ambient_temperature=ambient_temp,
+            canopy_cover=canopy_cover,
+            leaf_area_index=lai,
+            color_index=0.5,
+            biomass_estimate=0.5
+        )
+
+        return {
+            "status": res.get("status"),
+            "confidence": float(res.get("health_score", 0.0)),
+            **{k: v for k, v in res.items() if k not in ("status", "health_score")}
         }
     
     def _predict_nn(self, features: np.ndarray) -> Dict[str, str]:

@@ -11,7 +11,7 @@
 ```powershell
 cd c:\Users\Mahantesh\DevelopmentProjects\Aegis
 conda activate aegis
-  python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 ✅ **Expected output:** `Application startup complete.`  
@@ -29,7 +29,7 @@ npm run dev
 ### 4. Login
 - **URL:** http://localhost:3000 (or the port shown in terminal)
 - **Email:** `admin@aegis.com`
-- **Password:** `aegis2026`
+- **Password:** `admin1234`
 
 ### 5. Access Points
 | Component | URL |
@@ -39,6 +39,131 @@ npm run dev
 | **Health Check** | http://localhost:8001/api/v1/health |
 
 ---
+
+## Day 54 — Energy policy persistence & Biodiversity optimizer (Reference)
+
+- Energy charging policies are persisted in the database via the `energy_policies` table.
+- Backend model: `backend.models_db.EnergyPolicy` — fields: `tenant_id`, `charge_threshold`, `discharge_threshold`, `max_charge_rate_kw`.
+- API endpoints:
+  - `GET /api/v1/energy/policy` — returns latest policy for `tenant_id` (optional query param).
+  - `POST /api/v1/energy/policy` — saves a new policy row for the tenant.
+- If Alembic isn't available or fails in dev, create tables with SQLAlchemy at runtime:
+  ```powershell
+  $env:PYTHONPATH='.'; python -c "from backend.database import init_db; init_db(); print('DB initialized')"
+  ```
+
+- Biodiversity optimizer helper: `ai/biodiversity_optimization.py` with `optimize_diversity()`.
+- API endpoint: `GET /api/v1/biodiversity/optimize?slots=10` — returns suggested species mix (demo logic).
+
+## Day 55 — Weather integration (scaffold)
+
+Goal: integrate weather forecasts to inform scheduling, energy management, and crop decisions.
+
+Scaffold added (Day 55):
+- AI helper: `ai/weather_integration.py` — `get_forecast(lat, lon)` returns demo forecast if no `OPENWEATHER_API_KEY` is set.
+- Router: `backend/routers/weather.py` — `GET /api/v1/weather/forecast?lat=&lon=` returns forecast JSON.
+- Test: `tests/test_weather.py` — simple unit check for forecast structure.
+
+How to run quick local checks:
+```powershell
+cd C:\Users\Mahantesh\DevelopmentProjects\Aegis
+$env:PYTHONPATH='.'; python -c "from ai.weather_integration import get_forecast; print(get_forecast(51.5, -0.12)[:2])"
+```
+
+To enable a real provider, set `OPENWEATHER_API_KEY` in your environment (the helper will attempt a fetch).
+
+Next steps I can take for Day 55 on request:
+- Wire weather signals into the energy scheduler to account for expected cloud/rain.
+- Add frontend dashboard widgets (forecast card, rain warnings, adaptive scheduling toggles).
+- Add historical weather caching and DB model for forecasts.
+
+## Day 56 — Compliance and regulatory reporting
+This milestone implements tenant-aware compliance tracking and certification reporting for agricultural and organic production.
+- Added `POST /api/v1/audit/compliance/organic-certification/request` to record certification requests on blockchain and in DB audit logs.
+- Added `GET /api/v1/audit/compliance/organic-certification/{tenant_id}` to retrieve certification request counts and compliance summary.
+- Extended frontend API utilities with `requestOrganicCertification()` and `getOrganicCertificationStatus()`.
+
+### Day 56 validation
+- Submit a certification request through `/api/v1/audit/compliance/organic-certification/request`.
+- Query `/api/v1/audit/compliance/organic-certification/{tenant_id}` to confirm request counts and compliance summary.
+- Verify audit log records exist for `organic_certification_request` events.
+
+## Day 57 — Live telemetry and local adaptation
+This milestone connects live on-site sensor telemetry directly into the weather and energy planning pipeline.
+- Sensor readings are ingested through `/api/v1/sensors/data` and environmental sensors automatically create local `WeatherObservation` entries.
+- The dashboard now includes a `Live Sensor Telemetry` card with the latest device readings and a direct button to ingest environmental telemetry into the local weather model.
+- Weather forecast cache and energy status calculations now reflect local observations, closing the loop between sensor feed, forecast, and charge scheduling.
+- WeatherObservationCard displays recent local observations with timestamp, temperature, humidity, wind, and precipitation.
+- Frontend uses `useCurrentUser()` hook for tenant-aware queries across all weather/energy endpoints.
+
+### Day 57 validation
+- Verify sensor telemetry ingestion with `/api/v1/sensors` and `/api/v1/sensors/data`.
+- Query `/api/v1/weather/observations` for recent local weather data.
+- Confirm `/api/v1/weather/local_forecast` and `/api/v1/energy/status` respond with forecast-driven values.
+- Check dashboard displays "Recent Observations" panel with weather data.
+- Verify SensorTelemetryCard shows live sensor readings with ingest buttons.
+
+## Day 58 — Adaptive energy scheduling
+This milestone implements an intelligent charge/discharge scheduler that uses weather forecasts to optimize battery management and recommend load-shifting strategies.
+- Smart scheduler evaluates solar confidence based on precipitation, cloud cover, and temperature.
+- Analyzes 24-hour forecast to prioritize charging during high-solar windows.
+- Defers non-critical loads when battery is low; recommends manual load shifting.
+- Endpoint: `GET /api/v1/energy/smart_schedule?tenant_id=&zone_id=` returns adaptive schedule with recommendations.
+- EnergyCard dashboard widget includes "Smart Schedule" button to view weather-aware plan.
+- Returns detailed metrics: peak load, min/max SOC, generation/consumption balance, and actionable recommendations.
+
+### Day 58 validation
+- Call `/api/v1/energy/smart_schedule` to see adaptive schedule with weather signals.
+- Click "Smart Schedule" button in EnergyCard to view hourly plan and recommendations.
+- Verify schedule adjusts solar confidence based on forecast (rain → reduced confidence).
+- Check recommendations for capacity warnings and low battery alerts.
+- Run `pytest tests/test_day58_adaptive_energy.py -q` to validate all 6 scheduling scenarios.
+
+### References
+- **Adaptive Scheduler:** `ai/energy_management.py::smart_adaptive_schedule()`
+- **API Endpoint:** `/api/v1/energy/smart_schedule`
+- **Frontend Component:** `frontend/components/EnergyCard.js` with getSmartEnergySchedule()
+- **Tests:** `tests/test_day58_adaptive_energy.py`
+
+## Day 59 — Software completion milestone
+This milestone conducts final integration testing, performance benchmarking, and security audits to validate all components work together and meet quality standards before Phase 2 hardware development.
+- **E2E Integration Tests:** Complete pipeline validation (tenant → sensor → telemetry → weather → energy → schedule)
+- **Performance Benchmarking:** Establishes baseline metrics for key endpoints (health <5ms, queries <100ms, adaptive schedule <150ms)
+- **Security Audit:** Validates JWT authentication, multi-tenant isolation, SQL injection prevention, audit immutability
+- All tests located in `tests/test_day59_*.py` (3 test files, 32 total test cases)
+- Comprehensive milestone report: `DAY59_MILESTONE_REPORT.md`
+
+### Day 59 validation
+Run full quality assurance suite:
+```bash
+# E2E Integration Tests (6 tests)
+pytest tests/test_day59_e2e_integration.py -v
+
+# Performance Benchmarking (12 tests) - includes baseline metrics report
+pytest tests/test_day59_performance.py -v -s
+
+# Security Audit (14 tests)
+pytest tests/test_day59_security.py -v
+
+# All Day 59 Tests (32 tests)
+pytest tests/test_day59_*.py -v
+```
+
+**Expected Results:** 32/32 PASS ✅
+
+### Quality Gates
+✅ Full pipeline integration verified  
+✅ Performance within acceptable baselines  
+✅ Multi-tenant isolation enforced  
+✅ Security vulnerabilities prevented  
+✅ Audit trails immutable  
+
+### References
+- **E2E Tests:** `tests/test_day59_e2e_integration.py` (6 scenarios)
+- **Performance Tests:** `tests/test_day59_performance.py` (12 benchmarks)
+- **Security Tests:** `tests/test_day59_security.py` (14 validations)
+- **Milestone Report:** `DAY59_MILESTONE_REPORT.md`
+
 
 ## Overview
 Aegis is a decentralized digital twin framework for sovereign asset management, anti-forensic security, and enterprise infrastructure orchestration. The system is modular, with components for backend (FastAPI), AI orchestration, frontend (Next.js), blockchain (Hardhat), IoT (ESP32), and database (SQLite/PostgreSQL).

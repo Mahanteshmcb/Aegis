@@ -39,3 +39,6 @@ build/
 # Database
 *.sqlite3
 *.db
+
+# Report
+ProjectReport/

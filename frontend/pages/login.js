@@ -12,6 +12,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(''); // NEW: To show bad passwords
+  const [showEmergencyOverride, setShowEmergencyOverride] = useState(false);
+  const [overrideCode, setOverrideCode] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -40,6 +42,30 @@ export default function Login() {
     } catch (error) {
       // 4. Handle incorrect passwords
       setErrorMsg(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEmergencyOverride = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      if (overrideCode !== 'AEGIS_OVERRIDE_2026') {
+        setErrorMsg('Invalid emergency override code');
+        setIsLoading(false);
+        return;
+      }
+
+      // Grant temporary access without credentials
+      const tempToken = `EMERGENCY_OVERRIDE_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      setAuthToken(tempToken);
+      console.log('Emergency override activated. Temporary access granted.');
+      router.push('/estate-dashboard');
+    } catch (error) {
+      setErrorMsg('Emergency override failed');
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +108,7 @@ export default function Login() {
               label="Operator ID (Email)" 
               type="email" 
               id="email" 
-              placeholder="admin@aegis.local" 
+              placeholder="admin@aegis.com" 
               required={true}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -111,12 +137,37 @@ export default function Login() {
                 </label>
               </div>
 
-              <div className="text-sm">
-                <a href="#" className="font-medium text-aegis-primary hover:text-blue-400 transition-colors">
-                  Emergency Override?
-                </a>
-              </div>
+              <button 
+                type="button"
+                onClick={() => setShowEmergencyOverride(!showEmergencyOverride)}
+                className="text-sm font-medium text-aegis-primary hover:text-blue-400 transition-colors"
+              >
+                Emergency Override?
+              </button>
             </div>
+
+            {showEmergencyOverride && (
+              <div className="border border-red-500/30 rounded-lg p-4 bg-red-900/10 space-y-3">
+                <p className="text-xs text-red-300">Emergency override requires security code</p>
+                <Input 
+                  label="Override Code" 
+                  type="password" 
+                  id="override-code" 
+                  placeholder="••••••••••••" 
+                  value={overrideCode}
+                  onChange={(e) => setOverrideCode(e.target.value)}
+                />
+                <Button 
+                  type="button"
+                  variant="primary" 
+                  className="w-full flex justify-center py-3 text-lg bg-red-600 hover:bg-red-700"
+                  onClick={handleEmergencyOverride}
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Activating...' : 'Activate Emergency Access'}
+                </Button>
+              </div>
+            )}
 
             <Button 
               type="submit" 

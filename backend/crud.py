@@ -42,9 +42,11 @@ def delete_tenant(db: Session, tenant_id: int) -> bool:
     return True
 
 
-def create_sensor(db: Session, sensor: schemas.SensorCreate) -> models.Sensor:
+def create_sensor(db: Session, sensor: schemas.SensorCreate, tenant_id: int) -> models.Sensor:
     db_sensor = models.Sensor(
-        tenant_id=sensor.tenant_id,
+        tenant_id=tenant_id,
+        zone_id=sensor.zone_id,
+        name=sensor.name,
         type=sensor.type,
         location=sensor.location,
     )
@@ -189,6 +191,101 @@ def list_audit_logs(db: Session, tenant_id: int, sensor_id: int | None = None, s
     return query.order_by(models.AuditLog.created_at.desc()).offset(skip).limit(limit).all()
 
 
+# --- Telemetry Playback CRUD (Day 67) ---
+def create_playback_session(db: Session, tenant_id: int, creator_user_id: int, session_data: dict) -> models.TelemetryPlaybackSession:
+    start_time = session_data['start_time']
+    status = 'scheduled' if start_time and start_time > datetime.utcnow() else 'stopped'
+    db_session = models.TelemetryPlaybackSession(
+        tenant_id=tenant_id,
+        name=session_data.get('name', f'playback-{int(datetime.utcnow().timestamp())}'),
+        description=session_data.get('description'),
+        start_time=start_time,
+        end_time=session_data['end_time'],
+        filters=session_data.get('filters', {}),
+        playback_speed=session_data.get('playback_speed', 1.0),
+        recurring=bool(session_data.get('recurring', False)),
+        schedule_cron=session_data.get('schedule_cron'),
+        status=status,
+        created_by=creator_user_id,
+    )
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    return db_session
+
+
+def list_playback_sessions(db: Session, tenant_id: int) -> list[models.TelemetryPlaybackSession]:
+    return (
+        db.query(models.TelemetryPlaybackSession)
+        .filter(models.TelemetryPlaybackSession.tenant_id == tenant_id)
+        .order_by(models.TelemetryPlaybackSession.created_at.desc())
+        .all()
+    )
+
+
+def get_playback_session(db: Session, tenant_id: int, session_id: int) -> models.TelemetryPlaybackSession | None:
+    return (
+        db.query(models.TelemetryPlaybackSession)
+        .filter(models.TelemetryPlaybackSession.tenant_id == tenant_id)
+        .filter(models.TelemetryPlaybackSession.id == session_id)
+        .first()
+    )
+
+
+def update_playback_status(db: Session, playback: models.TelemetryPlaybackSession, status: str) -> models.TelemetryPlaybackSession:
+    playback.status = status
+    db.commit()
+    db.refresh(playback)
+    return playback
+
+
+def update_playback_session(db: Session, playback: models.TelemetryPlaybackSession, update_data: dict) -> models.TelemetryPlaybackSession:
+    for field, value in update_data.items():
+        if hasattr(playback, field) and value is not None:
+            setattr(playback, field, value)
+    db.commit()
+    db.refresh(playback)
+    return playback
+
+
+def delete_playback_session(db: Session, tenant_id: int, session_id: int) -> bool:
+    s = (
+        db.query(models.TelemetryPlaybackSession)
+        .filter(models.TelemetryPlaybackSession.tenant_id == tenant_id)
+        .filter(models.TelemetryPlaybackSession.id == session_id)
+        .first()
+    )
+    if not s:
+        return False
+    db.delete(s)
+    db.commit()
+    return True
+
+
+def export_playback_sensor_data(db: Session, tenant_id: int, start_time, end_time) -> list[models.SensorData]:
+    return (
+        db.query(models.SensorData)
+        .join(models.Sensor)
+        .filter(models.Sensor.tenant_id == tenant_id)
+        .filter(models.SensorData.timestamp >= start_time)
+        .filter(models.SensorData.timestamp <= end_time)
+        .order_by(models.SensorData.timestamp.asc())
+        .all()
+    )
+
+
+def export_audit_logs(db: Session, tenant_id: int, start_ts: datetime | None = None, end_ts: datetime | None = None, event_type: str | None = None) -> list[models.AuditLog]:
+    """Return audit logs matching filters for export."""
+    query = db.query(models.AuditLog).filter(models.AuditLog.tenant_id == tenant_id)
+    if start_ts is not None:
+        query = query.filter(models.AuditLog.created_at >= start_ts)
+    if end_ts is not None:
+        query = query.filter(models.AuditLog.created_at <= end_ts)
+    if event_type:
+        query = query.filter(models.AuditLog.event_type == event_type)
+    return query.order_by(models.AuditLog.created_at.asc()).all()
+
+
 # --- User CRUD for authentication ---
 from sqlalchemy.exc import IntegrityError
 from passlib.hash import bcrypt
@@ -207,9 +304,17 @@ def create_user(db: Session, user: schemas.UserCreate) -> models.User:
     db.add(db_user)
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
-        raise ValueError("User with this email already exists")
+        existing_email = db.query(models.User).filter(models.User.email == user.email).first()
+        if existing_email:
+            raise ValueError("User with this email already exists")
+
+        tenant_exists = db.query(models.Tenant).filter(models.Tenant.id == user.tenant_id).first()
+        if not tenant_exists:
+            raise ValueError("Tenant not found. Please contact system administrator.")
+
+        raise
     db.refresh(db_user)
     return db_user
 
@@ -253,6 +358,62 @@ def delete_user(db: Session, user_id: int) -> bool:
     db.delete(user)
     db.commit()
     return True
+
+
+# --- Session management CRUD ---
+def create_session(db: Session, tenant_id: int, user_id: int, token_hash: str, token_type: str = "access", expires_at: datetime | None = None) -> models.Session:
+    session = models.Session(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        token_hash=token_hash,
+        token_type=token_type,
+        expires_at=expires_at,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def list_sessions_by_tenant(db: Session, tenant_id: int) -> list[models.Session]:
+    return db.query(models.Session).filter(models.Session.tenant_id == tenant_id).order_by(models.Session.created_at.desc()).all()
+
+
+def revoke_session(db: Session, session_id: int, tenant_id: int) -> bool:
+    s = db.query(models.Session).filter(models.Session.id == session_id, models.Session.tenant_id == tenant_id).first()
+    if not s:
+        return False
+    s.revoked = True
+    db.commit()
+    return True
+
+
+# --- Sensor bulk import helper ---
+def bulk_import_sensors(db: Session, tenant_id: int, sensors: list[dict]) -> dict:
+    """Import sensors from a list of dicts. Returns summary with created/updated counts."""
+    created = 0
+    updated = 0
+    for s in sensors:
+        # dedupe by name within tenant
+        existing = db.query(models.Sensor).filter(models.Sensor.tenant_id == tenant_id, models.Sensor.name == s.get("name")).first()
+        if existing:
+            # update fields
+            existing.type = s.get("type", existing.type)
+            existing.location = s.get("location", existing.location)
+            db.commit()
+            updated += 1
+        else:
+            new_sensor = models.Sensor(
+                tenant_id=tenant_id,
+                zone_id=s.get("zone_id"),
+                name=s.get("name"),
+                type=s.get("type"),
+                location=s.get("location"),
+            )
+            db.add(new_sensor)
+            db.commit()
+            created += 1
+    return {"created": created, "updated": updated}
 
 
 # ============================================================================
@@ -513,6 +674,86 @@ def create_data_sync_job(db: Session, tenant_id: int, sync_job: schemas.DataSync
     db.commit()
     db.refresh(db_job)
     return db_job
+
+
+# --- Day 68: Notification rules CRUD ---
+def create_notification_rule(db: Session, tenant_id: int, creator_user_id: int, rule_data: dict):
+    nr = models.NotificationRule(
+        tenant_id=tenant_id,
+        name=rule_data.get('name', 'rule'),
+        condition=rule_data.get('condition', ''),
+        enabled=rule_data.get('enabled', True),
+        created_by=creator_user_id,
+    )
+    db.add(nr)
+    db.commit()
+    db.refresh(nr)
+    return nr
+
+
+def list_notification_rules(db: Session, tenant_id: int):
+    return db.query(models.NotificationRule).filter(models.NotificationRule.tenant_id == tenant_id).order_by(models.NotificationRule.created_at.desc()).all()
+
+
+def delete_notification_rule(db: Session, tenant_id: int, rule_id: int) -> bool:
+    r = db.query(models.NotificationRule).filter(models.NotificationRule.tenant_id == tenant_id).filter(models.NotificationRule.id == rule_id).first()
+    if not r:
+        return False
+    db.delete(r)
+    db.commit()
+    return True
+
+
+def create_alert_delivery_config(db: Session, tenant_id: int, provider: str, config: dict, enabled: bool = True, retry_policy: dict | None = None) -> models.AlertDeliveryConfig:
+    adc = models.AlertDeliveryConfig(
+        tenant_id=tenant_id,
+        provider=provider,
+        enabled=enabled,
+        config=config,
+        retry_policy=retry_policy or {"retries": 3, "backoff_seconds": 5},
+    )
+    db.add(adc)
+    db.commit()
+    db.refresh(adc)
+    return adc
+
+
+def list_alert_delivery_configs(db: Session, tenant_id: int):
+    return db.query(models.AlertDeliveryConfig).filter(models.AlertDeliveryConfig.tenant_id == tenant_id).order_by(models.AlertDeliveryConfig.created_at.desc()).all()
+
+
+def create_alert_delivery_status(db: Session, tenant_id: int, alert_id: int, provider: str, status: str = "pending", attempts: int = 0, last_error: str | None = None):
+    ads = models.AlertDeliveryStatus(
+        tenant_id=tenant_id,
+        alert_id=alert_id,
+        provider=provider,
+        status=status,
+        attempts=attempts,
+        last_error=last_error,
+        last_attempt_at=None,
+    )
+    db.add(ads)
+    db.commit()
+    db.refresh(ads)
+    return ads
+
+
+def update_alert_delivery_status(db: Session, delivery_status: models.AlertDeliveryStatus, status: str, attempts: int, last_error: str | None):
+    delivery_status.status = status
+    delivery_status.attempts = attempts
+    delivery_status.last_error = last_error
+    delivery_status.last_attempt_at = datetime.utcnow()
+    db.commit()
+    db.refresh(delivery_status)
+    return delivery_status
+
+
+def list_alert_delivery_statuses(db: Session, tenant_id: int, alert_id: int | None = None):
+    query = db.query(models.AlertDeliveryStatus).filter(models.AlertDeliveryStatus.tenant_id == tenant_id)
+    if alert_id is not None:
+        query = query.filter(models.AlertDeliveryStatus.alert_id == alert_id)
+    return query.order_by(models.AlertDeliveryStatus.created_at.desc()).all()
+    return True
 
 
 def list_data_sync_jobs(db: Session, tenant_id: int, limit: int = 100) -> list[models.DataSyncJob]:

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { getAuthToken, clearAuthToken } from '../utils/auth';
+import { getSystemHealthStatus } from '../utils/api';
 import useCurrentUser from '../hooks/useCurrentUser';
 
 export default function Header() {
@@ -26,13 +27,8 @@ export default function Header() {
       if (!token) return;
 
       try {
-        const res = await fetch('http://localhost:8080/api/v1/health/status', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setSysStatus(data);
-        }
+        const data = await getSystemHealthStatus(token);
+        setSysStatus((prev) => ({ ...prev, ...data }));
       } catch (err) {
         console.error('Health Sync Failed:', err);
       }
@@ -43,33 +39,40 @@ export default function Header() {
     return () => clearInterval(interval);
   }, []);
 
-  const isWarning = sysStatus.status === 'WARNING';
+  const statusText = String(sysStatus.status || '').toLowerCase();
+  const isWarning = statusText === 'warning' || statusText === 'degraded' || statusText === 'alert';
 
   return (
     <header className="h-16 bg-aegis-dark border-b border-slate-700 flex items-center justify-between px-6">
-      <div className="flex items-center">
-        <span className="text-aegis-muted font-medium uppercase tracking-tighter text-xs">
-          Main Estate <span className="text-aegis-primary mx-2">|</span> Sector: Alpha
-        </span>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('aegis_toggle_sidebar'))}
+          className="md:hidden p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-aegis-primary"
+          aria-label="Toggle sidebar"
+        >
+          ☰
+        </button>
+        <div className="space-y-1">
+        <p className="text-xs uppercase tracking-[0.36em] text-aegis-muted">Current View</p>
+        <p className="text-base font-semibold text-white">
+          {router.pathname === '/dashboard' || router.pathname === '/estate-dashboard' ? 'Estate Command Center' : router.pathname.replace('/', '').replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+        </p>
+      </div>
       </div>
 
-      <nav className="space-x-4 text-sm font-medium text-aegis-muted">
-        <a href="/dashboard" className="hover:text-aegis-primary transition-colors">Dashboard</a>
-        <a href="/sensors" className="hover:text-aegis-primary transition-colors">Sensors</a>
-        <a href="/zones" className="hover:text-aegis-primary transition-colors">Zones</a>
-        <a href="/audit-logs" className="hover:text-aegis-primary transition-colors">Audit Logs</a>
+      <div className="flex items-center gap-4">
         {!isLoggedIn ? (
-          <>
-            <a href="/login" className="hover:text-aegis-primary transition-colors">Login</a>
-            <a href="/signup" className="hover:text-aegis-primary transition-colors">Sign Up</a>
-          </>
+          <div className="flex items-center gap-3">
+            <a href="/login" className="text-sm text-aegis-muted hover:text-aegis-primary transition-colors">Login</a>
+            <a href="/signup" className="text-sm text-aegis-muted hover:text-aegis-primary transition-colors">Sign Up</a>
+          </div>
         ) : (
           <>
-            <span className="text-sm uppercase tracking-[0.24em] text-aegis-muted">{user?.role || 'OPERATOR'}</span>
-            <button onClick={handleLogout} className="text-aegis-primary hover:text-violet-300 transition-colors">Logout</button>
+            <span className="text-xs uppercase tracking-[0.24em] text-aegis-muted">{user?.role || 'OPERATOR'}</span>
+            <button onClick={handleLogout} className="px-3 py-1 rounded-full border border-aegis-primary text-aegis-primary hover:bg-aegis-primary/10 transition-colors text-sm">Logout</button>
           </>
         )}
-      </nav>
+      </div>
 
       <div className="flex items-center space-x-6">
         {/* Dynamic Status Indicator */}

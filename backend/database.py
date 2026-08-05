@@ -7,7 +7,10 @@ import logging
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
+from datetime import datetime
+import json
 
+from passlib.hash import bcrypt
 from backend.config import settings
 
 
@@ -16,6 +19,10 @@ Base = declarative_base()
 
 # Ensure all models are registered with Base
 import backend.models_db
+import backend.models.storage
+import backend.models.safety
+import backend.models.lab_automation
+import backend.models.hvac_schedule
 
 # Create database engine
 if settings.database_url.startswith("sqlite"):
@@ -67,6 +74,167 @@ def _ensure_audit_log_tenant_column_sqlite() -> None:
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_audit_logs_tenant_id ON audit_logs (tenant_id)")
 
 
+def _seed_default_tenant_and_sample_data() -> None:
+    """Seed a default tenant, admin user, sample zone, and sample sensor."""
+    with engine.begin() as conn:
+        result = conn.execute(text("SELECT COUNT(*) FROM tenants"))
+        if result.scalar_one() == 0:
+            now = datetime.utcnow().isoformat(sep=' ')
+            conn.execute(
+                text(
+                    "INSERT INTO tenants (name, settings, created_at, updated_at) VALUES (:name, :settings, :created_at, :updated_at)"
+                ),
+                {
+                    "name": "Aegis Tenant",
+                    "settings": "{}",
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+
+        tenant_id = conn.execute(
+            text("SELECT id FROM tenants WHERE name = :name"),
+            {"name": "Aegis Tenant"},
+        ).scalar_one()
+
+        # Ensure a default admin user exists for tank setup/login.
+        admin_email = "admin@aegis.com"
+        legacy_admin_email = "admin@aegis.local"
+
+        current_admin = conn.execute(
+            text("SELECT id FROM users WHERE email = :email"),
+            {"email": admin_email},
+        ).fetchone()
+        legacy_admin = conn.execute(
+            text("SELECT id FROM users WHERE email = :email"),
+            {"email": legacy_admin_email},
+        ).fetchone()
+
+        if current_admin is None and legacy_admin is None:
+            now = datetime.utcnow().isoformat(sep=' ')
+            admin_password = bcrypt.hash("admin1234")
+            conn.execute(
+                text(
+                    "INSERT INTO users (email, hashed_password, role, tenant_id, created_at, updated_at) "
+                    "VALUES (:email, :hashed_password, :role, :tenant_id, :created_at, :updated_at)"
+                ),
+                {
+                    "email": admin_email,
+                    "hashed_password": admin_password,
+                    "role": "admin",
+                    "tenant_id": tenant_id,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+        else:
+            user_id = current_admin[0] if current_admin is not None else legacy_admin[0]
+            now = datetime.utcnow().isoformat(sep=' ')
+            admin_password = bcrypt.hash("admin1234")
+            conn.execute(
+                text(
+                    "UPDATE users SET email = :email, hashed_password = :hashed_password, role = :role, updated_at = :updated_at "
+                    "WHERE id = :id"
+                ),
+                {
+                    "id": user_id,
+                    "email": admin_email,
+                    "hashed_password": admin_password,
+                    "role": "admin",
+                    "updated_at": now,
+                },
+            )
+
+            # Remove any leftover legacy local-admin row.
+            conn.execute(
+                text("DELETE FROM users WHERE email = :legacy_email"),
+                {"legacy_email": legacy_admin_email},
+            )
+
+        # Ensure a sample zone exists for the tenant.
+        zone_count = conn.execute(
+            text("SELECT COUNT(*) FROM zones WHERE tenant_id = :tenant_id AND name = :name"),
+            {"tenant_id": tenant_id, "name": "Main Lab Zone"},
+        ).scalar_one()
+        if zone_count == 0:
+            now = datetime.utcnow().isoformat(sep=' ')
+            conn.execute(
+                text(
+                    "INSERT INTO zones (name, description, location, tenant_id, created_at, updated_at) "
+                    "VALUES (:name, :description, :location, :tenant_id, :created_at, :updated_at)"
+                ),
+                {
+                    "name": "Main Lab Zone",
+                    "description": "Primary laboratory space with climate control.",
+                    "location": "Level 1",
+                    "tenant_id": tenant_id,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+
+        zone_id = conn.execute(
+            text("SELECT id FROM zones WHERE tenant_id = :tenant_id AND name = :name"),
+            {"tenant_id": tenant_id, "name": "Main Lab Zone"},
+        ).scalar_one()
+
+        sample_reading = json.dumps(
+            {
+                "value": 21.8,
+                "unit": "C",
+                "timestamp": datetime.utcnow().isoformat(sep=' '),
+            }
+        )
+
+        sensor_count = conn.execute(
+            text("SELECT COUNT(*) FROM sensors WHERE tenant_id = :tenant_id AND name = :name"),
+            {"tenant_id": tenant_id, "name": "Lab Temperature Sensor"},
+        ).scalar_one()
+        if sensor_count == 0:
+            now = datetime.utcnow().isoformat(sep=' ')
+            conn.execute(
+                text(
+                    "INSERT INTO sensors (tenant_id, zone_id, name, type, location, last_reading, created_at, updated_at) "
+                    "VALUES (:tenant_id, :zone_id, :name, :type, :location, :last_reading, :created_at, :updated_at)"
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "zone_id": zone_id,
+                    "name": "Lab Temperature Sensor",
+                    "type": "temperature",
+                    "location": "Main Lab",
+                    "last_reading": sample_reading,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
+
+        sensor_id = conn.execute(
+            text("SELECT id FROM sensors WHERE tenant_id = :tenant_id AND name = :name"),
+            {"tenant_id": tenant_id, "name": "Lab Temperature Sensor"},
+        ).scalar_one()
+
+        reading_count = conn.execute(
+            text("SELECT COUNT(*) FROM sensor_data WHERE sensor_id = :sensor_id"),
+            {"sensor_id": sensor_id},
+        ).scalar_one()
+        if reading_count == 0:
+            now = datetime.utcnow().isoformat(sep=' ')
+            conn.execute(
+                text(
+                    "INSERT INTO sensor_data (sensor_id, timestamp, value, unit, created_at) "
+                    "VALUES (:sensor_id, :timestamp, :value, :unit, :created_at)"
+                ),
+                {
+                    "sensor_id": sensor_id,
+                    "timestamp": datetime.utcnow().isoformat(sep=' '),
+                    "value": "21.8",
+                    "unit": "C",
+                    "created_at": now,
+                },
+            )
+
+
 def init_db():
     """Initialize database - create all tables."""
     Base.metadata.create_all(bind=engine)
@@ -77,6 +245,11 @@ def init_db():
             logging.getLogger(__name__).warning(
                 "SQLite audit_logs tenant_id patch failed: %s", exc
             )
+
+    try:
+        _seed_default_tenant_and_sample_data()
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Failed to seed default tenant and sample data: %s", exc)
 
 
 def drop_db():

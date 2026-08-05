@@ -10,7 +10,13 @@ import os
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from web3 import Web3
+
+# Try to import web3, but make it optional for development
+try:
+    from web3 import Web3
+except Exception as e:
+    print(f"Warning: Could not import web3: {e}")
+    Web3 = None
 
 from backend.config import settings
 from backend.dependencies import get_current_admin, get_db, get_current_user
@@ -104,10 +110,12 @@ async def health_check(db: Session = Depends(get_db)):
         vryndara_status = "disconnected"
 
     # Check blockchain
+    blockchain_status = "disconnected"
     try:
-        # Note: Using a short timeout for health check
-        w3 = Web3(Web3.HTTPProvider("http://localhost:8545", request_kwargs={'timeout': 1}))
-        blockchain_status = "connected" if w3.is_connected() else "disconnected"
+        if Web3 is not None:
+            # Note: Using a short timeout for health check
+            w3 = Web3(Web3.HTTPProvider("http://localhost:8545", request_kwargs={'timeout': 1}))
+            blockchain_status = "connected" if w3.is_connected() else "disconnected"
     except Exception:
         blockchain_status = "disconnected"
 
@@ -156,9 +164,11 @@ async def health_check_detailed(
         vryndara_status = "disconnected"
 
     # Blockchain connectivity
+    blockchain_status = "disconnected"
     try:
-        w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
-        blockchain_status = "connected" if w3.is_connected() else "disconnected"
+        if Web3 is not None:
+            w3 = Web3(Web3.HTTPProvider("http://localhost:8545"))
+            blockchain_status = "connected" if w3.is_connected() else "disconnected"
     except Exception:
         blockchain_status = "disconnected"
 

@@ -25,12 +25,14 @@ class Tenant(Base):
     audit_logs = relationship("AuditLog", back_populates="tenant")
     scheduled_tasks = relationship("ScheduledRoboticTask", back_populates="tenant")
     system_alerts = relationship("SystemAlert", back_populates="tenant")
+    notification_rules = relationship("NotificationRule", back_populates="tenant")
     robot_health_snapshots = relationship("RobotHealthSnapshot", back_populates="tenant")
     system_performance_metrics = relationship("SystemPerformanceMetric", back_populates="tenant")
     emergency_events = relationship("EmergencyEvent", back_populates="tenant")
     backup_power_states = relationship("BackupPowerState", back_populates="tenant")
     data_backup_snapshots = relationship("DataBackupSnapshot", back_populates="tenant")
     data_sync_jobs = relationship("DataSyncJob", back_populates="tenant")
+    alert_delivery_configs = relationship("AlertDeliveryConfig", back_populates="tenant")
 
 
 class User(Base):
@@ -53,6 +55,8 @@ class Sensor(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    zone_id = Column(Integer, ForeignKey("zones.id"), nullable=True, index=True)
+    name = Column(String(255), nullable=True)
     type = Column(String(100))
     location = Column(String(255))
     last_reading = Column(JSON)
@@ -60,6 +64,7 @@ class Sensor(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="sensors")
+    zone = relationship("Zone", back_populates="sensors")
     audit_logs = relationship("AuditLog", back_populates="sensor")
     data_points = relationship("SensorData", back_populates="sensor")
 
@@ -77,6 +82,9 @@ class Zone(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="zones")
+    sensors = relationship("Sensor", back_populates="zone")
+    # Environmental control one-to-one relationship (living quarters)
+    environmental_zone = relationship("EnvironmentalZone", back_populates="zone", uselist=False)
 
 
 
@@ -94,6 +102,22 @@ class AuditLog(Base):
 
     tenant = relationship("Tenant", back_populates="audit_logs")
     sensor = relationship("Sensor", back_populates="audit_logs")
+
+
+class Session(Base):
+    __tablename__ = "sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(255), nullable=False, index=True)
+    token_type = Column(String(50), default="access")
+    expires_at = Column(DateTime, nullable=True)
+    revoked = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant", backref="sessions")
+    user = relationship("User", backref="sessions")
 
 
 class ScheduledRoboticTask(Base):
@@ -131,6 +155,92 @@ class SensorData(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     sensor = relationship("Sensor", back_populates="data_points")
+
+
+class TelemetryPlaybackSession(Base):
+    __tablename__ = "telemetry_playback_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    filters = Column(JSON, default=dict)  # e.g., sensor_ids, zone_ids
+    playback_speed = Column(Float, default=1.0)
+    recurring = Column(Boolean, default=False)
+    schedule_cron = Column(String(200), nullable=True)
+    status = Column(String(50), default="stopped")  # running|stopped|scheduled|paused
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", backref="playback_sessions")
+    creator = relationship("User", backref="created_playbacks")
+
+
+class AlertDeliveryConfig(Base):
+    __tablename__ = "alert_delivery_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    provider = Column(String(100), nullable=False)  # smtp, webhook, sms
+    enabled = Column(Boolean, default=True)
+    config = Column(JSON, default=dict)
+    retry_policy = Column(JSON, default=lambda: {"retries": 3, "backoff_seconds": 5})
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="alert_delivery_configs")
+
+
+class AlertDeliveryStatus(Base):
+    __tablename__ = "alert_delivery_statuses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    alert_id = Column(Integer, ForeignKey("system_alerts.id"), nullable=False, index=True)
+    provider = Column(String(100), nullable=False)
+    status = Column(String(50), nullable=False, default="pending")  # pending|sent|failed|retrying
+    attempts = Column(Integer, default=0)
+    last_error = Column(Text, nullable=True)
+    last_attempt_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant")
+    alert = relationship("SystemAlert", backref="delivery_statuses")
+
+
+class EnergyPolicy(Base):
+    __tablename__ = "energy_policies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    name = Column(String(255), nullable=True)
+    charge_threshold = Column(Float, nullable=False, default=0.6)
+    discharge_threshold = Column(Float, nullable=False, default=0.3)
+    max_charge_rate_kw = Column(Float, nullable=False, default=2.0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="energy_policies")
+
+
+class NotificationRule(Base):
+    __tablename__ = "notification_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    condition = Column(Text, nullable=False)  # simple expression or JSON
+    enabled = Column(Boolean, default=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="notification_rules")
 
 
 # ============================================================================
@@ -285,6 +395,9 @@ class CropInstance(Base):
 # Add relationships to existing models
 Tenant.spatial_zones = relationship("SpatialZone", back_populates="tenant")
 Tenant.scheduled_tasks = relationship("ScheduledRoboticTask", back_populates="tenant")
+Tenant.energy_policies = relationship("EnergyPolicy", back_populates="tenant")
+# Environmental zones
+Tenant.environmental_zones = relationship("EnvironmentalZone", back_populates="tenant")
 
 
 class VryndaraRequest(Base):
@@ -398,13 +511,46 @@ class CropLifecycleEvent(Base):
     action_taken = Column(String(255))  # e.g., "Applied fungicide", "Pruned affected branches"
     action_date = Column(DateTime)
     
-    # Blockchain record
-    blockchain_tx = Column(String(255))  # Blockchain transaction hash for immutability
+    # Relationship to CropInstance
+    crop_instance = relationship("CropInstance", back_populates="lifecycle_events")
+
+
+class WeatherObservation(Base):
+    """Local weather observation ingested from on-site sensors."""
+    __tablename__ = "weather_observations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    zone_id = Column(Integer, ForeignKey("zones.id"), nullable=True, index=True)
+    sensor_id = Column(Integer, ForeignKey("sensors.id"), nullable=True, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    temp_c = Column(Float)
+    humidity_percent = Column(Float)
+    wind_m_s = Column(Float)
+    precip_mm = Column(Float)
+    pressure_hpa = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+    zone = relationship("Zone", foreign_keys=[zone_id])
+    sensor = relationship("Sensor", foreign_keys=[sensor_id])
+
+
+class WeatherForecastCache(Base):
+    """Cached local forecast computed from observations."""
+    __tablename__ = "weather_forecast_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    zone_id = Column(Integer, ForeignKey("zones.id"), nullable=True, index=True)
+    computed_at = Column(DateTime, default=datetime.utcnow)
+    horizon_hours = Column(Integer, default=24)
+    forecast = Column(JSON, default=list)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+    zone = relationship("Zone", foreign_keys=[zone_id])
     
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    crop_instance = relationship("CropInstance", back_populates="lifecycle_events")
 
 
 class BiologicalMetric(Base):
@@ -891,6 +1037,71 @@ class DataSyncJob(Base):
     tenant = relationship("Tenant", back_populates="data_sync_jobs")
 
 
+class CommunicationNetwork(Base):
+    """
+    Tracks estate communication network segments and channel health.
+    """
+    __tablename__ = "communication_networks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    protocol = Column(String(100), nullable=False, index=True)  # "mqtt", "grpc", "mesh", "lte", "satellite"
+    secure = Column(Boolean, default=True)
+    status = Column(String(50), default="connected")  # "connected", "degraded", "offline"
+    signal_strength = Column(Float, nullable=True)
+    latency_ms = Column(Float, nullable=True)
+    bandwidth_mbps = Column(Float, nullable=True)
+    node_count = Column(Integer, default=0)
+    is_offline_ready = Column(Boolean, default=False)
+    network_metadata = Column(JSON, default=dict)
+    last_checked = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+
+class EmergencyBroadcast(Base):
+    """
+    Records emergency broadcast messages issued across the estate.
+    """
+    __tablename__ = "emergency_broadcasts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    message = Column(Text, nullable=False)
+    priority = Column(String(50), default="high")
+    broadcast_type = Column(String(50), default="all")  # "all", "zones", "staff"
+    target_zones = Column(JSON, default=list)
+    target_groups = Column(JSON, default=list)
+    status = Column(String(50), default="queued")  # "queued", "sent", "failed"
+    sent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+
+class OfflineMessageQueue(Base):
+    """
+    Tracks messages and sync payloads queued for offline delivery.
+    """
+    __tablename__ = "offline_message_queue"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    destination = Column(String(255), nullable=False)
+    payload = Column(JSON, default=dict)
+    status = Column(String(50), default="queued")  # "queued", "sent", "failed"
+    priority = Column(String(50), default="normal")
+    queued_at = Column(DateTime, default=datetime.utcnow)
+    delivered_at = Column(DateTime, nullable=True)
+    message_metadata = Column(JSON, default=dict)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+
 class RecoveryProcedure(Base):
     """
     Recovery procedures to restore normal operations after emergency.
@@ -956,3 +1167,161 @@ class CropSuccessionHistory(Base):
     # Relationships
     spatial_zone = relationship("SpatialZone", foreign_keys=[spatial_zone_id])
     species = relationship("BiologicalSpecies", foreign_keys=[species_id])
+
+
+class RobotCommunicationChannel(Base):
+    """
+    Tracks robot fleet communication channels and status.
+    """
+    __tablename__ = "robot_communication_channels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    channel_name = Column(String(255), nullable=False)
+    protocol = Column(String(100), default="grpc")  # grpc, mqtt, websocket
+    status = Column(String(50), default="connected")  # connected, degraded, offline
+    robot_ids = Column(JSON, default=list)  # List of robot identifiers
+    active_robots = Column(Integer, default=0)
+    signal_strength = Column(Float, default=100.0)
+    latency_ms = Column(Float, default=10.0)
+    bandwidth_mbps = Column(Float, default=100.0)
+    last_heartbeat = Column(DateTime, nullable=True)
+    channel_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+
+class DeviceCommunicationChannel(Base):
+    """
+    Tracks IoT device/sensor communication channels and status.
+    """
+    __tablename__ = "device_communication_channels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    channel_name = Column(String(255), nullable=False)
+    protocol = Column(String(100), default="mqtt")  # mqtt, coap, zigbee, lte
+    status = Column(String(50), default="connected")  # connected, degraded, offline
+    device_ids = Column(JSON, default=list)  # List of sensor/device identifiers
+    active_devices = Column(Integer, default=0)
+    signal_strength = Column(Float, default=100.0)
+    latency_ms = Column(Float, default=50.0)
+    bandwidth_mbps = Column(Float, default=10.0)
+    mesh_topology = Column(String(50), default="star")  # star, mesh, hybrid
+    last_sync = Column(DateTime, nullable=True)
+    channel_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+
+class ZoneCommunicationChannel(Base):
+    """
+    Tracks zone-to-zone communication channels and status.
+    """
+    __tablename__ = "zone_communication_channels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    zone_id = Column(Integer, ForeignKey("zones.id"), nullable=False, index=True)
+    channel_name = Column(String(255), nullable=False)
+    protocol = Column(String(100), default="mqtt")  # mqtt, grpc, rest
+    status = Column(String(50), default="connected")  # connected, degraded, offline
+    connected_zones = Column(JSON, default=list)  # List of connected zone IDs
+    active_connections = Column(Integer, default=0)
+    signal_strength = Column(Float, default=100.0)
+    latency_ms = Column(Float, default=20.0)
+    bandwidth_mbps = Column(Float, default=50.0)
+    message_throughput = Column(Integer, default=0)  # messages per second
+    last_message = Column(DateTime, nullable=True)
+    channel_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+    zone = relationship("Zone", foreign_keys=[zone_id])
+
+
+class ServerCommunicationChannel(Base):
+    """
+    Tracks inter-server and service mesh communication channels.
+    """
+    __tablename__ = "server_communication_channels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    server_id = Column(String(255), nullable=False)  # Unique server identifier
+    server_name = Column(String(255), nullable=False)
+    protocol = Column(String(100), default="grpc")  # grpc, rest, websocket
+    status = Column(String(50), default="healthy")  # healthy, degraded, unhealthy, offline
+    peer_servers = Column(JSON, default=list)  # List of peer server identifiers
+    active_connections = Column(Integer, default=0)
+    health_score = Column(Float, default=100.0)  # 0-100 health percentage
+    latency_ms = Column(Float, default=5.0)
+    bandwidth_mbps = Column(Float, default=1000.0)
+    last_health_check = Column(DateTime, nullable=True)
+    is_primary = Column(Boolean, default=False)
+    channel_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+
+class VryndaraCommunicationChannel(Base):
+    """
+    Tracks Vryndara AI service communication channel and status.
+    """
+    __tablename__ = "vryndara_communication_channels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    service_endpoint = Column(String(512), nullable=False)
+    protocol = Column(String(100), default="grpc")  # grpc, rest, websocket
+    status = Column(String(50), default="connected")  # connected, degraded, offline, timeout
+    service_version = Column(String(50), nullable=True)
+    ai_model_version = Column(String(50), nullable=True)
+    latency_ms = Column(Float, default=100.0)
+    request_timeout_ms = Column(Integer, default=5000)
+    max_concurrent_requests = Column(Integer, default=100)
+    current_requests = Column(Integer, default=0)
+    successful_requests = Column(Integer, default=0)
+    failed_requests = Column(Integer, default=0)
+    last_request = Column(DateTime, nullable=True)
+    ai_health_score = Column(Float, default=100.0)  # 0-100 AI service health
+    feature_flags = Column(JSON, default=dict)  # Feature availability flags
+    channel_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+
+
+class CommunicationOrchestration(Base):
+    """
+    Orchestrates cross-layer communication between different channel types.
+    """
+    __tablename__ = "communication_orchestration"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    orchestration_id = Column(String(255), nullable=False, unique=True)
+    orchestration_type = Column(String(100), nullable=False)  # "fleet_to_zone", "zone_to_device", "server_to_vryndara", etc.
+    source_type = Column(String(100), nullable=False)  # robot, device, zone, server, vryndara
+    target_type = Column(String(100), nullable=False)
+    source_id = Column(String(255), nullable=False)
+    target_id = Column(String(255), nullable=False)
+    status = Column(String(50), default="active")  # active, inactive, suspended, failed
+    routing_priority = Column(Integer, default=0)
+    message_count = Column(Integer, default=0)
+    last_message_timestamp = Column(DateTime, nullable=True)
+    failure_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    routing_config = Column(JSON, default=dict)  # Routing rules and optimization
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", foreign_keys=[tenant_id])

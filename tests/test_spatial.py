@@ -47,6 +47,20 @@ MOCK_SPECIES_DATA = [
         "companion_species": [1, 2],
         "antagonistic_species": [5]
     }
+    ,
+    {
+        "id": 4,
+        "scientific_name": "Capsicum annuum",
+        "common_name": "Pepper",
+        "family": "Solanaceae",
+        "max_height_cm": 150,
+        "canopy_radius_cm": 40,
+        "vertical_layer": "mid_canopy",
+        "optimal_temp_min_c": 15,
+        "optimal_temp_max_c": 30,
+        "companion_species": [1, 2],
+        "antagonistic_species": [3]
+    }
 ]
 
 MOCK_ZONE_DATA = {
@@ -66,8 +80,9 @@ MOCK_CROP_INSTANCES = [
     {"id": 1, "species_id": 1, "position_x": 5.0, "position_y": 3.0, "position_z": 1.5, "vertical_layer": "mid_canopy"},
     {"id": 2, "species_id": 2, "position_x": 8.0, "position_y": 3.0, "position_z": 0.3, "vertical_layer": "ground"},
     {"id": 3, "species_id": 3, "position_x": 12.0, "position_y": 3.0, "position_z": 0.3, "vertical_layer": "ground"},
-    {"id": 4, "species_id": 1, "position_x": 15.0, "position_y": 7.0, "position_z": 1.5, "vertical_layer": "mid_canopy"}
+    {"id": 4, "species_id": 1, "position_x": 15.0, "position_y": 3.0, "position_z": 1.5, "vertical_layer": "mid_canopy"}
 ]
+
 
 
 def setup_mock_data():
@@ -149,7 +164,7 @@ def test_comprehensive_spatial_data_processing():
     setup_mock_data()
 
     # Test 1: Verify all species are registered
-    assert len(spatial_engine.crop_profiles) == 3
+    assert len(spatial_engine.crop_profiles) == 4
     assert 1 in spatial_engine.crop_profiles  # Tomato
     assert 2 in spatial_engine.crop_profiles  # Basil
     assert 3 in spatial_engine.crop_profiles  # Onion

@@ -34,12 +34,11 @@ def simulate():
     # 2. Register a Sensor
     # FIXED: Added 'tenant_id' to satisfy the backend validation
     sensor_payload = {
-        "name": "Aegis-Thermal-01",
-        "type": "thermal",
+        "name": "Aegis-Temperature-01",
+        "type": "temperature",
         "location": "Ceiling Mount",
         "zone_id": zone_id,
-        "tenant_id": tenant_id, 
-        "status": "active"
+        "tenant_id": tenant_id,
     }
     
     sensor_resp = requests.post(f"{BASE_URL}/sensors", json=sensor_payload, headers=headers)

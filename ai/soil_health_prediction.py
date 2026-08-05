@@ -7,7 +7,7 @@ generates training data, and provides soil rehabilitation recommendations.
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -246,6 +246,30 @@ class SoilHealthPredictionEngine:
         result = self._heuristic_predict(features)
         result["method"] = "heuristic"
         return result
+
+    def predict_npk(self, features: Union[list, tuple, np.ndarray]) -> Dict[str, Any]:
+        """Compatibility wrapper used by tests: accepts a feature vector and
+        returns nitrogen/phosphorus/potassium predictions as a dict.
+        """
+        arr = np.asarray(features, dtype=np.float32).flatten()
+        if arr.size >= 8:
+            f = arr[:8]
+        else:
+            # If shorter, pad with zeros
+            f = np.zeros(8, dtype=np.float32)
+            f[: arr.size] = arr
+
+        res = self.predict_from_mycelial_data(
+            float(f[0]), float(f[1]), float(f[2]), float(f[3]),
+            float(f[4]), float(f[5]), float(f[6]), float(f[7])
+        )
+
+        # Return only numeric fields expected by tests
+        return {
+            "nitrogen": float(res.get("nitrogen", 0.0)),
+            "phosphorus": float(res.get("phosphorus", 0.0)),
+            "potassium": float(res.get("potassium", 0.0)),
+        }
 
     def get_rehabilitation_recommendations(self, predictions: Dict[str, Any]) -> List[Dict[str, Any]]:
         """

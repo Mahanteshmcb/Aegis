@@ -306,3 +306,26 @@ class AcousticPestRecognitionEngine:
 
         return self._heuristic_predict(features)
 
+    def predict(self, features: Union[list, tuple, np.ndarray]) -> Dict[str, Any]:
+        """Compatibility wrapper used by tests: accepts a feature vector and
+        returns a simple dict with `prediction`, `confidence`, and `scores`.
+        """
+        arr = np.asarray(features, dtype=np.float32).flatten()
+        # If a long duration-style feature was passed (e.g. mel spec stats),
+        # try to pick the first 6 values; otherwise, pad/truncate to 6.
+        if arr.size >= 6:
+            f = arr[:6]
+        else:
+            f = np.zeros(6, dtype=np.float32)
+            f[: arr.size] = arr
+
+        res = self.predict_from_detection_features(
+            float(f[0]), float(f[1]), float(f[2]), float(f[3]), float(f[4]), float(f[5])
+        )
+
+        return {
+            "prediction": res.get("pest_type", "UNKNOWN"),
+            "confidence": float(res.get("confidence", 0.0)),
+            "scores": res.get("scores", {})
+        }
+

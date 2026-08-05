@@ -125,6 +125,13 @@ const TacticalMap = ({ anomaly = false }) => {
     );
   }
 
+  const canvasProps = {
+    dpr: [1, 2],
+    gl: { antialias: true, powerPreference: 'high-performance' },
+    shadowMap: { type: THREE.PCFShadowMap },
+    onCreated: (state) => state.gl.setPixelRatio(Math.min(window.devicePixelRatio, 2)),
+  };
+
   return (
     <div className="h-[500px] w-full bg-gradient-to-b from-black/70 to-black/50 border border-aegis-primary/40 rounded-lg mt-6 relative overflow-hidden shadow-[inset_0_0_30px_rgba(0,242,255,0.1),0_0_20px_rgba(0,0,0,0.8)]">
       {/* Header Info */}
@@ -159,6 +166,7 @@ const TacticalMap = ({ anomaly = false }) => {
       <Canvas
         style={{ width: '100%', height: '100%' }}
         camera={{ position: [0, 5, 8], fov: 50 }}
+        {...canvasProps}
       >
         {/* Lighting Setup */}
         <PerspectiveCamera makeDefault position={[0, 5, 8]} fov={50} />

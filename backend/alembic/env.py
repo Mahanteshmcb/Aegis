@@ -4,6 +4,10 @@ from alembic import context
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import backend.models_db  # noqa: F401
+import backend.models.safety  # noqa: F401
+import backend.models.water  # noqa: F401
+import backend.models.waste  # noqa: F401
 from backend.models_db import Base  # noqa: E402
 
 # this is the Alembic Config object, which provides

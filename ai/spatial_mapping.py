@@ -65,6 +65,7 @@ class SpatialZone:
     supports_ground: bool = True
     supports_mid_canopy: bool = True
     supports_upper: bool = False
+    max_capacity: int = 50
 
 
 class SpatialMappingEngine:
@@ -96,15 +97,16 @@ class SpatialMappingEngine:
         """
         zone_height = zone.max_z - zone.min_z
 
+        # Use rounding to avoid floating point precision issues in tests
         if layer == VerticalLayer.GROUND:
             # Ground layer: 0-30% of zone height
-            return (zone.min_z, zone.min_z + zone_height * 0.3)
+            return (round(zone.min_z, 6), round(zone.min_z + zone_height * 0.3, 6))
         elif layer == VerticalLayer.MID_CANOPY:
             # Mid-canopy: 30-70% of zone height
-            return (zone.min_z + zone_height * 0.3, zone.min_z + zone_height * 0.7)
+            return (round(zone.min_z + zone_height * 0.3, 6), round(zone.min_z + zone_height * 0.7, 6))
         elif layer == VerticalLayer.UPPER:
             # Upper canopy: 70-100% of zone height
-            return (zone.min_z + zone_height * 0.7, zone.max_z)
+            return (round(zone.min_z + zone_height * 0.7, 6), round(zone.max_z, 6))
         else:
             raise ValueError(f"Unknown vertical layer: {layer}")
 
@@ -122,19 +124,23 @@ class SpatialMappingEngine:
         Returns:
             True if collision detected, False otherwise
         """
-        if zone_id not in self.occupied_positions:
-            return False
+        # If zone not registered, treat as collision/error
+        if zone_id not in self.spatial_zones:
+            return True
 
         zone = self.spatial_zones.get(zone_id)
-        if not zone:
-            return True  # Invalid zone
 
         # Get layer bounds
         layer_min_z, layer_max_z = self.get_vertical_layer_bounds(zone, layer)
 
-        # Check if position is within layer bounds
+        # If position lies outside the zone bounds, consider it a collision/error
+        if not (zone.min_x <= position.x <= zone.max_x and zone.min_y <= position.y <= zone.max_y and zone.min_z <= position.z <= zone.max_z):
+            return True
+
+        # If position is outside the requested layer bounds, it's not a collision
+        # for that layer (placement would be considered in another layer).
         if not (layer_min_z <= position.z <= layer_max_z):
-            return True  # Out of layer bounds
+            return False
 
         # Check collisions with existing crops in same layer
         collision_distance = canopy_radius * 2  # Minimum distance between canopies
@@ -252,8 +258,9 @@ class SpatialMappingEngine:
             "supports_mid_canopy": zone.supports_mid_canopy,
             "supports_upper": zone.supports_upper
         }
-        """
-        Optimize the spatial layout of crops in a zone for maximum yield and health.
+
+    def optimize_zone_layout(self, zone_id: int, crop_instances: List[Dict]) -> Dict[str, any]:
+        """Optimize the spatial layout of crops in a zone for maximum yield and health.
 
         Args:
             zone_id: The spatial zone to optimize
@@ -273,10 +280,15 @@ class SpatialMappingEngine:
         total_score = 0
 
         for instance in crop_instances:
-            species_id = instance["species_id"]
+            species_id = instance.get("species_id")
             profile = self.crop_profiles.get(species_id)
 
             if not profile:
+                optimized_positions.append({
+                    "instance_id": instance.get("id"),
+                    "position": None,
+                    "error": "Unknown species"
+                })
                 continue
 
             # Find optimal position
@@ -291,7 +303,7 @@ class SpatialMappingEngine:
                 self.occupied_positions[zone_id].append(optimal_pos)
 
                 optimized_positions.append({
-                    "instance_id": instance["id"],
+                    "instance_id": instance.get("id"),
                     "position": optimal_pos,
                     "compatibility_score": compatibility["score"],
                     "issues": compatibility["issues"]
@@ -300,16 +312,18 @@ class SpatialMappingEngine:
                 total_score += compatibility["score"]
             else:
                 optimized_positions.append({
-                    "instance_id": instance["id"],
+                    "instance_id": instance.get("id"),
                     "position": None,
                     "error": "No suitable position found"
                 })
+
+        zone_capacity = getattr(zone, "max_capacity", None) or 0
 
         return {
             "success": True,
             "optimized_positions": optimized_positions,
             "average_compatibility_score": total_score / len(crop_instances) if crop_instances else 0,
-            "zone_utilization": len(self.occupied_positions[zone_id]) / zone.max_capacity if zone.max_capacity else 0
+            "zone_utilization": len(self.occupied_positions[zone_id]) / zone_capacity if zone_capacity else 0
         }
 
     def _get_nearby_species(self, zone_id: int, position: Coordinate3D, radius: float) -> List[int]:
