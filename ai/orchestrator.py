@@ -2,6 +2,7 @@
 # Succession & Orchestration Engine for Autonomous Agricultural Management
 
 import asyncio
+import inspect
 import json
 import logging
 import random
@@ -400,11 +401,13 @@ class SuccessionOrchestrationEngine:
     async def _execute_trigger(self, trigger: OrchestrationTrigger):
         """Execute a specific trigger by dispatching robotic actions."""
         for action in trigger.robotic_actions:
-            await self.robotics.dispatch_action(
+            result = self.robotics.dispatch_action(
                 action_type=action.value,
                 zone_id=trigger.zone_id,
                 parameters=trigger.parameters
             )
+            if inspect.isawaitable(result):
+                await result
 
     async def _update_succession_plans(self, zone_id: int, context: DecisionContext):
         """Update succession plans based on current context and outcomes."""

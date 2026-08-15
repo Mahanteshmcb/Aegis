@@ -81,7 +81,7 @@ from backend.config import settings
 from backend.database import Base
 import backend.models_db  # Ensure all models are registered with Base
 from backend.main import app
-from backend.dependencies import get_db, get_current_user
+from backend.dependencies import get_db, get_current_user, get_current_admin
 
 
 # Test database setup
@@ -173,82 +173,41 @@ def client(test_db, monkeypatch):
     # Also mock the get_blockchain_connector function
     monkeypatch.setattr("backend.blockchain_connector.get_blockchain_connector", lambda: mock_bc)
     
-    # Mock get_current_user to bypass JWT validation in tests
+    # Mock get_current_user to bypass JWT validation in tests, while still enforcing
+    # explicit auth for protected routes.
     def mock_get_current_user(request: Request):
-        # Read Authorization header if provided, otherwise return default admin mock
         auth = request.headers.get("Authorization")
         token = None
         if auth and auth.lower().startswith("bearer "):
             token = auth.split(" ", 1)[1].strip()
 
-        # If a token is provided, try to decode it to respect multi-tenant tests.
-        if token:
-            try:
-                from jose import jwt as _jwt
-                from backend.config import settings as _settings
-                payload = _jwt.decode(token, _settings.jwt_secret_key, algorithms=[_settings.jwt_algorithm])
-                sub = payload.get("sub")
-                tenant_id = payload.get("tenant_id") or payload.get("tenantId") or payload.get("user_id")
-                role = payload.get("role", "admin")
-                email = sub if sub else payload.get("email", "test@example.com")
-                return MockUser(id=1, email=email, tenant_id=int(tenant_id) if tenant_id is not None else 1, role=role)
-            except Exception:
-                # Fall back to default mock user on decode failure
-                return MockUser(id=1, email="test@example.com", tenant_id=1, role="admin")
+        if not token:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Not authenticated")
 
-        # No token: try to find an admin user in the test DB and return it.
         try:
-            from backend.main import app as _app
-            from backend.dependencies import get_db as _get_db
-            override = _app.dependency_overrides.get(_get_db)
-            if override:
-                gen = override()
-                try:
-                    db = next(gen)
-                except TypeError:
-                    db = gen
-                try:
-                    from backend import models_db as _models_db
-                    admin_user = db.query(_models_db.User).filter(_models_db.User.role == "admin").first()
-                    if admin_user:
-                        return MockUser(id=admin_user.id, email=admin_user.email, tenant_id=admin_user.tenant_id, role=admin_user.role)
-                    # No admin found: if any tenant exists, return a tenant-scoped admin mock
-                    from backend.models_db import Tenant as _Tenant
-                    tenant_obj = db.query(_Tenant).order_by(_Tenant.id).first()
-                    if tenant_obj:
-                        return MockUser(id=0, email="implicit-admin@example.com", tenant_id=tenant_obj.id, role="admin")
-                    # No admin or tenant: create one for tests.
-                    from backend.models_db import User as _User
-                    tenant_obj = _Tenant(name="Default Test Tenant", created_at=datetime.utcnow(), updated_at=datetime.utcnow())
-                    db.add(tenant_obj)
-                    db.commit()
-                    db.refresh(tenant_obj)
-                    admin_user = _User(
-                        email="test@example.com",
-                        hashed_password="test",
-                        tenant_id=tenant_obj.id,
-                        role="admin",
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                    db.add(admin_user)
-                    db.commit()
-                    db.refresh(admin_user)
-                    return MockUser(id=admin_user.id, email=admin_user.email, tenant_id=admin_user.tenant_id, role=admin_user.role)
-                finally:
-                    try:
-                        gen.close()
-                    except Exception:
-                        pass
+            from jose import jwt as _jwt
+            from backend.config import settings as _settings
+            payload = _jwt.decode(token, _settings.jwt_secret_key, algorithms=[_settings.jwt_algorithm])
+            sub = payload.get("sub")
+            tenant_id = payload.get("tenant_id") or payload.get("tenantId") or payload.get("user_id")
+            role = payload.get("role", "admin")
+            email = sub if sub else payload.get("email", "test@example.com")
+            return MockUser(id=1, email=email, tenant_id=int(tenant_id) if tenant_id is not None else 1, role=role)
         except Exception:
-            pass
-
-        # If no admin exists in DB, respond as unauthorized
-        from fastapi import HTTPException
-        raise HTTPException(status_code=401, detail="Not authenticated")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
     
+    def mock_get_current_admin(request: Request):
+        current_user = mock_get_current_user(request)
+        if current_user.get("role") not in ("admin", "superadmin"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return current_user
+
     # Use FastAPI's dependency_overrides to mock dependencies
     app.dependency_overrides[get_current_user] = mock_get_current_user
+    app.dependency_overrides[get_current_admin] = mock_get_current_admin
     app.dependency_overrides[get_blockchain_connector] = lambda: mock_bc
     
     yield TestClient(app)

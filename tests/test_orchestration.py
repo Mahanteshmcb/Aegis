@@ -2,6 +2,7 @@
 # Comprehensive testing of the Succession & Orchestration Engine
 
 import pytest
+import pytest_asyncio
 import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,7 +22,7 @@ from ai.robotics_connector import RoboticsConnector
 class TestSuccessionOrchestrationEngine:
     """Test suite for the Succession & Orchestration Engine."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def setup_engine(self):
         """Set up test orchestration engine with mocked connectors."""
         vryndara_mock = AsyncMock(spec=VryndaraConnector)

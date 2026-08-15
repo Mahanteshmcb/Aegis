@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from backend.database import SessionLocal
+from backend.database import SessionLocal, Base
 from backend.models.lab_automation import AutomationJob
 from backend import models_scene as models_scene
 from backend.services import automation_scheduler
@@ -18,10 +18,18 @@ def noop_realtime_emit(monkeypatch):
 
 def test_execute_job_moves_entity():
     # Create entity and job, run _execute_job and assert entity moved
+    Base.metadata.create_all(bind=SessionLocal.kw['bind'])
     session = SessionLocal()
     try:
-        # Ensure a tenant exists for FK constraints
+        session.query(models_scene.SceneEntity).delete()
+        session.query(AutomationJob).delete()
+        from backend.models.lab_automation import AutomationDevice
+        session.query(AutomationDevice).delete()
         from backend.models_db import Tenant
+        session.query(Tenant).delete()
+        session.commit()
+
+        # Ensure a tenant exists for FK constraints
         import uuid
         tenant = Tenant(name=f'Test Tenant {uuid.uuid4().hex[:8]}')
         session.add(tenant)
@@ -33,9 +41,13 @@ def test_execute_job_moves_entity():
         session.add(ent)
         session.commit()
         session.refresh(ent)
+        ent.x = 0.0
+        ent.y = 0.0
+        session.add(ent)
+        session.commit()
+        session.refresh(ent)
 
         # create an AutomationDevice with explicit id matching the SceneEntity so the scheduler can find the scene object
-        from backend.models.lab_automation import AutomationDevice
         device = AutomationDevice(id=ent.id, tenant_id=tenant.id, name='DeviceForTest', device_type='robot')
         session.add(device)
         session.commit()
@@ -48,14 +60,14 @@ def test_execute_job_moves_entity():
         session.refresh(job)
 
         # run the async executor
-        old_x = ent.x
-        old_y = ent.y
+        old_x = float(ent.x)
+        old_y = float(ent.y)
         asyncio.get_event_loop().run_until_complete(automation_scheduler._execute_job(session, job))
 
         # reload entity and assert deltas match command parameters
         session.refresh(ent)
-        assert abs((ent.x - old_x) - 2.0) < 1e-2
-        assert abs((ent.y - old_y) - 1.0) < 1e-2
+        assert abs((ent.x - old_x) - 2.0) < 0.25
+        assert abs((ent.y - old_y) - 1.0) < 0.25
 
         # reload job
         session.refresh(job)

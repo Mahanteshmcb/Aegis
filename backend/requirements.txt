@@ -1,7 +1,8 @@
 fastapi==0.104.1
 uvicorn==0.24.0
 pydantic==2.13.1
-sqlalchemy==2.0.23
+pydantic-settings==2.3.4
+sqlalchemy==2.0.41
 psycopg2-binary==2.9.11
 # Blockchain/Ethereum stack (compatible versions)
 web3==7.16.0

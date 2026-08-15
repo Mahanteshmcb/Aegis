@@ -3,6 +3,7 @@
 # Day 36: gRPC service definitions for IoT sensors
 
 import pytest
+import pytest_asyncio
 import asyncio
 from unittest.mock import AsyncMock, patch
 from datetime import datetime
@@ -14,7 +15,7 @@ from ai.protos.sensors_pb2 import SensorType, CalibrationType, SensorStatus
 class TestSensorConnector:
     """Test suite for the IoT Sensor Connector."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def setup_connector(self):
         """Set up test sensor connector."""
         connector = SensorConnector()
