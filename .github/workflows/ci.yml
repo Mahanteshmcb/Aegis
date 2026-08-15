@@ -50,6 +50,7 @@ jobs:
       - name: Run backend tests
         env:
           DATABASE_URL: postgresql://aegis_user:secure_password@localhost:5432/aegis_db
+          PYTHONPATH: .
         run: |
           pytest -q
       - name: Run frontend build
