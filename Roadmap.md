@@ -1,19 +1,20 @@
-**Days 1-70 (COMPLETED):** Phase 1 software finished; estate dashboard and core API delivery are complete.
-**Days 71-110 (PHASE 2 ACTIVE):** Begin joint hardware/software execution: IoT sensor deployment, robotic fleet integration, and estate-wide system commissioning.
+**Days 1-70 (COMPLETED):** Phase 1 software finished; estate dashboard, realtime monitoring, and core API delivery are complete.
+**Days 71-110 (PHASE 2 ACTIVE):** Shift to a software-first digital twin Phase 2 with realtime estate simulation, automation flows, and a hardware-ready architecture. Physical hardware is moved to a future phase after degree submission.
+**Days 111-150 (FUTURE WORK / FINAL EXTENSION):** Hardware prototype integration, lab deployment, robotics assembly, and real-world sensor validation for startup follow-up.
 
 ---
 
 # Aegis Biosphere Protocol: Complete Implementation Roadmap
 
 ## Overview
-**Vision:** Engineer and deploy highly secure, offline, self-sustaining "Private Biospheres" for UHNIs and the Defense sector. This system utilizes a multi-tiered robotic fleet and a dense IoT sensor mesh, all orchestrated locally via the high-performance **Vryndara gRPC kernel platform**, to autonomously manage 3,000+ unique biological crops within a decentralized, privacy-first network.
+**Vision:** Engineer a secure, intelligent smart-estate digital twin platform for realtime monitoring, simulation, automation, and control. The system supports software-first deployment for degree submission while preserving a clean architecture for later integration with real hardware, IoT sensors, robots, and industrial automation.
 
 **Implementation Strategy:** 
-- **This Semester (Phase 1):** Complete all software development (Days 1-70) - gRPC communication, ML models, robotic orchestration, spatial mapping
-- **Next Semester (Phase 2):** Complete all hardware development (Days 71-150) - IoT sensors, robotic fleet, 3-acre prototype, final integration
+- **This Semester (Phase 1):** Complete all software development (Days 1-70) - gRPC communication, ML models, robotic orchestration, spatial mapping, realtime dashboard, and estate system control
+- **Phase 2 (Software-First Completion):** Deliver a complete realtime digital twin simulation and automation platform (Days 71-110) without depending on physical hardware
+- **Future Work / Final Extension:** Add hardware prototype integration, IoT nodes, robot assembly, and field deployment after degree submission for startup implementation
 
-
-**Key Technologies:** FastAPI, gRPC, TensorFlow/PyTorch, PostgreSQL, React/Next.js, Vryndara kernel, robotic fleet coordination, 3D spatial mapping
+**Key Technologies:** FastAPI, gRPC, TensorFlow/PyTorch, PostgreSQL, React/Next.js, Socket.IO, 3D digital twin rendering, realtime telemetry, Vryndara kernel, robotic orchestration, hardware-ready integration adapters
 
 ---
 
@@ -96,156 +97,300 @@
 
 ---
 
-# Phase 2: Student-Scale Hardware Prototype (Days 71-110)
-*Final semester: build a low-cost Phase 2 prototype using your existing Arduino Mega, soldering tools, and affordable sensors.*
+# Phase 2: Realtime Digital Twin & Software Automation Platform (Days 71-110)
+*Software-first Phase 2 completion for degree submission: deliver a complete realtime smart-estate digital twin and automation platform, with all devices simulated in software and the architecture ready for hardware integration later.*
 
-**TARGET BUDGET:** under ₹8,000
+**FOCUS:** realtime device simulation, automation rules, digital twin environment, live dashboards, backend orchestration, and a hardware-ready integration layer.
 
-**GOAL:** deliver a working hardware/software prototype that demonstrates telemetry, backend integration, alerts, and a small mobile platform.
-
----
-
-## Day-by-day student plan (71–110)
-
-### Days 71–75: Sensor node setup
-| Day | Task | Required components | Skills | Outcome |
-|-----|------|---------------------|--------|---------|
-| 71 | Confirm hardware and order parts | DHT11 module, capacitive soil moisture sensor, LDR, jumper wires, breadboard kit | procurement, planning | All required parts ordered and workspace prepared |
-| 72 | Setup Arduino and PC | Arduino Mega, USB cable, Arduino IDE | Arduino setup, serial communication | Arduino development environment working |
-| 73 | Assemble sensor node | DHT11, soil moisture, LDR, breadboard, jumper wires | wiring, soldering, sensor interfacing | Sensor node reads temperature, humidity, moisture, light |
-| 74 | Calibrate sensors | same sensors, small resistors if needed | calibration, analog smoothing | Sensor readings stable and correct ranges confirmed |
-| 75 | Add serial telemetry | USB cable, Python/PC | Python serial, data parsing | Sensor values available on PC via Arduino serial |
-
-### Days 76–80: Backend ingestion and dashboard
-| Day | Task | Required components | Skills | Outcome |
-|-----|------|---------------------|--------|---------|
-| 76 | Build backend endpoint | existing FastAPI app | FastAPI route creation | `/api/v1/student-sensor` endpoint ready |
-| 77 | Send serial data to backend | Python script, Arduino serial | HTTP POST, JSON | Sensor data uploads to backend successfully |
-| 78 | Store telemetry in DB | backend DB, schemas | SQLAlchemy/ORM | Telemetry persisted with timestamp and sensor type |
-| 79 | Display live data | backend + simple page | HTML/JavaScript or template | Dashboard shows current sensor values |
-| 80 | Validate end-to-end flow | sensor node + backend | integration testing | Sensor → backend → dashboard flow works |
-
-### Days 81–85: Mobile carrier and simple control
-| Day | Task | Required components | Skills | Outcome |
-|-----|------|---------------------|--------|---------|
-| 81 | Build robot chassis | small 2-wheeled chassis kit, caster wheel | mechanical assembly | Small mobile platform built |
-| 82 | Add motion control | 2 DC motors, L298N motor driver, battery holder | motor wiring, Arduino control | Robot can move forward/backward via Arduino |
-| 83 | Add remote commands | Arduino serial command parser | control logic, serial handling | PC can send start/stop/move commands to robot |
-| 84 | Mount sensor node on carrier | sensor node, chassis mounting | assembly, fastening | Sensor node mounted on mobile platform |
-| 85 | Test movement while sensing | complete prototype | system testing | Robot moves and streams sensor data together |
-
-### Days 86–90: Alerts, actuators, and emergency response
-| Day | Task | Required components | Skills | Outcome |
-|-----|------|---------------------|--------|---------|
-| 86 | Add threshold alerts and pump control | backend rule logic, relay module, water pump | rule creation, actuator control | Alerts trigger for dry soil and pump activation works |
-| 87 | Add emergency stop, RFID operator auth and alarm | Arduino stop command, RC522 RFID module, cards/tags, buzzer | safety logic, RFID integration | Backend can stop robot, require operator RFID auth, and sound alarm immediately |
-| 88 | Add fire/smoke detection | flame sensor, MQ-2/MQ-135 gas sensor | fire detection, sensor integration | Fire/smoke alert triggers and emergency path validates |
-| 89 | Harden hardware with actuators | tape, glue, extra wiring, relay wiring | hardware robustness, actuator wiring | Pump and alarm wiring are stable for repeated use |
-| 90 | Prepare demo script with actuators | documentation, notes | demo planning | Repeatable demo checklist includes pump and emergency flow |
-
-### Days 91–96: Integration testing and reliability
-| Day | Task | Required components | Skills | Outcome |
-|-----|------|---------------------|--------|---------|
-| 91 | Continuous run test | prototype, PC | reliability testing | 2-hour continuous run validated |
-| 92 | Connectivity test | USB serial or nRF24L01 | comm debugging | Communication stable |
-| 93 | Record sample dataset | backend storage | logging, data capture | Sample dataset saved for review |
-| 94 | Test alert flow | backend rules, sensor node | scenario testing | Alert conditions verified |
-| 95 | Troubleshoot issues | spare wires, parts | debugging | Remaining issues fixed |
-| 96 | Code cleanup | source code | refactoring | Clean and maintainable codebase |
-
-### Days 97–100: Packaging and documentation
-| Day | Task | Required components | Skills | Outcome |
-|-----|------|---------------------|--------|---------|
-| 97 | Build enclosure | cardboard, hot glue | prototyping | Prototype housed neatly |
-| 98 | Write README | text editor | documentation | Implementation documented step-by-step |
-| 99 | Prepare operation notes | printed checklist | process planning | Operation checklist ready |
-| 100 | Final demo practice & staff training with RFID | prototype, PC, RC522 module, cards/tags | presentation, RFID onboarding | Running demo completed and operators trained on RFID login and emergency procedures |
-
-### Days 101–110: Final review and handoff readiness
-| Day | Task | Required components | Skills | Outcome |
-|-----|------|---------------------|--------|---------|
-| 101 | Demo the prototype | prototype, PC | presentation | Prototype demonstrated successfully |
-| 102 | Capture evidence | photos, notes | reporting | Results documented |
-| 103 | Collect feedback | mentor/peer review | communication | Feedback noted for improvements |
-| 104 | Plan future scaling | notes | planning | Clear next-step plan created |
-| 105 | Repeat demo run | prototype | verification | System repeats reliably |
-| 106 | Finalize documentation | docs | documentation | Final notes complete |
-| 107 | Backup project files | Git/zip | source control | Code and data backed up |
-| 108 | Optional extension | optional extra sensor | prototyping | Bonus feature added if budget remains |
-| 109 | Final checklist | notes | closure planning | Handoff checklist prepared |
-| 110 | Completion review | review sheet | project closure | Final semester deliverable complete |
+**GOAL:** deliver a complete working software system that demonstrates estate management, automation, live telemetry, digital twin visualization, and future hardware compatibility.
 
 ---
 
-## Required components and approximate cost
-| Component | Estimate (Rs) |
-|---|---|
-| DHT11 temperature/humidity sensor | 120 |
-| Capacitive soil moisture sensor | 200 |
-| LDR light sensor + resistors | 50 |
-| ESP32-WROOM-32 DevKit (1x) | 400 |
-| USB cable (micro-USB) | 150 |
-| Flame sensor module | 120 |
-| MQ-2 / MQ-135 gas/smoke sensor | 180 |
-| Jumper wires + breadboard kit | 250 |
-| Protoboard / headers | 150 |
-| Small robot chassis kit | 420 |
-| L298N motor driver board | 150 |
-| Battery holder / 18650 holder | 200 |
-| Submersible water pump | 300 |
-| 1-channel relay module | 120 |
-| Buzzer / alarm module | 50 |
-| Mounting parts / glue / tape | 150 |
-| Optional wireless module (nRF24L01) | 250 |
-| Extra sensor or spare parts | 300 |
-| RC522 RFID reader/writer (SPI) | 350 |
-| RFID cards (5) + keyfobs (5) | 120 |
-| **Total** | **4,280–4,540** |
-
-> With the actuator and emergency components included, the project remains under ₹4,000 and still well within the ₹8,000 student budget.
-
-> With room to add one extra sensor or better connectivity while staying well below ₹8,000.
+## Phase 2 Objectives
+- Build a realistic realtime digital twin of the estate/farm infrastructure
+- Simulate sensors, robots, automation devices, pumps, energy systems, and security systems in software
+- Keep all states, alerts, and system health visible in real time through the dashboard
+- Implement automation rules so the digital twin behaves like a live operational environment
+- Design the architecture so real devices can be connected later without redesigning the system
+- Submit the project confidently as a complete software-based major project for degree evaluation
 
 ---
 
-## What this prototype will do
-- Read temperature, humidity, soil moisture, light, and fire/smoke signals
-- Send the data from Arduino to the backend
-- Store sensor telemetry in the database
-- Display live values in a dashboard or simple page
-- Trigger alerts when thresholds are crossed or emergency conditions happen
-- Automatically run a water pump when soil is dry
-- Sound an alarm and stop the robot on fire/smoke detection
-- Control a small mobile platform from the backend
-- Show a complete hardware/software integration flow
+## Phase 2 Architecture
+
+### 1. Realtime simulation layer
+- simulated robots and autonomous vehicles
+- simulated environmental sensors (temperature, humidity, soil moisture, power, motion, light)
+- virtual control devices and relays
+- live status updates for each system and zone
+
+### 2. Digital twin visualization layer
+- 3D estate/farm scene
+- health-color indicators for zones and systems
+- live entity interaction and selection
+- animated robot/sensor movement
+- live operational overlays and labels
+
+### 3. Automation & orchestration layer
+- irrigation logic based on soil moisture
+- energy control based on battery or solar conditions
+- alarm and alert generation on abnormal conditions
+- control command processing for system state changes
+- rule-based responses for farm/estate operations
+
+### 4. Realtime backend layer
+- REST APIs for dashboard and device state management
+- Socket.IO streaming for live updates
+- backend event engine for sensor simulation and automation changes
+- persistent telemetry in database for monitoring and reporting
+
+### 5. Hardware-ready integration layer
+- device abstraction layer
+- sensor/actuator adapters
+- protocol-ready interfaces for MQTT, serial, gRPC, or REST
+- future hardware connectors for IoT nodes and robotic devices
 
 ---
 
-## Core skills required
-- Arduino programming and sensor interfacing
-- Basic electronics and wiring
-- Python scripting and serial communication
-- FastAPI endpoint and DB integration
-- Simple frontend/dashboard display
-- Hardware testing and debugging
-- Documentation and demo preparation
+## Phase 2 Day-by-day plan (71–110)
+
+### Days 71–75: Realtime digital twin foundation
+| Day | Task | Outcome |
+|-----|------|---------|
+| 71 | Finalize digital-twin product vision and degree submission scope | Approved software-first project scope — ✅ Completed (2026-08-15) |
+| 72 | Confirm live simulation architecture and backend event flow | Realtime model confirmed — ✅ Completed (2026-08-15). Implementations: DB-backed telemetry emitter, tenant-aware automation listener, robot lifecycle worker, short integration harness, frontend 401/unauthorized handling, unit tests and `tests/conftest.py`. |
+| 73 | Extend 3D scene with realistic estate/farm objects and animated entities | Scene visibly represents a live estate concept — ✅ Completed (2026-08-15). See `Day73_COMPLETE.md` for implementation notes. Frontend 3D models are available under `frontend/public/models` (absolute: C:\Users\Mahantesh\DevelopmentProjects\Aegis\frontend\public\models). These models may be used as vehicles, machines, robots, devices, or servers in the scene and can be referenced by the frontend at `/models/<filename>`.
+| 74 | Implement device state models and simulation engine | Virtual sensors, robots, and zones usable in backend — In Progress (2026-08-15) |
+| 75 | Connect estate simulation to frontend state and 3D dashboard | Live UI shows model and state changes |
+
+### Days 76–80: Realtime telemetry and automation
+| Day | Task | Outcome |
+|-----|------|---------|
+| 76 | Add live sensor reading generation with realistic thresholds | Telemetry values update in real time |
+| 77 | Implement backend automation triggers for environment control | Irrigation, power, and alert logic become active |
+| 78 | Connect telemetry to live charts and estate widgets | Dashboard reflects current system health |
+| 79 | Add alert generation and severity logic | Warning/critical states become visible |
+| 80 | Validate automation path end-to-end | Simulation behaves like a working operational system |
+
+### Days 81–85: System operations and user control
+| Day | Task | Outcome |
+|-----|------|---------|
+| 81 | Add zone, sensor, and robot management APIs | CRUD for all digital twin entities |
+| 82 | Add admin/operator controls for system commands | Users can activate/deactivate simulated devices |
+| 83 | Add live health monitoring for zones and subsystems | System status is visible and actionable |
+| 84 | Add realtime event feed and activity timeline | Live operations are visible to users |
+| 85 | Validate control flow and permissions | Real-time operations work reliably |
+
+### Days 86–90: AI and optimization layer
+| Day | Task | Outcome |
+|-----|------|---------|
+| 86 | Add predictive system health and maintenance simulation | AI-style recommendations appear in UI |
+| 87 | Add crop/soil/energy optimization rules | Smart recommendations operationalize system intelligence |
+| 88 | Add weather and resource adaptation logic | Simulation responds to environmental conditions |
+| 89 | Add recommendations and alert summaries | Dashboard provides actionable insight |
+| 90 | Stress-test system stability with multiple live updates | Platform remains stable under load |
+
+### Days 91–96: Final product integration
+| Day | Task | Outcome |
+|-----|------|---------|
+| 91 | Integrate all modules into a single digital twin workflow | Full system demo pipeline works |
+| 92 | Clean up APIs, error states, and session management | Production-quality backend behavior |
+| 93 | Finalize frontend performance and responsiveness | Dashboard loads and updates smoothly |
+| 94 | Validate multi-user / multi-system interactions | System demonstrates realistic estate operations |
+| 95 | Fix bug backlog and edge cases | End-to-end demo is stable |
+| 96 | Prepare evaluation-ready demo script | Project is ready for presentation |
+
+### Days 97–100: Degree submission preparation
+| Day | Task | Outcome |
+|-----|------|---------|
+| 97 | Finalize architecture, flow, and screenshots | Project documentation ready |
+| 98 | Prepare project report, objectives, and result summary | Report ready for submission |
+| 99 | Run final functional demo and record evidence | Demo proof captured |
+| 100 | Create final submission checklist and viva notes | Degree submission ready |
+
+### Days 101–110: Final review and hardware-readiness handoff
+| Day | Task | Outcome |
+|-----|------|---------|
+| 101 | Final release readiness review | Feature completeness confirmed |
+| 102 | Documentation and architecture review | Final system documented |
+| 103 | Security and validation review | System stable and safe for demonstration |
+| 104 | Prepare startup/next-phase roadmap | Hardware integration path defined |
+| 105 | Final demo run | Project demonstrates live digital twin |
+| 106 | Validate all key use cases | Business logic verified |
+| 107 | Backup and version finalization | Project stored securely |
+| 108 | Prepare future hardware integration plan | Integration path ready for startup work |
+| 109 | Final mentor review and presentation prep | Degree completion confidence achieved |
+| 110 | Phase 2 software completion and handoff | Phase 2 complete with future hardware extension plan |
 
 ---
 
-## Notes
-- This plan is intentionally reduced for a student budget and still retains core Phase 2 functionality.
-- It does not include a full estate-scale network or professional-grade robotics fleet.
-- It requires careful wiring, stable power, and good documentation to prevent stoppage.
+## Final Phase 2 deliverables
+- Functional realtime digital twin dashboard
+- 3D smart-estate simulation
+- live sensor and robot states
+- automation and alert rules
+- system health analytics and recommendations
+- resilient backend and frontend integration
+- architecture ready for future hardware deployment
+
+---
+
+## Core outcome of Phase 2
+This Phase 2 proves the project is fully functional in software and can be extended to real hardware in the future without redesigning the overall system. It is suitable for a degree submission while also creating a realistic startup path for actual device deployment afterward.
+
+---
+
+# Future Work / Final Extension (Hardware Integration Path)
+*This future phase is not required for degree submission. It is the startup-ready physical implementation path after the software project is complete.*
+
+## Scope
+- real IoT sensor deployment
+- robot chassis and driver setup
+- Arduino/ESP32/industrial sensor integration
+- backend wiring to physical device protocols
+- hardware validation and deployment testing
+- field-ready industrial version of the digital twin
+
+## Purpose
+- convert the proven software platform into a real-world smart-estate deployment
+- validate field automation and control using physical devices
+- commercialize the solution after degree completion
+
+## Future Phase roadmap
+- Days 111–130: device prototyping and physical node setup
+- Days 131–150: full hardware validation, integration testing, and startup pilot deployment
 
 ---
 
 ## Implementation Notes
-- **Full Estate Scope:** Biosphere Protocol covers entire private estate including living quarters, laboratories, farms, storage facilities, security systems, and infrastructure
-- **Software-First Approach:** All software development (Days 1-70) completed THIS SEMESTER before hardware begins
-- **gRPC Priority:** Vryndara kernel integration is critical for robotic orchestration and estate management
-- **ML Integration:** Acoustic pest recognition, soil health prediction, and environmental monitoring models are core
-- **3D Spatial Mapping:** Essential for managing entire estate layout and operations
-- **Security Focus:** All components must support air-gapped, offline operation for UHNIs
-- **Estate Integration:** Unified system for agriculture, residential, laboratory, and infrastructure management
-- **Realistic Hardware Timeline:** Days 71-110 focuses on actual physical IoT deployment, robotics assembly, and system integration
-- **Reserved Days 111-150:** Future expansion, research integration, and system enhancements based on Phase 1+2 operational data
+- **Software-first development is the correct degree strategy:** The system is already complete and demonstrable without hardware
+- **Realtime behavior is mandatory:** all devices and automation logic must reflect live state in the UI and backend
+- **Hardware compatibility is preserved:** the architecture remains ready for MQTT, serial, gRPC, and hardware APIs later
+- **Project readiness:** this path enables a strong degree submission while preserving a practical roadmap for startup work
+- **Future integration:** physical hardware can be added as an adapter layer, not as a rewrite of the digital twin
+
+---
+
+## Notes
+- This plan intentionally prioritizes software achievement for academic completion
+- It aligns with the current project foundation and the existing realtime backend/frontend system
+- Hardware remains a future extension and an optional startup initiative after graduation
+- The final objective is a complete live digital twin platform that can scale into an industrial deployment later
+
+---
+
+## Final Phase 2 Execution Plan (Days 71–110)
+
+### Goal
+Deliver a complete software-first digital twin and realtime smart-estate automation platform that is strong enough for a degree showcase, while keeping hardware integration as a clean future expansion path for startup work.
+
+### Final Phase 2 deliverables
+- Real-time estate/farm digital twin scene in the frontend
+- Live simulation of robots, sensors, zones, and automation devices
+- Backend-driven telemetry updates and event streaming
+- Automated logic for irrigation, energy, security, and health monitoring
+- Dashboard and alert system showing active operational status
+- Architecture ready for future hardware integration without redesign
+
+---
+
+### Days 71–75: Digital Twin Foundation
+| Day | Task | Outcome |
+|-----|------|---------|
+| 71 | Finalize product scope for software-first Phase 2 | Phase 2 scope approved for degree submission |
+| 72 | Confirm realtime architecture and live state flow | Simulation model confirmed — ✅ Completed (2026-08-15). Implemented: DB-backed telemetry emitter, tenant-aware automation listener, robot task worker, short integration harness, frontend unauthorized handling, unit tests and `tests/conftest.py`. |
+| 73 | Improve 3D estate scene with realistic zones, assets, and movement | ✅ Completed (2026-08-15). Implementations: seeded demo scene entities, scene entity model and CRUD API, Socket.IO broadcasting, backend scene simulator, admin controls for seed/pause/resume/clear/speed, Three.js `ThreeScene` component, orbit controls, labels, selection/follow-camera, and automation/job scheduling tied to scene entity updates. |
+| 74 | Implement virtual sensor, robot, and automation state models | Backend simulates operational systems |
+| 75 | Connect frontend and backend for live scene updates | 3D dashboard reflects live estate states |
+
+### Days 76–80: Real-Time Telemetry and Automation
+| Day | Task | Outcome |
+|-----|------|---------|
+| 76 | Generate realistic live sensor readings | Telemetry updates in realtime |
+| 77 | Add automation rules for irrigation, power, and alerts | Device logic becomes active |
+| 78 | Display live metrics and health panels | Dashboard reflects true estate conditions |
+| 79 | Add event generation and severity tracking | Alerts become visible to users |
+| 80 | Validate end-to-end automation flow | Software system behaves like a working control center |
+
+### Days 81–85: Operational Control and Monitoring
+| Day | Task | Outcome |
+|-----|------|---------|
+| 81 | Add CRUD APIs for zones, sensors, and robots | Full estate entities are manageable |
+| 82 | Add operator/admin control actions | Simulated devices can be controlled |
+| 83 | Add live health monitoring for systems and zones | Shared status is always visible |
+| 84 | Add event/activity timeline | Operations are traceable and transparent |
+| 85 | Validate permissions and control flow | System is stable and usable |
+
+### Days 86–90: Smart Optimization Layer
+| Day | Task | Outcome |
+|-----|------|---------|
+| 86 | Add predictive maintenance simulation | Recommendations appear in the interface |
+| 87 | Add energy and water optimization rules | System responds to environmental pressure |
+| 88 | Add weather/resource adaptation logic | Simulation reflects operational realism |
+| 89 | Add decision summaries and alert insights | Users can act on system recommendations |
+| 90 | Stress-test platform under multiple simultaneous updates | System remains stable and efficient |
+
+### Days 91–96: Product Integration and Stability
+| Day | Task | Outcome |
+|-----|------|---------|
+| 91 | Integrate all modules into a single digital twin workflow | End-to-end demo works |
+| 92 | Clean up APIs, states, and error handling | Production-quality behavior |
+| 93 | Improve frontend performance and responsiveness | Dashboard is smooth and efficient |
+| 94 | Validate multi-entity interactions | Estate operations appear realistic |
+| 95 | Fix bugs and edge cases | Demo is robust |
+| 96 | Prepare evaluation-ready demo script | Project is ready to present |
+
+### Days 97–100: Degree Submission Preparation
+| Day | Task | Outcome |
+|-----|------|---------|
+| 97 | Prepare screenshots and architecture documentation | Project explanation is ready |
+| 98 | Finalize report, objectives, and result summary | Submission package ready |
+| 99 | Run final demo and record evidence | Proof of functionality captured |
+| 100 | Final viva checklist and final review | Degree submission complete |
+
+### Days 101–110: Final Review and Startup Handoff
+| Day | Task | Outcome |
+|-----|------|---------|
+| 101 | Final release readiness review | Feature coverage checked |
+| 102 | Documentation and architecture review | Final system documented |
+| 103 | Security and validation review | Stable demo environment established |
+| 104 | Define startup-ready roadmap for hardware integration | Future extension path documented |
+| 105 | Final demo run | Showcase version is ready |
+| 106 | Validate all major use cases | Core product value confirmed |
+| 107 | Backup and version finalization | Project stored safely |
+| 108 | Define hardware connector strategy | Future physical integration path ready |
+| 109 | Mentor/faculty final review | Project quality verified |
+| 110 | Phase 2 completion and handoff | Degree-ready platform delivered |
+
+---
+
+## Project Readiness Statement
+This software-first Phase 2 is designed to be a strong degree showcase project because it delivers the complete digital-twin experience: live estate simulation, realtime monitoring, automation logic, user control, and a scalable architecture. The system is not dependent on physical hardware and therefore is suitable for academic evaluation while still remaining ready for future hardware integration.
+
+---
+
+## Why this project is strong for showcase
+- It demonstrates a real operational system, not a static UI mockup
+- It includes live telemetry, state transitions, automation behavior, and alert logic
+- It is built around a realistic estate/farm digital twin use case
+- It shows professional full-stack architecture with backend, frontend, and live data flow
+- It can later integrate real sensors and hardware through a clean adapter layer
+
+---
+
+## Future Work / Startup Extension
+This future phase is not required for the degree submission. It is the post-degree implementation path for physical hardware and real-world deployment.
+
+### Future roadmap
+- Days 111–130: physical sensor node prototyping and backend device connectors
+- Days 131–150: robotics assembly, actuator integration, field validation, and startup pilot deployment
+
+### Future extension purpose
+- convert the proven software platform into real-site deployment
+- add physical IoT devices, robotics, and control hardware
+- validate the business case in a live operational environment
+
+---
+
+## Final note
+The software-first digital twin is the correct path for this project phase. It keeps the system complete, working, and demonstrable for your degree while preserving a clean startup roadmap for real hardware later. This is the most practical and academically safe route for completion.

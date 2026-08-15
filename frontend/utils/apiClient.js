@@ -23,9 +23,18 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Handle unauthorized
-      localStorage.removeItem('authToken');
-      window.location.href = '/login';
+      // Handle unauthorized: remove stored JWT and emit an application event
+      try {
+        localStorage.removeItem('aegis_token');
+      } catch (e) {
+        // ignore
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('aegis:unauthorized', { detail: { url: error.config?.url } }));
+      } catch (e) {
+        // fallback to a gentle redirect if events aren't available
+        if (typeof window !== 'undefined') window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

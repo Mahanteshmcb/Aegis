@@ -5,12 +5,14 @@ const SOCKET_PATH = process.env.NEXT_PUBLIC_SOCKET_PATH || '/socket.io';
 
 let socket = null;
 
-export const initializeSocket = (token) => {
+export const initializeSocket = (token, url) => {
   if (socket?.connected) {
     return socket;
   }
 
-  socket = io(SOCKET_URL, {
+  const connectUrl = url || SOCKET_URL
+
+  socket = io(connectUrl, {
     path: SOCKET_PATH,
     transports: ['polling'],
     upgrade: false,
@@ -130,6 +132,14 @@ export const subscribeToSensorReadings = (callback) => {
   });
 };
 
+export const subscribeToSceneEntities = (callback) => {
+  if (!socket) return;
+
+  socket.on('scene:entity_update', (data) => {
+    callback(data);
+  });
+};
+
 export const unsubscribeFromSystemStatusUpdates = () => {
   if (!socket) return;
   socket.off('systemStatus:update');
@@ -229,6 +239,11 @@ export const unsubscribeFromZoneUpdates = () => {
   socket.off('zone:activity');
 };
 
+export const unsubscribeFromSceneEntities = () => {
+  if (!socket) return;
+  socket.off('scene:entity_update');
+};
+
 export default {
   initializeSocket,
   getSocket,
@@ -240,6 +255,7 @@ export default {
   subscribeToSensorReadings,
   subscribeToCommunicationUpdates,
   subscribeToZoneUpdates,
+  subscribeToSceneEntities,
   emitRobotCommand,
   emitTaskAssignment,
   emitEmergencyStop,
@@ -250,4 +266,5 @@ export default {
   unsubscribeFromSensorReadings,
   unsubscribeFromCommunicationUpdates,
   unsubscribeFromZoneUpdates,
+  unsubscribeFromSceneEntities,
 };

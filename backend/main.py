@@ -1,4 +1,4 @@
-﻿"""
+"""
 Aegis Backend - Main Application
 FastAPI app initialization and startup/shutdown events.
 """
@@ -53,6 +53,8 @@ from backend.routers import water
 from backend.routers import waste
 from backend.routers import communication, communication_extended
 from backend.routers import estate, alerts, robotics_compat
+from backend.routers import scene
+from backend.routers import scene_admin
 from backend import realtime
 from backend.routers import day65
 from backend.routers import day67_playback
@@ -70,7 +72,7 @@ async def vryndara_guard_loop():
     Day 19: Background Watcher
     Simulates Vryndara's continuous oversight of sector integrity.
     """
-    logger.info("🛡️ Vryndara Guard: Active Background Monitoring initialized.")
+    logger.info("??? Vryndara Guard: Active Background Monitoring initialized.")
     try:
         while True:
             # In Phase 2, this will trigger actual anomaly detection logic
@@ -145,9 +147,9 @@ async def lifespan(app: FastAPI):
                 blockchain_monitor_task = asyncio.create_task(
                     blockchain_monitor.start_monitoring(interval_seconds=30)
                 )
-                logger.info("✅ Blockchain monitoring started")
+                logger.info("? Blockchain monitoring started")
             else:
-                logger.warning("⚠️ Blockchain not connected, monitoring disabled")
+                logger.warning("?? Blockchain not connected, monitoring disabled")
 
         except Exception as e:
             logger.error(f"Failed to initialize blockchain monitoring: {e}")
@@ -308,6 +310,8 @@ app.include_router(waste.router)
 app.include_router(communication.router)
 app.include_router(communication_extended.router)
 app.include_router(robotics_compat.router)
+app.include_router(scene.router)
+app.include_router(scene_admin.router)
 app.mount("/socket.io", realtime.sio_app)
 app.include_router(alerts.router)
 app.include_router(day65.router)

@@ -1,3 +1,48 @@
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+import backend.database as database
+
+
+@pytest.fixture(scope='session', autouse=True)
+def in_memory_db():
+    """Create an in-memory SQLite database for the test session and
+    override the project's database engine and SessionLocal to point
+    at it. This keeps tests hermetic and fast.
+    """
+    # Create in-memory engine
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    # Create a session factory bound to the in-memory engine
+    TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    # Patch the backend.database module to use the in-memory engine/session
+    database.engine = engine
+    database.SessionLocal = TestSessionLocal
+
+    # Create all tables using the project's Base metadata
+    database.Base.metadata.create_all(bind=engine)
+
+    yield
+
+    # Teardown: drop all tables
+    database.Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture()
+def db():
+    """Provide a fresh DB session for a test and roll back changes on close."""
+    session = database.SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 """
 Aegis Backend - Pytest Configuration & Fixtures
 Global pytest configuration and reusable fixtures.

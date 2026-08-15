@@ -23,14 +23,45 @@ _emit_tasks = []
 async def sensor_emitter():
     """Emit simulated sensor readings every 1-5 seconds."""
     try:
+        # Attempt to load real sensors from the DB and rotate through them.
+        try:
+            from backend.database import SessionLocal
+            from backend import models_db as models
+            with SessionLocal() as db:
+                sensors = db.query(models.Sensor).all()
+        except Exception:
+            sensors = []
+
         while True:
             await asyncio.sleep(random.uniform(1, 5))
-            data = {
-                "sensor_id": f"sensor_{random.randint(1,20):02}",
-                "system": random.choice(["climate", "energy", "security", "water", "comms"]),
-                "value": round(random.uniform(0, 100), 2),
-                "timestamp": datetime.utcnow().isoformat()
-            }
+
+            if sensors:
+                sensor = random.choice(sensors)
+                data = {
+                    "sensor_id": sensor.id,
+                    "sensor_name": sensor.name,
+                    "tenant_id": sensor.tenant_id,
+                    "type": sensor.type or "",
+                    "value": round(random.uniform(0, 100), 2),
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            else:
+                # Fallback to legacy synthetic ids when DB sensors are unavailable
+                data = {
+                    "sensor_id": f"sensor_{random.randint(1,20):02}",
+                    "system": random.choice(["climate", "energy", "security", "water", "comms"]),
+                    "type": "",
+                    "value": round(random.uniform(0, 100), 2),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+
+            # Run simple automation checks for generated readings
+            try:
+                from backend.services import automation
+                asyncio.create_task(automation.process_sensor_reading(data))
+            except Exception:
+                pass
+
             await sio.emit("sensor:reading", data)
     except asyncio.CancelledError:
         logger.info("sensor_emitter cancelled")
@@ -58,6 +89,18 @@ def start_background_emitters(loop: asyncio.AbstractEventLoop):
     """Start emitter tasks on the provided event loop."""
     _emit_tasks.append(loop.create_task(sensor_emitter()))
     _emit_tasks.append(loop.create_task(system_status_emitter()))
+    # Start robot lifecycle worker (Day 72)
+    try:
+        from backend.services.robot_worker import robot_task_worker
+        _emit_tasks.append(loop.create_task(robot_task_worker()))
+    except Exception:
+        logger.exception("Failed to start robot_task_worker")
+    # Start simple scene entity mover (Day 73)
+    try:
+        from backend.services.scene_simulator import scene_entity_mover
+        _emit_tasks.append(loop.create_task(scene_entity_mover()))
+    except Exception:
+        logger.exception("Failed to start scene_entity_mover")
     logger.info("Realtime emitters started")
 
 async def stop_background_emitters():

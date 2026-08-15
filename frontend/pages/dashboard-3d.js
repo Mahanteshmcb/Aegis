@@ -1,13 +1,75 @@
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import useCurrentUser from '../hooks/useCurrentUser';
 import useEstateState from '../hooks/useEstateState';
 import useEstateRealtime from '../hooks/useEstateRealtime';
-import EstateScene from '../components/3d/EstateScene';
 import Inspector3D from '../components/3d/Inspector3D';
 import Creator3D from '../components/3d/Creator3D';
 
+const DigitalTwinScene = dynamic(
+  () => import('../components/3d/DigitalTwinScene'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-sm text-slate-400">
+        Loading digital twin visuals...
+      </div>
+    ),
+  }
+);
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+
+const buildSimulatedEstate = () => ({
+  robots: [
+    { id: 'sim-robot-1', name: 'Field Rover A', status: 'active', position: [-8, 0, 4] },
+    { id: 'sim-robot-2', name: 'Inspection Bot', status: 'charging', position: [8, 0, 4] },
+  ],
+  sensors: [
+    { id: 'sim-sensor-1', type: 'temperature', name: 'Thermal Node', status: 'active', position: [-6, 0, -4], value: 24.5 },
+    { id: 'sim-sensor-2', type: 'humidity', name: 'Moisture Node', status: 'active', position: [6, 0, -4], value: 63 },
+    { id: 'sim-sensor-3', type: 'motion', name: 'Security Beacon', status: 'idle', position: [0, 0, 8], value: 0 },
+  ],
+  zones: [
+    { id: 'sim-zone-1', name: 'Crop Field A', position: [-10, 0, -8], size: [14, 1.5, 12], color: '#10b981', status: 'secure' },
+    { id: 'sim-zone-2', name: 'Livestock Zone', position: [10, 0, -8], size: [12, 1.5, 12], color: '#f97316', status: 'warning' },
+    { id: 'sim-zone-3', name: 'Drone Pad', position: [0, 0, 12], size: [10, 1.5, 10], color: '#38bdf8', status: 'secure' },
+  ],
+});
+
+const tickEstateSimulation = (estateState) => {
+  estateState.setRobots((prev) => prev.map((robot, index) => {
+    const base = robot.position || [0, 0, 0];
+    const phase = Date.now() / 800 + index;
+    const nextX = base[0] + Math.sin(phase) * 0.22;
+    const nextZ = base[2] + Math.cos(phase * 1.2) * 0.22;
+    return {
+      ...robot,
+      position: [nextX, 1, nextZ],
+      status: robot.status === 'active' ? 'active' : 'charging',
+    };
+  }));
+
+  estateState.setSensors((prev) => prev.map((sensor, index) => {
+    const baseValue = Number(sensor.value ?? 0);
+    const drift = ((Math.sin(Date.now() / 1000 + index) + 1) / 2) * 2.4;
+    const nextValue = sensor.type === 'motion'
+      ? (Math.random() > 0.88 ? 1 : 0)
+      : Math.min(100, Math.max(0, baseValue + (drift - 1.2) * (sensor.type === 'temperature' ? 0.7 : 0.9)));
+
+    return {
+      ...sensor,
+      value: Number(nextValue.toFixed(sensor.type === 'temperature' ? 1 : 0)),
+      status: nextValue > 80 || nextValue < 20 ? 'warning' : 'active',
+    };
+  }));
+
+  estateState.setZones((prev) => prev.map((zone, index) => ({
+    ...zone,
+    status: index === 1 && Math.random() > 0.7 ? 'warning' : 'secure',
+  })));
+};
 
 export default function Dashboard3D() {
   const { user, loading } = useCurrentUser();
@@ -21,6 +83,25 @@ export default function Dashboard3D() {
       fetchInitialData();
     }
   }, [user, loading]);
+
+  useEffect(() => {
+    if (!user || loading) return undefined;
+
+    if (!estateState.robots.length && !estateState.sensors.length && !estateState.zones.length) {
+      const seeded = buildSimulatedEstate();
+      estateState.setRobots(seeded.robots);
+      estateState.setSensors(seeded.sensors);
+      estateState.setZones(seeded.zones);
+    }
+
+    const interval = setInterval(() => {
+      if (estateState.robots.length || estateState.sensors.length || estateState.zones.length) {
+        tickEstateSimulation(estateState);
+      }
+    }, 2200);
+
+    return () => clearInterval(interval);
+  }, [user, loading, estateState]);
 
   const fetchInitialData = async () => {
     try {
@@ -251,7 +332,7 @@ export default function Dashboard3D() {
       <div className="flex-1 flex overflow-hidden">
         {/* 3D Scene */}
         <div className="flex-1 relative">
-          <EstateScene
+          <DigitalTwinScene
             robots={estateState.robots}
             sensors={estateState.sensors}
             zones={estateState.zones}

@@ -15,7 +15,14 @@ from backend.models.hvac_schedule import HVACSchedule
 from backend.models.safety import SafetyRule, SafetyEvent, EmergencyStop
 from backend import models_db as models_db
 from backend.services import broadcast
+from backend import realtime
+from backend import models_scene as scene_models
+from backend.services import scene as scene_service
 from datetime import timedelta
+try:
+    from croniter import croniter
+except Exception:
+    croniter = None
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +67,54 @@ async def _execute_job(session, job: AutomationJob):
         session.add(log)
         session.commit()
 
+        # Emit the command to realtime clients so devices/controllers can act on it
+        try:
+            payload = {
+                "job_id": job.id,
+                "device_id": job.device_id,
+                "tenant_id": job.tenant_id,
+                "command": job.command,
+                "parameters": job.parameters or {},
+            }
+            # event name is flexible; use 'automation:job' and also emit a more specific event if available
+            await realtime.sio.emit("automation:job", payload)
+            # also emit specific command event for robot devices
+            await realtime.sio.emit(f"{job.command}", payload)
+        except Exception:
+            logger.exception("Failed to emit automation job realtime event")
+
+        # Apply simple effects for jobs that target scene entities (demo automation)
+        try:
+            if job.device_id:
+                # interpret parameters for simple move: {dx, dy, dz}
+                dx = (job.parameters or {}).get("dx") or (job.parameters or {}).get("x_delta") or 0
+                dy = (job.parameters or {}).get("dy") or (job.parameters or {}).get("y_delta") or 0
+                dz = (job.parameters or {}).get("dz") or (job.parameters or {}).get("z_delta") or 0
+                ent = session.query(scene_models.SceneEntity).filter(scene_models.SceneEntity.id == job.device_id).first()
+                if ent:
+                    ent.x = (ent.x or 0) + float(dx)
+                    ent.y = (ent.y or 0) + float(dy)
+                    ent.z = (ent.z or 0) + float(dz)
+                    session.add(ent)
+                    session.commit()
+                    session.refresh(ent)
+                    # broadcast updated entity to clients
+                    try:
+                        await scene_service.broadcast_entity_update({
+                            "id": ent.id,
+                            "name": ent.name,
+                            "type": ent.type,
+                            "x": ent.x,
+                            "y": ent.y,
+                            "z": ent.z,
+                            "rotation": ent.rotation,
+                            "state": ent.state or {},
+                        })
+                    except Exception:
+                        logger.exception("Failed to broadcast entity update after job execution")
+        except Exception:
+            logger.exception("Failed to apply job effects to scene entity")
+
         # Simulate doing work
         await asyncio.sleep(2)
 
@@ -70,10 +125,22 @@ async def _execute_job(session, job: AutomationJob):
         session.add(log)
 
         job.status = "completed"
-        if job.recurring and job.scheduled_at:
-            # Simple recurring behaviour: schedule next occurrence +24h
-            job.scheduled_at = job.scheduled_at + timedelta(days=1)
-            job.status = "pending"
+        if job.recurring:
+            # Prefer cron expressions when available
+            if job.cron and croniter is not None:
+                try:
+                    base = job.scheduled_at or datetime.utcnow()
+                    it = croniter(job.cron, base)
+                    job.scheduled_at = it.get_next(datetime)
+                    job.status = "pending"
+                except Exception:
+                    # Fallback to daily recurrence if cron parsing fails
+                    job.scheduled_at = (job.scheduled_at or datetime.utcnow()) + timedelta(days=1)
+                    job.status = "pending"
+            else:
+                # Simple recurring behaviour: schedule next occurrence +24h
+                job.scheduled_at = (job.scheduled_at or datetime.utcnow()) + timedelta(days=1)
+                job.status = "pending"
         session.add(job)
         session.commit()
         logger.info(f"Job id={job.id} completed")
@@ -144,11 +211,12 @@ async def _poll_loop(stop_event: asyncio.Event):
                     except Exception:
                         session.rollback()
 
+                from sqlalchemy import or_
+
                 pending_jobs = (
                     session.query(AutomationJob)
                     .filter(AutomationJob.status == "pending")
-                    .filter(AutomationJob.scheduled_at != None)
-                    .filter(AutomationJob.scheduled_at <= now)
+                    .filter(or_(AutomationJob.scheduled_at == None, AutomationJob.scheduled_at <= now))
                     .all()
                 )
                 for job in pending_jobs:

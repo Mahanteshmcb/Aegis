@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import useCurrentUser from '../hooks/useCurrentUser';
 import {
   Home,
@@ -17,6 +17,7 @@ import {
   Settings2,
   LogOut,
   Sliders,
+  Square,
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -32,6 +33,7 @@ export default function Sidebar() {
     { name: 'Waste', path: '/waste-dashboard', icon: Trash2 },
     { name: 'System', path: '/system-control', icon: Cpu },
     { name: 'Vryndara AI', path: '/ai', icon: Sparkles },
+    { name: '3D Scene', path: '/3d-scene', icon: Square },
     { name: 'Profile', path: '/profile', icon: User },
   ];
 
@@ -72,24 +74,33 @@ export default function Sidebar() {
   };
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [navOffset, setNavOffset] = useState(0);
-  const [showSlider, setShowSlider] = useState(true);
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('sidebarNavOffset');
-      if (saved !== null) setNavOffset(Number(saved));
-    } catch (e) {
-      // ignore
-    }
-  }, []);
+  const navContainerRef = useRef(null);
+  const itemRefs = useRef({});
+  // nav container is native-scrollable; we rely on scrollIntoView for active items
+  const [showSlider, setShowSlider] = useState(false);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('sidebarNavOffset', String(navOffset));
-    } catch (e) {
-      // ignore
+  const scrollActiveIntoView = useCallback(() => {
+    const activeEl = itemRefs.current[router.pathname];
+    const container = navContainerRef.current;
+    if (activeEl && container) {
+      try {
+        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (e) {
+        const offset = activeEl.offsetTop - container.clientHeight / 2 + activeEl.clientHeight / 2;
+        container.scrollTop = Math.max(0, offset);
+      }
+      // nothing else to sync; native scrollbar is authoritative
     }
-  }, [navOffset]);
+  }, [router.pathname]);
+
+  // smooth sync: on scroll update nothing (we rely on native scrollbar), keep refs for scrollIntoView
+  useEffect(() => {
+    const el = navContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {};
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     const handler = () => setMobileOpen((v) => !v);
@@ -100,6 +111,15 @@ export default function Sidebar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [router.pathname]);
+
+  // Ensure active nav item is visible on route change or when opening mobile drawer
+  useEffect(() => {
+    scrollActiveIntoView();
+  }, [router.pathname, scrollActiveIntoView]);
+
+  useEffect(() => {
+    if (mobileOpen) scrollActiveIntoView();
+  }, [mobileOpen, scrollActiveIntoView]);
 
   return (
     <>
@@ -126,40 +146,30 @@ export default function Sidebar() {
                 </div>
               )}
             </div>
-              {/* Mobile offset slider (moved to top for visibility) */}
-              <div className="p-3 border-t border-slate-800 md:hidden">
-                <label className="text-xs text-aegis-muted mb-1 block">Adjust pages</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={-200}
-                    max={200}
-                    step={5}
-                    value={navOffset}
-                    onChange={(e) => setNavOffset(Number(e.target.value))}
-                    className="w-full"
-                    aria-label="Adjust sidebar pages vertical offset"
-                  />
-                  <span className="text-xs text-aegis-muted w-10 text-right">{navOffset}px</span>
-                </div>
-              </div>
+              {/* Mobile: use native scrolling; removed custom slider for reliability */}
 
-              <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-800/50 scroll-smooth pr-2">
-              <div className="p-6 space-y-3" style={{transform: `translateY(${navOffset}px)`}}>
+              <nav
+                ref={navContainerRef}
+                style={{ maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}
+                className="flex-1 min-h-0 overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-800/50 scroll-smooth pr-2"
+              >
+              <div className="p-6 space-y-3">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = router.pathname === item.path;
                 return (
-                  <Link
-                    key={item.name}
-                    href={item.path}
-                    className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm transition-all duration-200 whitespace-nowrap ${
-                      isActive ? 'bg-slate-900 text-white ring-1 ring-aegis-primary' : 'text-aegis-text hover:bg-slate-800 hover:text-aegis-primary'
-                    }`}
-                    onClick={() => setMobileOpen(false)}
-                  >
-                    <Icon className="h-4 w-4 flex-shrink-0" />
-                    {item.name}
+                  <Link key={item.name} href={item.path} legacyBehavior>
+                    <a
+                      className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm transition-all duration-200 whitespace-nowrap ${
+                        isActive ? 'bg-slate-900 text-white ring-1 ring-aegis-primary' : 'text-aegis-text hover:bg-slate-800 hover:text-aegis-primary'
+                      }`}
+                      onClick={() => setMobileOpen(false)}
+                      ref={(el) => (itemRefs.current[item.path] = el)}
+                      data-active={isActive}
+                    >
+                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      {item.name}
+                    </a>
                   </Link>
                 );
               })}
@@ -184,6 +194,8 @@ export default function Sidebar() {
                   );
                 })}
               </div>
+
+              {/* Desktop: native scrollbar used; slider removed for consistent UX */}
 
               {/* Auditor Section */}
               {!loading && (user?.role === 'auditor' || user?.role === 'admin') && (
@@ -266,7 +278,7 @@ export default function Sidebar() {
       )}
 
       {/* Desktop sidebar */}
-      <aside className="w-64 bg-[#07111f] border-r border-slate-800 hidden md:flex flex-col h-screen overflow-hidden relative">
+      <aside className="w-64 bg-[#07111f] border-r border-slate-800 hidden md:flex flex-col h-screen overflow-visible relative">
         <div className="p-6 border-b border-slate-800 flex-shrink-0">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-aegis-primary tracking-widest">AEGIS</h1>
@@ -290,21 +302,26 @@ export default function Sidebar() {
           )}
         </div>
 
-        <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-800/50 scroll-smooth pr-2">
-          <div className="p-6 space-y-3" style={{transform: `translateY(${navOffset}px)`}}>
+            <nav
+              ref={navContainerRef}
+              style={{ maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}
+              className="flex-1 min-h-0 overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-800/50 scroll-smooth pr-2"
+            >
+          <div className="p-6 space-y-3">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = router.pathname === item.path;
             return (
-              <Link
-                key={item.name}
-                href={item.path}
-                className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm transition-all duration-200 whitespace-nowrap ${
-                  isActive ? 'bg-slate-900 text-white ring-1 ring-aegis-primary' : 'text-aegis-text hover:bg-slate-800 hover:text-aegis-primary'
-                }`}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0" />
-                {item.name}
+              <Link key={item.name} href={item.path} legacyBehavior>
+                <a
+                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-sm transition-all duration-200 whitespace-nowrap ${
+                    isActive ? 'bg-slate-900 text-white ring-1 ring-aegis-primary' : 'text-aegis-text hover:bg-slate-800 hover:text-aegis-primary'
+                  }`}
+                  ref={(el) => (itemRefs.current[item.path] = el)}
+                >
+                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  {item.name}
+                </a>
               </Link>
             );
           })}
@@ -400,33 +417,7 @@ export default function Sidebar() {
           )}
           </div>
         </nav>
-        {/* Desktop offset slider (vertical, attached to sidebar edge) */}
-        {showSlider && (
-          <div
-            className="hidden md:flex items-center"
-            style={{
-              position: 'absolute',
-              right: -24,
-              top: 72,
-              transform: 'translateY(0) rotate(-90deg)',
-              zIndex: 60,
-            }}
-          >
-            <input
-              type="range"
-              min={-200}
-              max={200}
-              step={5}
-              value={navOffset}
-              onChange={(e) => setNavOffset(Number(e.target.value))}
-              style={{ width: 180 }}
-              aria-label="Adjust sidebar pages vertical offset"
-            />
-            <div style={{ transform: 'rotate(90deg)', marginLeft: 8 }} className="text-xs text-aegis-muted">
-              {navOffset}px
-            </div>
-          </div>
-        )}
+        {/* Desktop slider removed from edge; rendered inline below control panels instead */}
       </aside>
     </>
   );
