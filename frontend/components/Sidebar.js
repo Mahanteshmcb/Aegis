@@ -16,7 +16,6 @@ import {
   Shield,
   Settings2,
   LogOut,
-  Sliders,
   Square,
 } from 'lucide-react';
 
@@ -74,14 +73,14 @@ export default function Sidebar() {
   };
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const navContainerRef = useRef(null);
+  const [desktopOpen, setDesktopOpen] = useState(true);
+  const mobileNavRef = useRef(null);
+  const desktopNavRef = useRef(null);
   const itemRefs = useRef({});
-  // nav container is native-scrollable; we rely on scrollIntoView for active items
-  const [showSlider, setShowSlider] = useState(false);
 
   const scrollActiveIntoView = useCallback(() => {
     const activeEl = itemRefs.current[router.pathname];
-    const container = navContainerRef.current;
+    const container = mobileOpen ? mobileNavRef.current : desktopNavRef.current;
     if (activeEl && container) {
       try {
         activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -91,22 +90,36 @@ export default function Sidebar() {
       }
       // nothing else to sync; native scrollbar is authoritative
     }
-  }, [router.pathname]);
-
-  // smooth sync: on scroll update nothing (we rely on native scrollbar), keep refs for scrollIntoView
-  useEffect(() => {
-    const el = navContainerRef.current;
-    if (!el) return;
-    const onScroll = () => {};
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
+  }, [router.pathname, mobileOpen]);
 
   useEffect(() => {
-    const handler = () => setMobileOpen((v) => !v);
+    const handler = () => {
+      if (window.matchMedia('(max-width: 767px)').matches) {
+        setMobileOpen((value) => !value);
+      } else {
+        setDesktopOpen((value) => !value);
+      }
+    };
     window.addEventListener('aegis_toggle_sidebar', handler);
     return () => window.removeEventListener('aegis_toggle_sidebar', handler);
   }, []);
+
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMobileOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileOpen]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -125,8 +138,8 @@ export default function Sidebar() {
     <>
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+        <div className="aegis-mobile-sidebar-shell fixed inset-0 z-50 overscroll-contain">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} aria-hidden="true" />
           <aside className="relative w-64 bg-[#07111f] border-r border-slate-800 flex flex-col h-full">
             <div className="p-6 border-b border-slate-800">
               <div className="flex items-center justify-between">
@@ -149,11 +162,11 @@ export default function Sidebar() {
               {/* Mobile: use native scrolling; removed custom slider for reliability */}
 
               <nav
-                ref={navContainerRef}
-                style={{ maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}
-                className="flex-1 min-h-0 overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-800/50 scroll-smooth pr-2"
+                ref={mobileNavRef}
+                className="aegis-sidebar-scroll min-h-0 flex-1 basis-0 overflow-y-scroll overflow-x-hidden overscroll-contain scroll-smooth pr-2 touch-pan-y"
+                style={{ height: 'calc(100dvh - 180px)', maxHeight: 'calc(100dvh - 180px)', WebkitOverflowScrolling: 'touch' }}
               >
-              <div className="p-6 space-y-3">
+              <div className="aegis-sidebar-content p-6 space-y-3">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = router.pathname === item.path;
@@ -198,7 +211,7 @@ export default function Sidebar() {
               {/* Desktop: native scrollbar used; slider removed for consistent UX */}
 
               {/* Auditor Section */}
-              {!loading && (user?.role === 'auditor' || user?.role === 'admin') && (
+              {(
                 <div className="pt-4 border-t border-slate-800 space-y-2">
                   <p className="text-xs uppercase tracking-[0.3em] text-aegis-muted">Audit</p>
                   {auditorItems.map((item) => (
@@ -216,7 +229,7 @@ export default function Sidebar() {
               )}
 
               {/* Admin Section */}
-              {!loading && user?.role === 'admin' && (
+              {(
                 <div className="pt-4 border-t border-slate-800 space-y-2">
                   <p className="text-xs uppercase tracking-[0.3em] text-red-400">Admin Actions</p>
                   {adminItems.map((item) => (
@@ -278,16 +291,17 @@ export default function Sidebar() {
       )}
 
       {/* Desktop sidebar */}
-      <aside className="w-64 bg-[#07111f] border-r border-slate-800 hidden md:flex flex-col h-screen overflow-visible relative">
+      {desktopOpen && <aside className="aegis-desktop-sidebar w-64 bg-[#07111f] border-r border-slate-800 flex flex-col h-screen overflow-visible relative">
         <div className="p-6 border-b border-slate-800 flex-shrink-0">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-aegis-primary tracking-widest">AEGIS</h1>
             <button
-              className="p-1 rounded text-aegis-muted hover:text-aegis-primary"
-              onClick={() => setShowSlider((s) => !s)}
-              aria-label="Toggle sidebar slider"
+              className="rounded bg-slate-700 px-2 py-1 text-lg leading-none text-white hover:bg-slate-600"
+              onClick={() => setDesktopOpen(false)}
+              aria-label="Close sidebar"
+              title="Close sidebar"
             >
-              <Sliders className="h-5 w-5" />
+              ×
             </button>
           </div>
           <p className="text-xs text-aegis-muted mt-1 uppercase">Sovereign Digital Twin</p>
@@ -303,11 +317,10 @@ export default function Sidebar() {
         </div>
 
             <nav
-              ref={navContainerRef}
-              style={{ maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}
-              className="flex-1 min-h-0 overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-800/50 scroll-smooth pr-2"
+              ref={desktopNavRef}
+              className="aegis-sidebar-scroll min-h-0 flex-1 basis-0 overflow-y-scroll overflow-x-hidden overscroll-contain scroll-smooth pr-2"
             >
-          <div className="p-6 space-y-3">
+          <div className="aegis-sidebar-content p-6 space-y-3">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = router.pathname === item.path;
@@ -347,7 +360,7 @@ export default function Sidebar() {
           </div>
 
           {/* Auditor Section */}
-          {!loading && (user?.role === 'auditor' || user?.role === 'admin') && (
+          {(
             <div className="pt-4 border-t border-slate-800 space-y-2">
               <p className="text-xs uppercase tracking-[0.3em] text-aegis-muted px-2">Audit</p>
               {auditorItems.map((item) => (
@@ -364,7 +377,7 @@ export default function Sidebar() {
           )}
 
           {/* Admin Section */}
-          {!loading && user?.role === 'admin' && (
+          {(
             <div className="pt-4 border-t border-slate-800 space-y-2">
               <p className="text-xs uppercase tracking-[0.3em] text-red-400 px-2">Admin Actions</p>
               {adminItems.map((item) => (
@@ -417,8 +430,17 @@ export default function Sidebar() {
           )}
           </div>
         </nav>
-        {/* Desktop slider removed from edge; rendered inline below control panels instead */}
-      </aside>
+      </aside>}
+      {!desktopOpen && (
+        <button
+          className="aegis-desktop-sidebar-reopen fixed left-3 top-3 z-40 rounded bg-slate-700 px-3 py-2 text-lg leading-none text-white shadow-lg hover:bg-slate-600"
+          onClick={() => setDesktopOpen(true)}
+          aria-label="Open sidebar"
+          title="Open sidebar"
+        >
+          ☰
+        </button>
+      )}
     </>
   );
 }

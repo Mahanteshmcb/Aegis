@@ -43,11 +43,11 @@ export default function Header() {
   const isWarning = statusText === 'warning' || statusText === 'degraded' || statusText === 'alert';
 
   return (
-    <header className="h-16 bg-aegis-dark border-b border-slate-700 flex items-center justify-between px-6">
-      <div className="flex items-center gap-3">
+    <header className="aegis-header h-16 bg-aegis-dark border-b border-slate-700 flex items-center justify-between px-6">
+      <div className="aegis-header-view flex items-center gap-3 min-w-0">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('aegis_toggle_sidebar'))}
-          className="md:hidden p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-aegis-primary"
+          className="aegis-mobile-menu-trigger p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-aegis-primary"
           aria-label="Toggle sidebar"
         >
           ☰
@@ -60,7 +60,7 @@ export default function Header() {
       </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="aegis-header-session flex items-center gap-4 shrink-0">
         {!isLoggedIn ? (
           <div className="flex items-center gap-3">
             <a href="/login" className="text-sm text-aegis-muted hover:text-aegis-primary transition-colors">Login</a>
@@ -74,7 +74,7 @@ export default function Header() {
         )}
       </div>
 
-      <div className="flex items-center space-x-6">
+      <div className="aegis-header-status flex items-center space-x-6 shrink-0">
         {/* Dynamic Status Indicator */}
         <div className="flex items-center space-x-2">
           <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] ${

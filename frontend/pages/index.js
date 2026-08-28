@@ -13,12 +13,20 @@ export default function Home() {
   const { user, loading } = useCurrentUser();
   const [selectedFeature, setSelectedFeature] = useState(null);
 
-  // Redirect to estate-dashboard if already logged in
+  // Send visitors to authentication first; authenticated users go to the dashboard.
   useEffect(() => {
-    if (!loading && user) {
-      router.replace('/estate-dashboard');
+    if (!loading) {
+      router.replace(user ? '/estate-dashboard' : '/login');
     }
   }, [user, loading, router]);
+
+  if (loading || !router.isReady) {
+    return <div className="min-h-screen bg-[#050816]" />;
+  }
+
+  if (!user) {
+    return null;
+  }
 
   const features = [
     {

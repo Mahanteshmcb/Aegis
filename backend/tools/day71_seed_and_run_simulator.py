@@ -32,12 +32,23 @@ from backend import database
 from backend import crud
 from backend.database import SessionLocal
 from backend import realtime
+from backend import models_db as models
 
 logger = logging.getLogger("day71")
 
 
+def resolve_seed_tenant_id(db):
+    tenant = db.query(models.Tenant).filter(models.Tenant.name == "Aegis Tenant").first()
+    if tenant is not None:
+        return tenant.id
+    tenant = db.query(models.Tenant).filter(models.Tenant.name == "Default Tenant").first()
+    if tenant is not None:
+        return tenant.id
+    return 1
+
+
 def seed_simulated_sensors(db):
-    tenant_id = 1  # seeded default tenant in backend.database.init_db
+    tenant_id = resolve_seed_tenant_id(db)
     sensors = [
         {"name": "Sim Soil Probe 1", "type": "soil_moisture", "location": "Field A", "zone_id": None},
         {"name": "Sim Energy Inverter 1", "type": "inverter", "location": "Power Shed", "zone_id": None},
@@ -48,7 +59,7 @@ def seed_simulated_sensors(db):
 
 
 def seed_simulated_robot_task(db):
-    tenant_id = 1
+    tenant_id = resolve_seed_tenant_id(db)
     task = {
         "task_id": f"day71-task-{int(time.time())}",
         "operation_type": "inspect_zone",
@@ -110,7 +121,7 @@ def main():
             status="pending",
         )
         try:
-            crud.create_scheduled_task(db, task_create, tenant_id=1)
+            crud.create_scheduled_task(db, task_create, tenant_id=resolve_seed_tenant_id(db))
             logger.info("Seeded scheduled robotic task")
         except Exception as exc:
             logger.warning("Could not seed scheduled task: %s", exc)

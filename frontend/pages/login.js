@@ -4,8 +4,8 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import Input from '../components/Input';
 import Button from '../components/Button';
-import { loginAPI } from '../utils/api';
-import { getAuthToken, setAuthToken } from '../utils/auth';
+import { getCurrentUser, loginAPI } from '../utils/api';
+import { clearAuthToken, getAuthToken, setAuthToken } from '../utils/auth';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -17,10 +17,21 @@ export default function Login() {
   const router = useRouter();
 
   useEffect(() => {
-    if (getAuthToken()) {
-      router.replace('/');
-    }
+    const token = getAuthToken();
+    if (!token) return;
+
+    getCurrentUser(token)
+      .then(() => router.replace('/'))
+      .catch(() => {
+        clearAuthToken();
+      });
   }, [router]);
+
+  useEffect(() => {
+    if (router.query.registered === '1') {
+      setErrorMsg('Account created. Sign in to continue.');
+    }
+  }, [router.query.registered]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -179,6 +190,12 @@ export default function Login() {
           </form>
           <div className="mt-6 text-center text-sm text-aegis-muted">
             Access is granted only to verified operators. All sessions are logged immutably.
+          </div>
+          <div className="mt-4 text-center text-sm text-aegis-muted">
+            New operator?{' '}
+            <a href="/signup" className="font-semibold text-aegis-primary hover:text-blue-400 transition-colors">
+              Create an account
+            </a>
           </div>
         </div>
       </div>

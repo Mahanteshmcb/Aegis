@@ -41,7 +41,7 @@ function MyApp({ Component, pageProps }) {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <div className="min-h-screen flex bg-[#050816]">
+        <div className="aegis-app-shell min-h-screen flex bg-[#050816]">
           <Sidebar />
           <div className="flex-1 flex flex-col overflow-hidden">
             <Header />

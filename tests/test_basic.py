@@ -56,6 +56,36 @@ def test_create_and_get_sensor(client):
     get_result = get_response.json()
     assert get_result["value"] == 23.5
 
+
+def test_sensor_list_returns_name_type_and_location(client):
+    headers = auth_headers(client, email="sensorlist@example.com", password="pass123", tenant_name="Sensor List Tenant")
+
+    zone_response = client.post(
+        "/api/v1/zones",
+        json={"name": "Lab Zone", "description": "Test zone", "location": "Building A"},
+        headers=headers,
+    )
+    assert zone_response.status_code == 200, zone_response.text
+    zone_id = zone_response.json()["id"]
+
+    sensor_response = client.post(
+        "/api/v1/sensors",
+        json={"name": "Lab Temperature Sensor", "type": "temperature", "location": "Room 101", "zone_id": zone_id},
+        headers=headers,
+    )
+    assert sensor_response.status_code == 200, sensor_response.text
+
+    list_response = client.get("/api/v1/sensors", headers=headers)
+    assert list_response.status_code == 200, list_response.text
+    payload = list_response.json()
+    assert any(
+        item.get("name") == "Lab Temperature Sensor"
+        and item.get("type") == "temperature"
+        and item.get("location") == "Room 101"
+        for item in payload
+    )
+
+
 def test_ai_orchestrator():
 
     # Placeholder test

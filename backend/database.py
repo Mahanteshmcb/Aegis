@@ -4,6 +4,8 @@ SQLAlchemy setup and session management.
 """
 
 import logging
+from pathlib import Path
+from shutil import copy2
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -234,6 +236,59 @@ def _seed_default_tenant_and_sample_data() -> None:
                 },
             )
 
+        # Keep the Day 71/72 demo fleet available after a fresh restart.
+        demo_sensors = [
+            ("Sim Soil Probe 1", "soil_moisture", "Field A", "35"),
+            ("Sim Energy Inverter 1", "inverter", "Power Shed", "72"),
+            ("Sim Acoustic Pest Monitor 1", "acoustic_pest", "Canopy North", "0"),
+            ("Test Soil Probe 1", "soil_moisture", "Test Field", "41"),
+            ("Test Soil Probe 2", "soil_moisture", "Test Field", "44"),
+        ]
+        for name, sensor_type, location, value in demo_sensors:
+            exists = conn.execute(
+                text("SELECT COUNT(*) FROM sensors WHERE tenant_id = :tenant_id AND name = :name"),
+                {"tenant_id": tenant_id, "name": name},
+            ).scalar_one()
+            if exists == 0:
+                now = datetime.utcnow().isoformat(sep=' ')
+                conn.execute(
+                    text(
+                        "INSERT INTO sensors (tenant_id, zone_id, name, type, location, last_reading, created_at, updated_at) "
+                        "VALUES (:tenant_id, :zone_id, :name, :type, :location, :last_reading, :created_at, :updated_at)"
+                    ),
+                    {
+                        "tenant_id": tenant_id,
+                        "zone_id": zone_id,
+                        "name": name,
+                        "type": sensor_type,
+                        "location": location,
+                        "last_reading": json.dumps({"value": value, "unit": "%", "timestamp": now}),
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+
+
+def _create_sqlite_backup() -> str | None:
+    """Create a timestamped SQLite backup in a local backups folder."""
+    if not settings.database_url.startswith("sqlite"):
+        return None
+
+    db_path = settings.database_url.replace("sqlite:///", "", 1)
+    if not db_path:
+        return None
+
+    db_file = Path(db_path).resolve()
+    if not db_file.exists():
+        return None
+
+    backup_dir = db_file.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    backup_file = backup_dir / f"{db_file.stem}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.db"
+    copy2(db_file, backup_file)
+    return str(backup_file)
+
 
 def init_db():
     """Initialize database - create all tables."""
@@ -250,6 +305,14 @@ def init_db():
         _seed_default_tenant_and_sample_data()
     except Exception as exc:
         logging.getLogger(__name__).warning("Failed to seed default tenant and sample data: %s", exc)
+
+    if settings.database_url.startswith('sqlite'):
+        try:
+            backup_path = _create_sqlite_backup()
+            if backup_path:
+                logging.getLogger(__name__).info("SQLite backup created at %s", backup_path)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Failed to create SQLite backup: %s", exc)
 
 
 def drop_db():

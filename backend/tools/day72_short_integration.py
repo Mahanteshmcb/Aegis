@@ -25,6 +25,7 @@ from backend import database
 from backend.database import SessionLocal
 from backend import realtime
 from backend import crud
+from backend import models_db as models
 from backend import models as _models  # ensure models package is importable
 import backend.models.environmental
 
@@ -32,8 +33,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("day72_short")
 
 
+def resolve_seed_tenant_id(db):
+    tenant = db.query(models.Tenant).filter(models.Tenant.name == "Aegis Tenant").first()
+    if tenant is not None:
+        return tenant.id
+    tenant = db.query(models.Tenant).filter(models.Tenant.name == "Default Tenant").first()
+    if tenant is not None:
+        return tenant.id
+    return 1
+
+
 def seed(db):
-    tenant_id = 1
+    tenant_id = resolve_seed_tenant_id(db)
     sensors = [
         {"name": "Test Soil Probe 1", "type": "soil_moisture", "location": "Test Field", "zone_id": None},
         {"name": "Test Soil Probe 2", "type": "soil_moisture", "location": "Test Field", "zone_id": None},

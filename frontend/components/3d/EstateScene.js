@@ -1,7 +1,13 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+
+function AssetModel({ url, scale, rotation = [0, 0, 0] }) {
+  const { scene } = useGLTF(url);
+  const model = scene.clone();
+  return <primitive object={model} scale={scale} rotation={rotation} dispose={null} />;
+}
 
 // Building Structure Component
 function Building({ position, size, color, name, selected, onClick }) {
@@ -81,27 +87,12 @@ function Robot({ position, id, status, selected, onClick, isAnimating }) {
         </mesh>
       )}
 
-      <mesh castShadow>
+      <Suspense fallback={<mesh castShadow>
         <cylinderGeometry args={[0.35, 0.35, 0.45, 20]} />
-        <meshPhysicalMaterial
-          color={selected ? '#ff66ff' : '#0af0ff'}
-          emissive={selected ? '#ff66ff' : statusColor}
-          emissiveIntensity={selected ? 0.8 : 0.4}
-          roughness={0.15}
-          metalness={0.85}
-        />
-      </mesh>
-
-      <mesh position={[0, 0.35, 0]} castShadow>
-        <sphereGeometry args={[0.2, 32, 32]} />
-        <meshPhysicalMaterial
-          color={selected ? '#ff66ff' : '#15f0ff'}
-          emissive={selected ? '#ff66ff' : statusColor}
-          emissiveIntensity={selected ? 1.0 : 0.65}
-          roughness={0.1}
-          metalness={0.9}
-        />
-      </mesh>
+        <meshPhysicalMaterial color={selected ? '#ff66ff' : '#0af0ff'} emissive={selected ? '#ff66ff' : statusColor} emissiveIntensity={selected ? 0.8 : 0.4} roughness={0.15} metalness={0.85} />
+      </mesh>}>
+        <AssetModel url="/models/Fox.glb" scale={selected ? 0.8 : 0.7} rotation={[0, Math.PI, 0]} />
+      </Suspense>
 
       <group ref={armRef} position={[0.25, 0.05, 0]}> 
         <mesh castShadow>
@@ -161,16 +152,14 @@ function SensorNode({ position, type, value, selected, onClick }) {
           <meshBasicMaterial color="#ff66ff" transparent opacity={0.2} />
         </mesh>
       )}
-      <mesh ref={meshRef} castShadow>
-        <icosahedronGeometry args={[0.22, 1]} />
-        <meshPhysicalMaterial
-          color={selected ? '#ff66ff' : color}
-          emissive={selected ? '#ff66ff' : color}
-          emissiveIntensity={selected ? 0.9 : 0.65}
-          metalness={0.45}
-          roughness={0.1}
-        />
-      </mesh>
+      <group ref={meshRef}>
+        <Suspense fallback={<mesh castShadow>
+          <icosahedronGeometry args={[0.22, 1]} />
+          <meshPhysicalMaterial color={selected ? '#ff66ff' : color} emissive={selected ? '#ff66ff' : color} emissiveIntensity={selected ? 0.9 : 0.65} metalness={0.45} roughness={0.1} />
+        </mesh>}>
+          <AssetModel url="/models/BoxTextured.glb" scale={selected ? 0.45 : 0.38} />
+        </Suspense>
+      </group>
       <mesh position={[0, -0.35, 0]}>
         <cylinderGeometry args={[0.04, 0.04, 0.2, 12]} />
         <meshStandardMaterial color="#0f172a" roughness={0.5} metalness={0.2} />

@@ -181,7 +181,7 @@ export default function SensorsPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-800 border-b border-slate-700">
                 <tr>
-                  <th className="px-6 py-4 text-aegis-muted font-semibold">Location</th>
+                  <th className="px-6 py-4 text-aegis-muted font-semibold">Sensor</th>
                   <th className="px-6 py-4 text-aegis-muted font-semibold">Type</th>
                   <th className="px-6 py-4 text-aegis-muted font-semibold">Status</th>
                   <th className="px-6 py-4 text-aegis-muted font-semibold">Last Reading</th>
@@ -196,7 +196,10 @@ export default function SensorsPage() {
                       {editingSensorId === sensor.id ? (
                         <input value={editSensorData.location} onChange={(e) => setEditSensorData({ ...editSensorData, location: e.target.value })} className="w-full rounded-md bg-slate-900 px-2 py-1 text-white border border-slate-700" />
                       ) : (
-                        sensor.location || 'Unnamed Sensor'
+                        <div>
+                          <div>{sensor.name || `Sensor ${sensor.id}`}</div>
+                          <div className="text-xs text-slate-500">{sensor.location || 'Location unavailable'}</div>
+                        </div>
                       )}
                     </td>
                     <td className="px-6 py-4 text-slate-400">{sensor.type || 'Unknown'}</td>
