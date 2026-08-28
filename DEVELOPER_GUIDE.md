@@ -23,7 +23,7 @@ cd frontend
 npm run dev
 ```
 
-✅ **Frontend runs on:** http://localhost:3000 (or 3001, 3002, etc.)  
+✅ **Frontend runs on:** http://localhost:3000 or http://127.0.0.1:3000 (or 3001, 3002, etc.)  
 📝 **`.env.local` already configured** to point to backend at port 8001
 
 ### 4. Login
