@@ -106,6 +106,21 @@ export const getCurrentUser = async (token) => {
   }
 };
 
+export const refreshAuthToken = async (refreshToken) => {
+  const response = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Session refresh failed');
+  }
+
+  return response.json();
+};
+
 export const getSystemHealthStatus = async (token) => {
   try {
     const response = await fetch(`${API_URL}/api/v1/health`, {

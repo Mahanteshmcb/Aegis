@@ -7,7 +7,7 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import { ToastProvider } from '../components/ToastContext';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { useEffect } from 'react';
-import { getAuthToken } from '../utils/auth';
+import { clearAuthToken } from '../utils/auth';
 
 const publicPaths = ['/login', '/signup', '/reset-password'];
 
@@ -18,9 +18,7 @@ function MyApp({ Component, pageProps }) {
   useEffect(() => {
     const handler = (e) => {
       // When backend signals unauthorized, clear token and redirect to login once
-      try {
-        localStorage.removeItem('aegis_token');
-      } catch (err) {}
+      clearAuthToken();
       if (router.pathname !== '/login') {
         router.replace('/login');
       }

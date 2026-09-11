@@ -136,6 +136,12 @@ export const subscribeToDigitalTwinUpdates = (callback) => {
   socket.on('digital_twin:device_update', callback);
 };
 
+export const subscribeToDigitalTwinAlerts = (callback) => {
+  if (!socket) return;
+
+  socket.on('digital_twin:alert', callback);
+};
+
 export const subscribeToSceneEntities = (callback) => {
   if (!socket) return;
 
@@ -157,6 +163,11 @@ export const unsubscribeFromSensorReadings = () => {
 export const unsubscribeFromDigitalTwinUpdates = () => {
   if (!socket) return;
   socket.off('digital_twin:device_update');
+};
+
+export const unsubscribeFromDigitalTwinAlerts = () => {
+  if (!socket) return;
+  socket.off('digital_twin:alert');
 };
 
 export const subscribeToCommunicationUpdates = (callback) => {
@@ -263,6 +274,7 @@ const socketClient = {
   subscribeToSystemStatusUpdates,
   subscribeToSensorReadings,
   subscribeToDigitalTwinUpdates,
+  subscribeToDigitalTwinAlerts,
   subscribeToCommunicationUpdates,
   subscribeToZoneUpdates,
   subscribeToSceneEntities,
@@ -275,6 +287,7 @@ const socketClient = {
   unsubscribeFromSystemStatusUpdates,
   unsubscribeFromSensorReadings,
   unsubscribeFromDigitalTwinUpdates,
+  unsubscribeFromDigitalTwinAlerts,
   unsubscribeFromCommunicationUpdates,
   unsubscribeFromZoneUpdates,
   unsubscribeFromSceneEntities,

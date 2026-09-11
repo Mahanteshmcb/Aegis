@@ -175,6 +175,94 @@ function TrendSparkline({ values, color }) {
   );
 }
 
+function LiveTelemetryPanel({ readings }) {
+  const grouped = readings.reduce((result, reading) => {
+    const key = reading.sensor_id ?? reading.id ?? reading.sensor_name ?? 'unknown';
+    if (!result[key]) result[key] = [];
+    const value = Number(reading.value);
+    if (Number.isFinite(value)) result[key].push({ ...reading, value });
+    return result;
+  }, {});
+
+  const sensors = Object.values(grouped).slice(0, 4);
+
+  return (
+    <Card3D variant="primary" className="p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-cyan-300">Live Telemetry</h3>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Recent sensor readings</p>
+        </div>
+        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-mono text-emerald-300">
+          {readings.length ? 'STREAMING' : 'WAITING'}
+        </span>
+      </div>
+      {sensors.length ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {sensors.map((sensorReadings) => {
+            const latest = sensorReadings[0];
+            const values = sensorReadings.slice().reverse().map((reading) => reading.value);
+            const status = latest.reading_status || 'normal';
+            const color = status === 'critical' ? '#f87171' : status === 'warning' ? '#fbbf24' : '#34d399';
+            return (
+              <div key={latest.sensor_id || latest.sensor_name} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-slate-200">{latest.sensor_name || `Sensor ${latest.sensor_id}`}</p>
+                    <p className="text-[10px] text-slate-500">{latest.type || 'sensor'}</p>
+                  </div>
+                  <span className="text-xs font-mono" style={{ color }}>{latest.value} {latest.unit || ''}</span>
+                </div>
+                <TrendSparkline values={values} color={color} />
+                <p className="text-[10px] uppercase tracking-wider" style={{ color }}>{status}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="py-6 text-center text-xs text-slate-500">Waiting for sensor telemetry...</p>
+      )}
+    </Card3D>
+  );
+}
+
+function LiveActivityPanel({ events, historyEvents, mode, onModeChange }) {
+  const displayedEvents = mode === 'history' ? historyEvents : events.slice(0, 30);
+  return (
+    <Card3D variant="secondary" className="p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-cyan-300">Live Activity</h3>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Realtime event feed</p>
+        </div>
+        <div className="flex gap-1 rounded border border-slate-800 p-1 text-[10px]">
+          <button className={`rounded px-2 py-1 ${mode === 'live' ? 'bg-cyan-900/60 text-cyan-200' : 'text-slate-500'}`} onClick={() => onModeChange('live')}>Latest 30</button>
+          <button className={`rounded px-2 py-1 ${mode === 'history' ? 'bg-cyan-900/60 text-cyan-200' : 'text-slate-500'}`} onClick={() => onModeChange('history')}>Audit history</button>
+        </div>
+      </div>
+      <p className="mb-2 text-[10px] text-slate-500">{mode === 'history' ? 'Persisted tenant audit records' : 'In-memory realtime buffer; older live events are not deleted from audit storage'}</p>
+      {displayedEvents.length ? (
+        <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+          {displayedEvents.slice(0, 30).map((event) => {
+            const severity = ['critical', 'warning'].includes(event.type);
+            return (
+              <div key={event.id} className="flex items-start gap-2 rounded border border-slate-800 bg-slate-950/60 p-2">
+                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${severity ? (event.type === 'critical' ? 'bg-red-400' : 'bg-amber-400') : 'bg-cyan-400'}`} />
+                <div className="min-w-0">
+                  <p className="truncate text-xs text-slate-200">{event.message}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">{event.type} · {new Date(event.timestamp).toLocaleTimeString()}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="py-6 text-center text-xs text-slate-500">{mode === 'history' ? 'No persisted audit records found.' : 'Waiting for realtime events...'}</p>
+      )}
+    </Card3D>
+  );
+}
+
 function SystemStatusCard({ system, data }) {
   const Icon = system.icon;
   return (
@@ -294,7 +382,10 @@ export default function EstateDashboard() {
   const [commandLoading, setCommandLoading] = useState(false);
   const [commandResult, setCommandResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
-  const { socketConnected, realtimeError, liveSystemStatus, liveSensorReadings } = useEstateRealtime(estateState);
+  const [twinHealth, setTwinHealth] = useState(null);
+  const [activityMode, setActivityMode] = useState('live');
+  const [auditEvents, setAuditEvents] = useState([]);
+  const { socketConnected, realtimeError, liveSystemStatus, liveSensorReadings, liveAlerts, liveEvents } = useEstateRealtime(estateState);
   const fetchLockRef = useRef(false);
   const timerRef = useRef(null);
   const estateStateRef = useRef(estateState);
@@ -316,12 +407,13 @@ export default function EstateDashboard() {
       const token = getAuthToken();
       const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
-      const [estateStatusRes, robotsRes, sensorsRes, zonesRes, twinDevicesRes, auditRes, usersRes] = await Promise.all([
+      const [estateStatusRes, robotsRes, sensorsRes, zonesRes, twinDevicesRes, twinHealthRes, auditRes, usersRes] = await Promise.all([
         fetch(`${API_URL}/api/v1/estate/status`, { headers: authHeaders }).catch(() => ({ ok: false })),
         fetch(`${API_URL}/api/v1/robotics/active`, { headers: authHeaders }).catch(() => ({ ok: false })),
         fetch(`${API_URL}/api/v1/sensors`, { headers: authHeaders }).catch(() => ({ ok: false })),
         fetch(`${API_URL}/api/v1/zones`, { headers: authHeaders }).catch(() => ({ ok: false })),
         fetch(`${API_URL}/api/v1/digital-twin/devices`, { headers: authHeaders }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/v1/digital-twin/health`, { headers: authHeaders }).catch(() => ({ ok: false })),
         fetch(`${API_URL}/api/v1/audit`, { headers: authHeaders }).catch(() => ({ ok: false })),
         fetch(`${API_URL}/api/v1/auth/users`, { headers: authHeaders }).catch(() => ({ ok: false })),
       ]);
@@ -331,9 +423,17 @@ export default function EstateDashboard() {
       const sensors = sensorsRes?.ok ? await sensorsRes.json().catch(() => []) : [];
       const zones = zonesRes?.ok ? await zonesRes.json().catch(() => []) : [];
       const twinDevices = twinDevicesRes?.ok ? await twinDevicesRes.json().catch(() => []) : [];
+      const twinHealthData = twinHealthRes?.ok ? await twinHealthRes.json().catch(() => null) : null;
       const auditLogs = auditRes?.ok ? await auditRes.json().catch(() => []) : [];
+      setAuditEvents((Array.isArray(auditLogs) ? auditLogs : []).map((log) => ({
+        id: `audit-${log.id}`,
+        type: log.event_type || 'audit',
+        message: log.event_type || 'Audit event recorded',
+        timestamp: log.created_at,
+      })));
       const users = usersRes?.ok ? await usersRes.json().catch(() => []) : [];
       const userCount = Array.isArray(users) && users.length > 0 ? users.length : 1;
+      setTwinHealth(twinHealthData);
 
       const twinPosition = (position) => {
         if (Array.isArray(position)) return position;
@@ -516,6 +616,23 @@ export default function EstateDashboard() {
       return nextValue === undefined ? sensor : { ...sensor, value: nextValue };
     }));
   }, [liveSensorReadings, estateState]);
+
+  useEffect(() => {
+    if (!liveAlerts.length) return;
+
+    const normalizedAlerts = liveAlerts.map((alert) => ({
+      id: `twin-${alert.device_id}-${alert.timestamp}`,
+      type: alert.severity || 'warning',
+      system: 'biosphere',
+      message: alert.message || `Sensor ${alert.device_id} requires attention`,
+      timestamp: new Date(alert.timestamp || Date.now()),
+      status: 'active',
+    }));
+    setAlerts((previous) => {
+      const merged = [...normalizedAlerts, ...previous];
+      return merged.filter((alert, index, all) => all.findIndex((candidate) => candidate.id === alert.id) === index).slice(0, 12);
+    });
+  }, [liveAlerts]);
 
   const handleEntityDelete = useCallback(async (type, id) => {
     const token = getAuthToken();
@@ -733,6 +850,29 @@ export default function EstateDashboard() {
       setCommandLoading(false);
     }
   }, [selectedEntity]);
+
+  const controlTwinDevice = useCallback(async (command) => {
+    if (!selectedEntity?.device_id) return;
+    const token = getAuthToken();
+    setCommandLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/digital-twin/devices/${selectedEntity.id}/control`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.detail || 'Device command failed');
+      setCommandResult(result);
+      setStatusMessage(`${selectedEntity.name || 'Device'} command accepted: ${command}`);
+      await fetchInitialData();
+    } catch (err) {
+      setError(err.message || 'Failed to control device');
+    } finally {
+      setCommandLoading(false);
+    }
+  }, [fetchInitialData, selectedEntity]);
 
   const createPanelTilt = useCallback((event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1032,6 +1172,24 @@ export default function EstateDashboard() {
           </Card3D>
         </div>
 
+        {twinHealth && (
+          <Card3D variant={twinHealth.status === 'healthy' ? 'success' : 'warning'} className="p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-cyan-300">Digital Twin Health</p>
+                <p className="mt-1 text-sm text-slate-300">{twinHealth.online}/{twinHealth.devices} devices online</p>
+              </div>
+              <div className="flex gap-4 text-xs font-mono text-slate-300">
+                <span>Score {twinHealth.health_score}%</span>
+                <span>Alerts {twinHealth.alerts}</span>
+                <span>Actuators {twinHealth.active_actuators}/{twinHealth.actuators}</span>
+              </div>
+            </div>
+          </Card3D>
+        )}
+
+        <LiveActivityPanel events={liveEvents} historyEvents={auditEvents} mode={activityMode} onModeChange={setActivityMode} />
+
         {/* 3D View Controls */}
         <div className="space-y-3">
           <div className="flex gap-2 flex-wrap items-center justify-between p-4 rounded-lg border border-slate-800 bg-slate-900/50">
@@ -1271,6 +1429,13 @@ export default function EstateDashboard() {
                     </Button3D>
                   )}
 
+                  {selectedEntity.device_id && selectedEntity.kind === 'actuator' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button3D variant="success" size="sm" onClick={() => controlTwinDevice('start')} disabled={commandLoading}>Start</Button3D>
+                      <Button3D variant="danger" size="sm" onClick={() => controlTwinDevice('stop')} disabled={commandLoading}>Stop</Button3D>
+                    </div>
+                  )}
+
                   {selectedEntity.type === 'robot' && (
                     <div className="grid grid-cols-2 gap-2">
                       <Button3D
@@ -1368,6 +1533,21 @@ export default function EstateDashboard() {
             <AlertPanel alerts={alerts} />
           </div>
         </div>
+
+        <LiveTelemetryPanel
+          readings={[
+            ...liveSensorReadings,
+            ...estateState.sensors.map((sensor) => ({
+              sensor_id: sensor.sensor_id ?? sensor.id,
+              sensor_name: sensor.name,
+              type: sensor.sensor_type ?? sensor.type,
+              value: sensor.value,
+              unit: sensor.unit,
+              reading_status: sensor.reading_status ?? 'normal',
+              timestamp: sensor.timestamp,
+            })),
+          ]}
+        />
 
         <div className="grid lg:grid-cols-2 gap-6">
           <div />

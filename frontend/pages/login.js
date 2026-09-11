@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Shield } from 'lucide-react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { getCurrentUser, loginAPI } from '../utils/api';
-import { clearAuthToken, getAuthToken, setAuthToken } from '../utils/auth';
+import { clearAuthToken, getAuthToken, setAuthToken, setRefreshToken } from '../utils/auth';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -45,6 +46,7 @@ export default function Login() {
       // 2. Save the JWT token securely
       // (For Phase 1, localStorage is fine. We can upgrade to httpOnly cookies later)
       setAuthToken(data.access_token);
+      setRefreshToken(data.refresh_token);
       console.log('Session Initialized. Token secured.');
 
       // 3. Redirect to the main dashboard
@@ -193,9 +195,9 @@ export default function Login() {
           </div>
           <div className="mt-4 text-center text-sm text-aegis-muted">
             New operator?{' '}
-            <a href="/signup" className="font-semibold text-aegis-primary hover:text-blue-400 transition-colors">
+            <Link href="/signup" className="font-semibold text-aegis-primary hover:text-blue-400 transition-colors">
               Create an account
-            </a>
+            </Link>
           </div>
         </div>
       </div>

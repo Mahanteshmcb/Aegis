@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getAuthToken } from '../utils/auth';
-import { getCurrentUser } from '../utils/api';
+import { clearAuthToken, getAuthToken, getRefreshToken, setAuthToken, setRefreshToken } from '../utils/auth';
+import { getCurrentUser, refreshAuthToken } from '../utils/api';
 
 export default function useCurrentUser() {
   const [user, setUser] = useState(null);
@@ -16,9 +16,20 @@ export default function useCurrentUser() {
 
     const loadUser = async () => {
       try {
-        const profile = await getCurrentUser(token);
+        let profile;
+        try {
+          profile = await getCurrentUser(token);
+        } catch (error) {
+          const refreshToken = getRefreshToken();
+          if (!refreshToken) throw error;
+          const refreshed = await refreshAuthToken(refreshToken);
+          setAuthToken(refreshed.access_token);
+          setRefreshToken(refreshed.refresh_token);
+          profile = await getCurrentUser(refreshed.access_token);
+        }
         setUser(profile);
       } catch (error) {
+        clearAuthToken();
         setUser(null);
       } finally {
         setLoading(false);

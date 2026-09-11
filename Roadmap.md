@@ -166,20 +166,20 @@
 ### Days 76–80: Realtime telemetry and automation
 | Day | Task | Outcome |
 |-----|------|---------|
-| 76 | Add live sensor reading generation with realistic thresholds | Telemetry values update in real time |
-| 77 | Implement backend automation triggers for environment control | Irrigation, power, and alert logic become active |
-| 78 | Connect telemetry to live charts and estate widgets | Dashboard reflects current system health |
-| 79 | Add alert generation and severity logic | Warning/critical states become visible |
-| 80 | Validate automation path end-to-end | Simulation behaves like a working operational system |
+| 76 | Add live sensor reading generation with realistic thresholds | Telemetry values update in real time — ✅ Completed (2026-09-11). Sensor profiles now generate bounded readings with units, warning/critical thresholds, and severity metadata. |
+| 77 | Implement backend automation triggers for environment control | Irrigation, power, and alert logic become active — ✅ Completed (2026-09-11). Automation policies now drive actuator commands from sensor thresholds, with abnormal readings carrying alert metadata. |
+| 78 | Connect telemetry to live charts and estate widgets | Dashboard reflects current system health — ✅ Completed (2026-09-11). Twin and legacy sensor events now feed live telemetry history, sparklines, units, severity-aware cards, and the alert panel. |
+| 79 | Add alert generation and severity logic | Warning/critical states become visible — ✅ Completed (2026-09-11). Digital-twin ticks now emit structured `digital_twin:alert` events that the dashboard merges into active severity alerts. |
+| 80 | Validate automation path end-to-end | Simulation behaves like a working operational system — ✅ Completed (2026-09-11). Multi-tick lifecycle validation covers activation, recovery, alert clearing, tenant scope, and manual override protection. |
 
 ### Days 81–85: System operations and user control
 | Day | Task | Outcome |
 |-----|------|---------|
-| 81 | Add zone, sensor, and robot management APIs | CRUD for all digital twin entities |
-| 82 | Add admin/operator controls for system commands | Users can activate/deactivate simulated devices |
-| 83 | Add live health monitoring for zones and subsystems | System status is visible and actionable |
-| 84 | Add realtime event feed and activity timeline | Live operations are visible to users |
-| 85 | Validate control flow and permissions | Real-time operations work reliably |
+| 81 | Add zone, sensor, and robot management APIs | CRUD for all digital twin entities — ✅ Completed (2026-09-11). Added tenant-scoped digital-twin device update/delete APIs with validation and ownership checks; existing zone/sensor/robot APIs remain available. |
+| 82 | Add admin/operator controls for system commands | Users can activate/deactivate simulated devices — ✅ Completed (2026-09-11). Simulated-device controls now enforce operator roles and a validated operational command set, with dashboard start/stop controls for selected actuators. |
+| 83 | Add live health monitoring for zones and subsystems | System status is visible and actionable — ✅ Completed (2026-09-11). Added tenant-scoped digital-twin health summaries and live dashboard metrics for online devices, alerts, and active actuators. |
+| 84 | Add realtime event feed and activity timeline | Live operations are visible to users — ✅ Completed (2026-09-11). Dashboard now retains and displays telemetry, device-update, and severity-alert events in a bounded live activity feed. |
+| 85 | Validate control flow and permissions | Real-time operations work reliably — ✅ Completed (2026-09-11). End-to-end validation covers creation, health, authorized control, simulation ticks, invalid commands, role rejection, and cross-tenant isolation. |
 
 ### Days 86–90: AI and optimization layer
 | Day | Task | Outcome |
@@ -394,121 +394,3 @@ This Phase 2 proves the project is fully functional in software and can be exten
 - It aligns with the current project foundation and the existing realtime backend/frontend system
 - Hardware remains a future extension and an optional startup initiative after graduation
 - The final objective is a complete live digital twin platform that can scale into an industrial deployment later
-
----
-
-## Final Phase 2 Execution Plan (Days 71–110)
-
-### Goal
-Deliver a complete software-first digital twin and realtime smart-estate automation platform that is strong enough for a degree showcase, while keeping hardware integration as a clean future expansion path for startup work.
-
-### Final Phase 2 deliverables
-- Real-time estate/farm digital twin scene in the frontend
-- Live simulation of robots, sensors, zones, and automation devices
-- Backend-driven telemetry updates and event streaming
-- Automated logic for irrigation, energy, security, and health monitoring
-- Dashboard and alert system showing active operational status
-- Architecture ready for future hardware integration without redesign
-
----
-
-### Days 71–75: Digital Twin Foundation
-| Day | Task | Outcome |
-|-----|------|---------|
-| 71 | Finalize product scope for software-first Phase 2 | Phase 2 scope approved for degree submission |
-| 72 | Confirm realtime architecture and live state flow | Simulation model confirmed — ✅ Completed (2026-08-15). Implemented: DB-backed telemetry emitter, tenant-aware automation listener, robot task worker, short integration harness, frontend unauthorized handling, unit tests and `tests/conftest.py`. |
-| 73 | Improve 3D estate scene with realistic zones, assets, and movement | ✅ Completed (2026-08-15). Implementations: seeded demo scene entities, scene entity model and CRUD API, Socket.IO broadcasting, backend scene simulator, admin controls for seed/pause/resume/clear/speed, Three.js `ThreeScene` component, orbit controls, labels, selection/follow-camera, and automation/job scheduling tied to scene entity updates. |
-| 74 | Implement virtual sensor, robot, and automation state models | Backend simulates operational systems; measured 135 m x 90 m three-acre estate template and hierarchy foundation added |
-| 75 | Connect frontend and backend for live scene updates | 3D dashboard reflects live estate states |
-
-### Days 76–80: Real-Time Telemetry and Automation
-| Day | Task | Outcome |
-|-----|------|---------|
-| 76 | Generate realistic live sensor readings | Telemetry updates in realtime |
-| 77 | Add automation rules for irrigation, power, and alerts | Device logic becomes active |
-| 78 | Display live metrics and health panels | Dashboard reflects true estate conditions |
-| 79 | Add event generation and severity tracking | Alerts become visible to users |
-| 80 | Validate end-to-end automation flow | Software system behaves like a working control center |
-
-### Days 81–85: Operational Control and Monitoring
-| Day | Task | Outcome |
-|-----|------|---------|
-| 81 | Add CRUD APIs for zones, sensors, and robots | Full estate entities are manageable |
-| 82 | Add operator/admin control actions | Simulated devices can be controlled |
-| 83 | Add live health monitoring for systems and zones | Shared status is always visible |
-| 84 | Add event/activity timeline | Operations are traceable and transparent |
-| 85 | Validate permissions and control flow | System is stable and usable |
-
-### Days 86–90: Smart Optimization Layer
-| Day | Task | Outcome |
-|-----|------|---------|
-| 86 | Add predictive maintenance simulation | Recommendations appear in the interface |
-| 87 | Add energy and water optimization rules | System responds to environmental pressure |
-| 88 | Add weather/resource adaptation logic | Simulation reflects operational realism |
-| 89 | Add decision summaries and alert insights | Users can act on system recommendations |
-| 90 | Stress-test platform under multiple simultaneous updates | System remains stable and efficient |
-
-### Days 91–96: Product Integration and Stability
-| Day | Task | Outcome |
-|-----|------|---------|
-| 91 | Integrate all modules into a single digital twin workflow | End-to-end demo works |
-| 92 | Clean up APIs, states, and error handling | Production-quality behavior |
-| 93 | Improve frontend performance and responsiveness | Dashboard is smooth and efficient |
-| 94 | Validate multi-entity interactions | Estate operations appear realistic |
-| 95 | Fix bugs and edge cases | Demo is robust |
-| 96 | Prepare evaluation-ready demo script | Project is ready to present |
-
-### Days 97–100: Degree Submission Preparation
-| Day | Task | Outcome |
-|-----|------|---------|
-| 97 | Prepare screenshots and architecture documentation | Project explanation is ready |
-| 98 | Finalize report, objectives, and result summary | Submission package ready |
-| 99 | Run final demo and record evidence | Proof of functionality captured |
-| 100 | Final viva checklist and final review | Degree submission complete |
-
-### Days 101–110: Final Review and Startup Handoff
-| Day | Task | Outcome |
-|-----|------|---------|
-| 101 | Final release readiness review | Feature coverage checked |
-| 102 | Documentation and architecture review | Final system documented |
-| 103 | Security and validation review | Stable demo environment established |
-| 104 | Define startup-ready roadmap for hardware integration | Future extension path documented |
-| 105 | Final demo run | Showcase version is ready |
-| 106 | Validate all major use cases | Core product value confirmed |
-| 107 | Backup and version finalization | Project stored safely |
-| 108 | Define hardware connector strategy | Future physical integration path ready |
-| 109 | Mentor/faculty final review | Project quality verified |
-| 110 | Phase 2 completion and handoff | Degree-ready platform delivered |
-
----
-
-## Project Readiness Statement
-This software-first Phase 2 is designed to be a strong degree showcase project because it delivers the complete digital-twin experience: live estate simulation, realtime monitoring, automation logic, user control, and a scalable architecture. The system is not dependent on physical hardware and therefore is suitable for academic evaluation while still remaining ready for future hardware integration.
-
----
-
-## Why this project is strong for showcase
-- It demonstrates a real operational system, not a static UI mockup
-- It includes live telemetry, state transitions, automation behavior, and alert logic
-- It is built around a realistic estate/farm digital twin use case
-- It shows professional full-stack architecture with backend, frontend, and live data flow
-- It can later integrate real sensors and hardware through a clean adapter layer
-
----
-
-## Future Work / Startup Extension
-This future phase is not required for the degree submission. It is the post-degree implementation path for physical hardware and real-world deployment.
-
-### Future roadmap
-- Days 111–130: physical sensor node prototyping and backend device connectors
-- Days 131–150: robotics assembly, actuator integration, field validation, and startup pilot deployment
-
-### Future extension purpose
-- convert the proven software platform into real-site deployment
-- add physical IoT devices, robotics, and control hardware
-- validate the business case in a live operational environment
-
----
-
-## Final note
-The software-first digital twin is the correct path for this project phase. It keeps the system complete, working, and demonstrable for your degree while preserving a clean startup roadmap for real hardware later. This is the most practical and academically safe route for completion.

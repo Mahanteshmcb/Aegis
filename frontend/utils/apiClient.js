@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearAuthToken, getAuthToken } from './auth';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -11,7 +12,7 @@ const api = axios.create({
 
 // Add request interceptor for auth token
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('aegis_token');
+  const token = getAuthToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -24,11 +25,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Handle unauthorized: remove stored JWT and emit an application event
-      try {
-        localStorage.removeItem('aegis_token');
-      } catch (e) {
-        // ignore
-      }
+      clearAuthToken();
       try {
         window.dispatchEvent(new CustomEvent('aegis:unauthorized', { detail: { url: error.config?.url } }));
       } catch (e) {

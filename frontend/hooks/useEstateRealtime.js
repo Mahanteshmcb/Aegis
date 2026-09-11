@@ -8,10 +8,12 @@ import {
   subscribeToRobotUpdates,
   subscribeToSensorReadings,
   subscribeToDigitalTwinUpdates,
+  subscribeToDigitalTwinAlerts,
   unsubscribeFromSystemStatusUpdates,
   unsubscribeFromRobotUpdates,
   unsubscribeFromSensorReadings,
   unsubscribeFromDigitalTwinUpdates,
+  unsubscribeFromDigitalTwinAlerts,
 } from '../utils/socketClient';
 
 const useEstateRealtime = (estateState) => {
@@ -20,6 +22,8 @@ const useEstateRealtime = (estateState) => {
   const [realtimeError, setRealtimeError] = useState(null);
   const [liveSystemStatus, setLiveSystemStatus] = useState(null);
   const [liveSensorReadings, setLiveSensorReadings] = useState([]);
+  const [liveAlerts, setLiveAlerts] = useState([]);
+  const [liveEvents, setLiveEvents] = useState([]);
   const estateStateRef = useRef(estateState);
 
   useEffect(() => {
@@ -85,6 +89,12 @@ const useEstateRealtime = (estateState) => {
       };
 
       setLiveSensorReadings((prev) => [normalizedReading, ...prev].slice(0, 20));
+      setLiveEvents((previous) => [{
+        id: `sensor-${normalizedReading.sensor_id}-${normalizedReading.timestamp}`,
+        type: 'telemetry',
+        message: `${normalizedReading.sensor_name || `Sensor ${normalizedReading.sensor_id}`} reported ${normalizedReading.value ?? 'a new value'}`,
+        timestamp: normalizedReading.timestamp,
+      }, ...previous].slice(0, 30));
 
       if (normalizedReading?.sensor_id !== undefined) {
         const sensorValue = normalizedReading.value;
@@ -99,6 +109,24 @@ const useEstateRealtime = (estateState) => {
 
       const deviceId = device.device_id ?? device.id;
       const kind = device.kind || device.device_type;
+      if (kind === 'sensor') {
+        setLiveSensorReadings((prev) => [{
+          sensor_id: deviceId,
+          sensor_name: device.name,
+          type: device.device_type,
+          value: device.state?.value,
+          unit: device.state?.unit,
+          reading_status: device.state?.reading_status,
+          thresholds: device.state?.thresholds,
+          timestamp: device.last_updated || Date.now(),
+        }, ...prev].slice(0, 20));
+      }
+      setLiveEvents((previous) => [{
+        id: `device-${deviceId}-${device.last_updated || Date.now()}`,
+        type: 'device_update',
+        message: `${device.name || deviceId} state updated`,
+        timestamp: device.last_updated || Date.now(),
+      }, ...previous].slice(0, 30));
       const collection = kind === 'robot' ? 'setRobots' : kind === 'sensor' ? 'setSensors' : null;
       if (!collection) return;
 
@@ -117,6 +145,17 @@ const useEstateRealtime = (estateState) => {
       }));
     });
 
+    subscribeToDigitalTwinAlerts((alert) => {
+      if (!alert?.device_id) return;
+      setLiveAlerts((previous) => [alert, ...previous].slice(0, 20));
+      setLiveEvents((previous) => [{
+        id: `alert-${alert.device_id}-${alert.timestamp}`,
+        type: alert.severity || 'warning',
+        message: alert.message || `${alert.device_id} requires attention`,
+        timestamp: alert.timestamp || Date.now(),
+      }, ...previous].slice(0, 30));
+    });
+
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
@@ -125,6 +164,7 @@ const useEstateRealtime = (estateState) => {
       unsubscribeFromRobotUpdates();
       unsubscribeFromSensorReadings();
       unsubscribeFromDigitalTwinUpdates();
+      unsubscribeFromDigitalTwinAlerts();
       disconnectSocket();
       setSocketConnected(false);
     };
@@ -135,6 +175,8 @@ const useEstateRealtime = (estateState) => {
     realtimeError,
     liveSystemStatus,
     liveSensorReadings,
+    liveAlerts,
+    liveEvents,
   };
 };
 
