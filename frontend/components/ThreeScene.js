@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState, Suspense } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html, Environment, ContactShadows, Sky, GizmoHelper, GizmoViewport, useCursor, useGLTF } from '@react-three/drei'
+import EstateEnvironmentAssets from './3d/EstateEnvironmentAssets'
+import EstateMasterLayout from './3d/EstateMasterLayout'
 
 function EntityMesh({ entity, selected, onSelect, onHover }) {
   const ref = useRef()
@@ -87,6 +89,8 @@ function SceneContent({ entities, selectedId, onSelect, onGroundClick, placingPr
       <directionalLight position={[10, 20, 10]} intensity={1.0} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
       <Sky sunPosition={[100, 20, 10]} />
       <Environment preset="city" />
+      <EstateEnvironmentAssets />
+      <EstateMasterLayout />
 
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
@@ -105,8 +109,8 @@ function SceneContent({ entities, selectedId, onSelect, onGroundClick, placingPr
           }
         }}
       >
-        <planeGeometry args={[200, 200]} />
-        <meshStandardMaterial color="#bfc7c2" roughness={0.9} metalness={0.0} />
+        <planeGeometry args={[135, 90]} />
+        <meshStandardMaterial color="#78916d" roughness={0.95} metalness={0.0} />
       </mesh>
       {placingPreview && (
         <mesh position={[placingPreview.x, placingPreview.y, placingPreview.z]}>
@@ -115,7 +119,7 @@ function SceneContent({ entities, selectedId, onSelect, onGroundClick, placingPr
         </mesh>
       )}
       <ContactShadows position={[0, -0.51, 0]} opacity={0.6} scale={40} blur={2} far={2} />
-      <gridHelper args={[100, 100, '#2b2b2b', '#1a1a1a']} />
+      <gridHelper args={[135, 90, '#48604e', '#26382d']} />
       {entities.map((e) => (
         <EntityMesh key={e.id} entity={e} selected={selectedId === e.id} onSelect={onSelect} onHover={onEntityHover} />
       ))}
@@ -220,7 +224,7 @@ function pointInZone(zone, x, y, z) {
 }
 
 
-export default function ThreeScene({ entities = [], zones = [], onCreateEntity = null, isPlacing = false, onPlacementChanged = null }) {
+export default function ThreeScene({ entities = [], zones = [], onCreateEntity = null, isPlacing = false, onPlacementChanged = null, onEntitySelect = null }) {
   const [selected, setSelected] = useState(null)
   const [follow, setFollow] = useState(false)
   const centerRef = useRef(null)
@@ -281,8 +285,8 @@ export default function ThreeScene({ entities = [], zones = [], onCreateEntity =
 
   // Note: using internal animation loop to smoothly center camera when requested
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 360, touchAction: 'none' }}>
-      <Canvas shadows style={{ width: '100%', height: '100%' }} camera={{ position: [0, 10, 15], fov: 50 }}>
+    <div className="aegis-canvas-shell" style={{ position: 'relative', width: '100%', height: '100%', minHeight: 360, touchAction: 'none' }}>
+      <Canvas shadows style={{ width: '100%', height: '100%' }} camera={{ position: [78, 64, 86], fov: 52 }}>
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
         <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
           <GizmoViewport />
@@ -290,7 +294,10 @@ export default function ThreeScene({ entities = [], zones = [], onCreateEntity =
         <SceneContent
           entities={entities}
           selectedId={selected}
-          onSelect={setSelected}
+          onSelect={(id) => {
+            setSelected(id)
+            if (onEntitySelect) onEntitySelect(entities.find((entity) => entity.id === id) || null)
+          }}
           onGroundClick={(p) => {
             // p is { x, y, z }
             if (onCreateEntity && isPlacing) {

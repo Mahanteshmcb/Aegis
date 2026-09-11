@@ -160,7 +160,7 @@ This file defines a low-cost hardware prototype for the Aegis project suitable f
 2. **Edge:** ESP32 units connect over local WiFi hotspot.
 3. **Protocol:** MQTT for telemetry and control.
 4. **Dashboard:** Frontend fetches sensor status and command state from backend.
-5. **Validation:** Use `simulate_sensors.py` for backend validation before hardware is assembled.
+5. **Validation:** Use `python scripts/simulation/simulate_sensors.py` for backend validation before hardware is assembled.
 
 ---
 

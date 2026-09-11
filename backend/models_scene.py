@@ -13,6 +13,7 @@ class SceneEntity(Base):
     tenant_id = Column(Integer, nullable=True, index=True)
     name = Column(String(128), nullable=False)
     type = Column(String(64), nullable=True)
+    model = Column(String(128), nullable=True)
     x = Column(Float, default=0.0)
     y = Column(Float, default=0.0)
     z = Column(Float, default=0.0)

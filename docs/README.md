@@ -166,7 +166,7 @@ See: `../diagrams/README.md` for detailed diagram descriptions.
 **System Documentation:**
 - [Main README](../README.md)
 - [System Architecture](../SYSTEM_ARCHITECTURE.md)
-- [Developer Guide](../DEVELOPER_GUIDE.md)
+- [Developer Guide](guides/DEVELOPER_GUIDE.md)
 - [Workflow & Code Style](../WORKFLOW_CODE_STYLE.md)
 
 **Code References:**

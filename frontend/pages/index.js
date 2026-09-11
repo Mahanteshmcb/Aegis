@@ -109,7 +109,7 @@ export default function Home() {
                   <ChevronRight size={20} />
                 </Button3D>
               </Link>
-              <Link href="/dashboard-3d">
+              <Link href="/3d-scene">
                 <Button3D variant="ghost" size="lg">
                   View 3D Demo
                 </Button3D>

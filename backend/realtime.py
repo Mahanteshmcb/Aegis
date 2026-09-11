@@ -85,10 +85,27 @@ async def system_status_emitter():
     except asyncio.CancelledError:
         logger.info("system_status_emitter cancelled")
 
+
+async def digital_twin_emitter():
+    """Advance persisted virtual devices and publish tenant-scoped updates."""
+    try:
+        from backend.database import SessionLocal
+        from backend.services.digital_twin import tick_once
+
+        while True:
+            await asyncio.sleep(1)
+            with SessionLocal() as db:
+                snapshots = tick_once(db)
+            for snapshot in snapshots:
+                await sio.emit("digital_twin:device_update", snapshot)
+    except asyncio.CancelledError:
+        logger.info("digital_twin_emitter cancelled")
+
 def start_background_emitters(loop: asyncio.AbstractEventLoop):
     """Start emitter tasks on the provided event loop."""
     _emit_tasks.append(loop.create_task(sensor_emitter()))
     _emit_tasks.append(loop.create_task(system_status_emitter()))
+    _emit_tasks.append(loop.create_task(digital_twin_emitter()))
     # Start robot lifecycle worker (Day 72)
     try:
         from backend.services.robot_worker import robot_task_worker

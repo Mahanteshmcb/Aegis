@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Grid, PerspectiveCamera, Float, Stars } from '@react-three/drei';
 import * as THREE from 'three';
@@ -88,11 +88,11 @@ function DataPoints({ anomaly }) {
   });
 
   // Generate random data points in a sphere
-  const dataPoints = Array.from({ length: 50 }, () => ({
+  const dataPoints = useMemo(() => Array.from({ length: 50 }, () => ({
     x: (Math.random() - 0.5) * 10,
     y: (Math.random() - 0.5) * 10,
     z: (Math.random() - 0.5) * 10,
-  }));
+  })), []);
 
   return (
     <group ref={pointsRef}>
@@ -126,10 +126,14 @@ const TacticalMap = ({ anomaly = false }) => {
   }
 
   const canvasProps = {
-    dpr: [1, 2],
+    dpr: [1, 1.25],
     gl: { antialias: true, powerPreference: 'high-performance' },
     shadowMap: { type: THREE.PCFShadowMap },
-    onCreated: (state) => state.gl.setPixelRatio(Math.min(window.devicePixelRatio, 2)),
+    onCreated: (state) => {
+      state.gl.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+      state.gl.toneMapping = THREE.ACESFilmicToneMapping;
+      state.gl.toneMappingExposure = 1.15;
+    },
   };
 
   return (
@@ -173,8 +177,12 @@ const TacticalMap = ({ anomaly = false }) => {
         <OrbitControls 
           enablePan={true}
           enableZoom={true}
+          enableDamping={true}
           maxDistance={20}
           minDistance={2}
+          dampingFactor={0.08}
+          zoomSpeed={0.7}
+          rotateSpeed={0.5}
           autoRotate={!anomaly}
           autoRotateSpeed={anomaly ? 3 : 0.5}
           dampingFactor={0.05}
@@ -186,7 +194,6 @@ const TacticalMap = ({ anomaly = false }) => {
           position={[10, 10, 10]} 
           color={anomaly ? "#ff0044" : "#00f2ff"} 
           intensity={3}
-          castShadow
         />
         <pointLight 
           position={[-10, -10, 10]} 
@@ -202,12 +209,12 @@ const TacticalMap = ({ anomaly = false }) => {
         {/* Background Grid */}
         <Grid 
           infiniteGrid 
-          fadeDistance={30}
+          fadeDistance={45}
           fadeStrength={1}
           cellColor={anomaly ? "#450a0a" : "#1e293b"} 
           sectionColor={anomaly ? "#ff0044" : "#0088ff"} 
           sectionThickness={2}
-          cellSize={1}
+          cellSize={1.5}
           args={[10, 10]}
         />
 
@@ -218,7 +225,7 @@ const TacticalMap = ({ anomaly = false }) => {
         <DataPoints anomaly={anomaly} />
 
         {/* Fog Effect */}
-        <fog attach="fog" args={["#0b1120", 5, 30]} />
+        <fog attach="fog" args={["#0b1120", 9, 42]} />
       </Canvas>
 
       {/* Scanline Overlay */}

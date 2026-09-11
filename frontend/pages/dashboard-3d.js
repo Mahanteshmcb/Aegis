@@ -319,9 +319,9 @@ export default function Dashboard3D() {
   }
 
   return (
-    <div className="w-full h-screen bg-slate-950 flex flex-col">
+    <div className="aegis-twin-page w-full h-screen bg-slate-950 flex flex-col">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-slate-950">
+      <div className="aegis-twin-header px-6 py-4 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-slate-950">
         <h1 className="text-3xl font-bold text-aegis-primary tracking-[0.2em]">🌐 3D ESTATE MANAGEMENT</h1>
         <p className="text-xs text-aegis-muted mt-1 uppercase tracking-wider">
           Click entities to inspect • Use left panel to create • Right panel to edit
@@ -329,9 +329,9 @@ export default function Dashboard3D() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="aegis-twin-layout flex-1 flex overflow-hidden">
         {/* 3D Scene */}
-        <div className="flex-1 relative">
+        <div className="aegis-twin-scene flex-1 min-w-0 relative">
           <DigitalTwinScene
             robots={estateState.robots}
             sensors={estateState.sensors}
@@ -366,7 +366,7 @@ export default function Dashboard3D() {
 
         {/* Left Panel: Creator */}
         {creatorOpen && (
-          <div className="w-80 border-l border-slate-800 bg-slate-900/50 overflow-y-auto">
+          <div className="aegis-twin-creator w-80 border-l border-slate-800 bg-slate-900/50 overflow-y-auto">
             <Creator3D
               onCreateRobot={handleCreateRobot}
               onCreateSensor={handleCreateSensor}

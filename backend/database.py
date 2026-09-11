@@ -25,6 +25,9 @@ import backend.models.storage
 import backend.models.safety
 import backend.models.lab_automation
 import backend.models.hvac_schedule
+import backend.models.digital_twin
+import backend.models.environmental
+import backend.models.estate_hierarchy
 
 # Create database engine
 if settings.database_url.startswith("sqlite"):

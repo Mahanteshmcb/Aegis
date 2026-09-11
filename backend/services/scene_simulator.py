@@ -73,6 +73,7 @@ async def scene_entity_mover():
                         "id": ent.id,
                         "name": ent.name,
                         "type": ent.type,
+                        "model": ent.model,
                         "x": ent.x,
                         "y": ent.y,
                         "z": ent.z,

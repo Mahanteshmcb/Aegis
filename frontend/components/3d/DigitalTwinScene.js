@@ -2,6 +2,8 @@ import React, { Suspense, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment, Sky, ContactShadows, Html, useGLTF } from '@react-three/drei';
 import { Box3, Vector3 } from 'three';
+import EstateEnvironmentAssets from './EstateEnvironmentAssets';
+import EstateMasterLayout from './EstateMasterLayout';
 
 const FARMHOUSE_MODEL = '/models/CesiumMilkTruck.glb';
 const FIELD_VEHICLE_MODEL = '/models/ToyCar.glb';
@@ -148,7 +150,7 @@ function FieldVehicle({ position = [0, 0, 0], active = false }) {
 
   return (
     <group ref={ref} position={position}>
-      <ModelAsset url={FIELD_VEHICLE_MODEL} position={[0, 0, 0]} rotation={[0, Math.PI / 2, 0]} targetHeight={1.8} scale={0.9} />
+      <ModelAsset url={FIELD_VEHICLE_MODEL} position={[0, 0, 0]} rotation={[0, Math.PI / 2, 0]} targetHeight={0.7} scale={0.38} />
     </group>
   );
 }
@@ -253,7 +255,7 @@ function ControlSwitch({ switchData, selected, hovered, onClick, onHover }) {
 }
 
 function ControlVehicle({ robot, selected, hovered, onClick, onHover }) {
-  const robotScale = selected || hovered ? 0.28 : 0.24;
+  const robotScale = selected || hovered ? 0.2 : 0.17;
   return (
     <group
       position={[robot.position?.[0] || 0, 0, robot.position?.[2] || 0]}
@@ -322,17 +324,18 @@ export default function DigitalTwinScene({ robots = [], sensors = [], zones = []
   const handleHover = (entity) => setHoveredEntity(entity);
 
   return (
-    <div className="relative w-full h-full overflow-hidden rounded-3xl border border-slate-800 shadow-xl shadow-cyan-500/10 bg-slate-950">
+    <div className="aegis-canvas-shell relative w-full h-full min-h-[360px] overflow-hidden rounded-3xl border border-slate-800 shadow-xl shadow-cyan-500/10 bg-slate-950">
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ position: [25, 18, 26], fov: 45 }}
+        camera={{ position: [78, 64, 86], fov: 52 }}
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
       >
-        <color attach="background" args={[0.06, 0.10, 0.14]} />
-        <Sky sunPosition={[10, 20, 10]} turbidity={6} rayleigh={0.45} />
+        <color attach="background" args={[0.32, 0.50, 0.62]} />
+        <Sky sunPosition={[-30, 45, 20]} turbidity={2.5} rayleigh={0.35} />
         <Environment preset="forest" />
-        <ambientLight intensity={0.45} />
+        <hemisphereLight skyColor="#dbeafe" groundColor="#334155" intensity={0.75} />
+        <ambientLight intensity={0.65} />
         <directionalLight
           castShadow
           position={[18, 25, 18]}
@@ -349,6 +352,8 @@ export default function DigitalTwinScene({ robots = [], sensors = [], zones = []
         <pointLight position={[8, 8, -16]} intensity={0.3} color="#fcd34d" />
 
         <GroundPlane />
+        <EstateEnvironmentAssets />
+        <EstateMasterLayout />
 
         <Suspense fallback={<TwinSceneLoading />}>
           <Farmhouse position={[0, 0, -2]} />
@@ -409,8 +414,8 @@ export default function DigitalTwinScene({ robots = [], sensors = [], zones = []
         ))}
         </Suspense>
 
-        <ContactShadows position={[0, -0.1, 0]} opacity={0.7} scale={80} blur={2.5} far={20} />
-        <OrbitControls enablePan enableZoom enableRotate screenSpacePanning={false} maxDistance={70} minDistance={10} />
+        <ContactShadows position={[0, -0.1, 0]} opacity={0.7} scale={100} blur={2.5} far={35} />
+        <OrbitControls enablePan enableZoom enableRotate screenSpacePanning={false} maxDistance={140} minDistance={6} />
       </Canvas>
 
       <TwinStatusHud
@@ -422,7 +427,7 @@ export default function DigitalTwinScene({ robots = [], sensors = [], zones = []
         switches={defaultSwitches}
       />
 
-      <div className="absolute top-4 left-4 z-20 rounded-2xl border border-white/10 bg-black/70 p-4 text-xs text-slate-200 shadow-xl shadow-slate-950/30 backdrop-blur">
+      <div className="absolute top-4 left-4 z-20 max-w-[calc(100%-2rem)] rounded-2xl border border-white/10 bg-black/70 p-4 text-xs text-slate-200 shadow-xl shadow-slate-950/30 backdrop-blur">
         <div className="font-semibold text-white mb-2">Digital Twin</div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-xl bg-slate-900/80 p-2">

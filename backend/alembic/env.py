@@ -8,6 +8,8 @@ import backend.models_db  # noqa: F401
 import backend.models.safety  # noqa: F401
 import backend.models.water  # noqa: F401
 import backend.models.waste  # noqa: F401
+import backend.models.digital_twin  # noqa: F401
+import backend.models.estate_hierarchy  # noqa: F401
 from backend.models_db import Base  # noqa: E402
 
 # this is the Alembic Config object, which provides

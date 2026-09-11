@@ -59,6 +59,9 @@ from backend import realtime
 from backend.routers import day65
 from backend.routers import day67_playback
 from backend.routers import day68_notifications
+from backend.routers import digital_twin
+from backend.routers import local_iot
+from backend.routers import estate_hierarchy
 
 # Configure logging
 logging.basicConfig(
@@ -317,6 +320,9 @@ app.include_router(alerts.router)
 app.include_router(day65.router)
 app.include_router(day67_playback.router)
 app.include_router(day68_notifications.router)
+app.include_router(digital_twin.router)
+app.include_router(local_iot.router)
+app.include_router(estate_hierarchy.router)
 
 if __name__ == "__main__":
     import uvicorn

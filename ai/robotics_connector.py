@@ -611,20 +611,38 @@ class RoboticsConnector:
         )
 
     def list_active_robots(self) -> List[Dict[str, Any]]:
+        fallback_robots = [
+            {
+                "id": "fallback-robot-1",
+                "robot_id": "fallback-robot-1",
+                "name": "Field Rover A",
+                "status": "active",
+                "battery_percent": 97,
+                "cpu_temp_celsius": 31.2,
+                "motor_health_percent": 96,
+                "warnings": [],
+                "errors": [],
+                "uptime_seconds": 4320,
+                "last_heartbeat_timestamp_ms": int(time.time() * 1000),
+                "position": [-8, 1, 4],
+            },
+            {
+                "id": "fallback-robot-2",
+                "robot_id": "fallback-robot-2",
+                "name": "Inspection Bot",
+                "status": "charging",
+                "battery_percent": 68,
+                "cpu_temp_celsius": 29.4,
+                "motor_health_percent": 92,
+                "warnings": [],
+                "errors": [],
+                "uptime_seconds": 2860,
+                "last_heartbeat_timestamp_ms": int(time.time() * 1000),
+                "position": [8, 1, 4],
+            },
+        ]
         if not self.is_connected:
-            return [
-                {
-                    "robot_id": "fallback-robot",
-                    "status": "IDLE",
-                    "battery_percent": 100,
-                    "cpu_temp_celsius": 0.0,
-                    "motor_health_percent": 100,
-                    "warnings": [],
-                    "errors": [],
-                    "uptime_seconds": 0,
-                    "last_heartbeat_timestamp_ms": int(time.time() * 1000)
-                }
-            ]
+            return fallback_robots
 
         try:
             active = []
@@ -644,19 +662,7 @@ class RoboticsConnector:
         except Exception as e:
             logger.warning(f"⚠️ Robotics RPC failed: {e}. Falling back.")
             self.is_connected = False
-            return [
-                {
-                    "robot_id": "fallback-robot",
-                    "status": "IDLE",
-                    "battery_percent": 100,
-                    "cpu_temp_celsius": 0.0,
-                    "motor_health_percent": 100,
-                    "warnings": [],
-                    "errors": [],
-                    "uptime_seconds": 0,
-                    "last_heartbeat_timestamp_ms": int(time.time() * 1000)
-                }
-            ]
+            return fallback_robots
 
     def _build_coordinate3d(self, coordinates: Dict[str, Any]) -> "robotics_pb2.Coordinate3D":
         return robotics_pb2.Coordinate3D(

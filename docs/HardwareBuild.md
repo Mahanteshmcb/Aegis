@@ -188,7 +188,7 @@ Your hardware prototypes directly integrate with the existing Aegis codebase:
 * **AI Orchestration:** The Vryndara kernel (in `ai/` folder) processes sensor data and generates autonomous responses.
 * **Frontend Visualization:** Real-time data appears on the Next.js dashboard (`frontend/pages/sensors.js`).
 * **Blockchain Audit:** All sensor readings and actuator commands are logged to the Ethereum audit trail for tamper-proof records.
-* **Testing Tools:** Use `simulate_sensors.py` to test the full pipeline before hardware assembly.
+* **Testing Tools:** Use `python scripts/simulation/simulate_sensors.py` to test the full pipeline before hardware assembly.
 
 This setup proves Aegis can manage real-world IoT deployments while maintaining the decentralized, offline-first architecture.
 
@@ -224,6 +224,6 @@ To make people believe in the Crore-rupee potential, follow this demo flow:
 * **Software Setup:**
   - Install Mosquitto MQTT broker on your laptop.
   - Flash ESP32 devices with MicroPython and test MQTT connectivity using the provided `iot/esp32_sensor.py` template.
-  - Use `simulate_sensors.py` to test backend integration before hardware arrives.
+  - Use `python scripts/simulation/simulate_sensors.py` to test backend integration before hardware arrives.
 * **Testing:** Calibrate sensors (soil moisture in different soil types, acoustic threshold for pest detection). Ensure all devices connect to your hotspot and publish data to correct MQTT topics.
 * **Safety:** Use proper power management to avoid battery fires. Test all circuits before connecting to ESP32.

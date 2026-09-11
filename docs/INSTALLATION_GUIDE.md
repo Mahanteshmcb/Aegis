@@ -497,7 +497,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8001
 ## Next Steps
 
 1. ✅ Installation complete
-2. Read [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for development workflow
+2. Read [DEVELOPER_GUIDE.md](guides/DEVELOPER_GUIDE.md) for development workflow
 3. Review [API documentation](http://localhost:8001/docs)
 4. Run test suite: `pytest tests/test_day59_*.py -v`
 5. Deploy to production using [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)

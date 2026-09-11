@@ -331,7 +331,7 @@ export default function RobotsManagement() {
           <Link href="/dashboard">
             <Button3D variant="ghost">← BACK TO DASHBOARD</Button3D>
           </Link>
-          <Link href="/dashboard-3d">
+          <Link href="/3d-scene">
             <Button3D variant="primary">🌐 VIEW IN 3D</Button3D>
           </Link>
         </div>

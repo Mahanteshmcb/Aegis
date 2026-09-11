@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -40,8 +40,12 @@ def db():
     """Provide a fresh DB session for a test and roll back changes on close."""
     session = database.SessionLocal()
     try:
+        session.execute(text("DELETE FROM digital_twin_devices"))
+        session.commit()
         yield session
     finally:
+        session.execute(text("DELETE FROM digital_twin_devices"))
+        session.commit()
         session.close()
 """
 Aegis Backend - Pytest Configuration & Fixtures

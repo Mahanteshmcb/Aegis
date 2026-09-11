@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/v1/scene", tags=["scene"])
 class SceneEntityIn(BaseModel):
     name: str
     type: str | None = None
+    model: str | None = None
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
@@ -40,6 +41,7 @@ def list_entities(db=Depends(get_db)):
             id=r.id,
             name=r.name,
             type=r.type,
+            model=r.model,
             x=r.x,
             y=r.y,
             z=r.z,
@@ -56,6 +58,7 @@ async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
     existing = db.query(models.SceneEntity).filter(models.SceneEntity.name == schema.name).first()
     if existing:
         existing.type = schema.type
+        existing.model = schema.model
         existing.x = schema.x
         existing.y = schema.y
         existing.z = schema.z
@@ -69,6 +72,7 @@ async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
         ent = models.SceneEntity(
             name=schema.name,
             type=schema.type,
+            model=schema.model,
             x=schema.x,
             y=schema.y,
             z=schema.z,
@@ -84,6 +88,7 @@ async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
             "id": ent.id,
             "name": ent.name,
             "type": ent.type,
+            "model": ent.model,
             "x": ent.x,
             "y": ent.y,
             "z": ent.z,
@@ -96,6 +101,7 @@ async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
         id=ent.id,
         name=ent.name,
         type=ent.type,
+        model=ent.model,
         x=ent.x,
         y=ent.y,
         z=ent.z,
@@ -111,6 +117,7 @@ async def update_entity(entity_id: int, schema: SceneEntityIn, db=Depends(get_db
         raise HTTPException(status_code=404, detail="Entity not found")
     ent.name = schema.name
     ent.type = schema.type
+    ent.model = schema.model
     ent.x = schema.x
     ent.y = schema.y
     ent.z = schema.z
@@ -124,6 +131,7 @@ async def update_entity(entity_id: int, schema: SceneEntityIn, db=Depends(get_db
             "id": ent.id,
             "name": ent.name,
             "type": ent.type,
+            "model": ent.model,
             "x": ent.x,
             "y": ent.y,
             "z": ent.z,
@@ -136,6 +144,7 @@ async def update_entity(entity_id: int, schema: SceneEntityIn, db=Depends(get_db
         id=ent.id,
         name=ent.name,
         type=ent.type,
+        model=ent.model,
         x=ent.x,
         y=ent.y,
         z=ent.z,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
@@ -88,15 +88,92 @@ const getHealthColor = (status) => {
 
 const normalizeSelectedEntity = (entity) => {
   if (!entity) return null;
-  const type = entity.type || (entity.status ? 'robot' : entity.zone_id || entity.zone ? 'zone' : 'sensor');
+
+  const rawType = typeof entity.type === 'string' ? entity.type.toLowerCase() : '';
+  const sensorTypeSet = new Set(['sensor', 'temperature', 'humidity', 'pressure', 'light', 'motion', 'air_quality', 'soil_moisture', 'flow', 'vibration', 'proximity']);
+  const zoneTypeSet = new Set(['zone', 'greenhouse', 'warehouse', 'facility', 'building', 'lab', 'room']);
+
+  let inferredType = entity.type || entity.kind || entity.device_type || 'sensor';
+  if (sensorTypeSet.has(rawType)) inferredType = 'sensor';
+  else if (zoneTypeSet.has(rawType)) inferredType = 'zone';
+  else if (entity.robot_id || entity.robot_name || rawType === 'robot') inferredType = 'robot';
+  else if (entity.zone_id || entity.zone || rawType === 'zone') inferredType = 'zone';
+  else if (entity.sensor_id || rawType === 'sensor') inferredType = 'sensor';
+
+  const type = inferredType === 'device' && entity.kind === 'sensor' ? 'sensor' : inferredType;
+
   return {
     ...entity,
-    id: entity.id ?? entity.robot_id ?? entity.sensor_id,
+    id: entity.id ?? entity.robot_id ?? entity.sensor_id ?? entity.device_id,
     robot_id: entity.robot_id ?? entity.id,
     sensor_id: entity.sensor_id ?? entity.id,
+    device_id: entity.device_id ?? entity.id,
     type,
   };
 };
+
+const getEntityDataEntries = (entity) => {
+  if (!entity) return [];
+  const values = {
+    name: entity.name,
+    id: entity.id,
+    type: entity.type,
+    status: entity.status,
+    location: entity.location || entity.zone || entity.zone_id,
+    zone: entity.zone_id ?? entity.zone ?? null,
+    sensor_type: entity.sensor_type || entity.type,
+    value: entity.value,
+    battery: entity.battery_percent ?? entity.battery,
+    cpu_temp_celsius: entity.cpu_temp_celsius,
+    motor_health_percent: entity.motor_health_percent,
+    device_type: entity.device_type || entity.kind,
+    last_updated: entity.last_updated || entity.updated_at,
+    position: entity.position,
+  };
+
+  return Object.entries(values).filter(([, value]) => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0));
+};
+
+function TrendSparkline({ values, color }) {
+  const width = 120;
+  const height = 36;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const step = values.length > 1 ? (width - 8) / (values.length - 1) : 1;
+
+  const linePoints = values
+    .map((value, index) => {
+      const x = 4 + index * step;
+      const y = height - 6 - ((value - min) / Math.max(max - min, 1)) * (height - 12);
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  const areaPoints = `${linePoints} ${width - 4},${height - 4} 4,${height - 4}`;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-10 w-full" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={`trend-gradient-${color.replace('#', '')}`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.05" />
+        </linearGradient>
+      </defs>
+      <polygon points={areaPoints} fill={`url(#trend-gradient-${color.replace('#', '')})`} opacity="0.9" />
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={linePoints}
+        style={{ filter: `drop-shadow(0 0 8px ${color})` }}
+      >
+        <animate attributeName="stroke-dasharray" values="0 200;120 80;0 200" dur="3s" repeatCount="indefinite" />
+      </polyline>
+    </svg>
+  );
+}
 
 function SystemStatusCard({ system, data }) {
   const Icon = system.icon;
@@ -122,8 +199,10 @@ function SystemStatusCard({ system, data }) {
 }
 
 function AlertPanel({ alerts }) {
-  const criticalCount = alerts.filter((a) => a.type === 'critical').length;
-  const warningCount = alerts.filter((a) => a.type === 'warning').length;
+  const activeAlerts = alerts.filter((a) => a.status === 'active');
+  const criticalCount = activeAlerts.filter((a) => a.type === 'critical').length;
+  const warningCount = activeAlerts.filter((a) => a.type === 'warning').length;
+
   return (
     <Card3D variant="default" glowing glowColor="#ff6b35" className="p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -131,13 +210,29 @@ function AlertPanel({ alerts }) {
         <h3 className="text-sm font-bold text-red-300">System Alerts</h3>
         <span className="text-xs bg-red-900/30 text-red-200 px-2 py-1 rounded">{criticalCount + warningCount} Active</span>
       </div>
-      <div className="space-y-2 max-h-48 overflow-y-auto">
-        {alerts.filter((a) => a.status === 'active').map((alert) => (
-          <div key={alert.id} className="p-2 rounded bg-slate-900/50 border-l-2" style={{ borderColor: alert.type === 'critical' ? '#d62828' : '#f1b233' }}>
-            <p className="text-xs font-semibold text-slate-200">{alert.message}</p>
-            <p className="text-[10px] text-slate-400 mt-1">{alert.system} • {alert.timestamp.toLocaleTimeString()}</p>
-          </div>
-        ))}
+      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+        {activeAlerts.map((alert) => {
+          const trendValues = alert.trend || [22, 26, 28, 27, 35, 40, 38, 52, 60, 58, 66, 72];
+          const accentColor = alert.type === 'critical' ? '#ef4444' : alert.type === 'warning' ? '#f59e0b' : '#38bdf8';
+          return (
+            <div
+              key={alert.id}
+              className="p-2 rounded bg-slate-900/50 border-l-2 transition-all duration-300 animate-pulse"
+              style={{ borderColor: accentColor, boxShadow: `0 0 18px ${accentColor}33` }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-slate-200">{alert.message}</p>
+                <span className="text-[9px] uppercase tracking-wide rounded-full px-1.5 py-0.5" style={{ backgroundColor: `${accentColor}22`, color: accentColor }}>
+                  {alert.type}
+                </span>
+              </div>
+              <div className="mt-2">
+                <TrendSparkline values={trendValues} color={accentColor} />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">{alert.system} • {alert.timestamp.toLocaleTimeString()}</p>
+            </div>
+          );
+        })}
       </div>
     </Card3D>
   );
@@ -186,7 +281,7 @@ export default function EstateDashboard() {
   const [selectedSystem, setSelectedSystem] = useState(null);
   const [systemDataCache, setSystemDataCache] = useState({});
   const [alerts, setAlerts] = useState(MOCK_ALERTS);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(5000);
   const [error, setError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -200,12 +295,173 @@ export default function EstateDashboard() {
   const [commandResult, setCommandResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
   const { socketConnected, realtimeError, liveSystemStatus, liveSensorReadings } = useEstateRealtime(estateState);
+  const fetchLockRef = useRef(false);
+  const timerRef = useRef(null);
+  const estateStateRef = useRef(estateState);
+
+  useEffect(() => {
+    estateStateRef.current = estateState;
+  }, [estateState]);
+
+  const fetchInitialData = useCallback(async () => {
+    if (fetchLockRef.current) return;
+    fetchLockRef.current = true;
+
+    const currentEstateState = estateStateRef.current;
+
+    try {
+      setIsRefreshing(true);
+      setError(null);
+      currentEstateState.setLoading(true);
+      const token = getAuthToken();
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const [estateStatusRes, robotsRes, sensorsRes, zonesRes, twinDevicesRes, auditRes, usersRes] = await Promise.all([
+        fetch(`${API_URL}/api/v1/estate/status`, { headers: authHeaders }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/v1/robotics/active`, { headers: authHeaders }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/v1/sensors`, { headers: authHeaders }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/v1/zones`, { headers: authHeaders }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/v1/digital-twin/devices`, { headers: authHeaders }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/v1/audit`, { headers: authHeaders }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/v1/auth/users`, { headers: authHeaders }).catch(() => ({ ok: false })),
+      ]);
+
+      const estateStatus = estateStatusRes?.ok ? await estateStatusRes.json().catch(() => null) : null;
+      const robots = robotsRes?.ok ? await robotsRes.json().catch(() => []) : [];
+      const sensors = sensorsRes?.ok ? await sensorsRes.json().catch(() => []) : [];
+      const zones = zonesRes?.ok ? await zonesRes.json().catch(() => []) : [];
+      const twinDevices = twinDevicesRes?.ok ? await twinDevicesRes.json().catch(() => []) : [];
+      const auditLogs = auditRes?.ok ? await auditRes.json().catch(() => []) : [];
+      const users = usersRes?.ok ? await usersRes.json().catch(() => []) : [];
+      const userCount = Array.isArray(users) && users.length > 0 ? users.length : 1;
+
+      const twinPosition = (position) => {
+        if (Array.isArray(position)) return position;
+        return [Number(position?.x) || 0, Number(position?.y) || 1, Number(position?.z) || 0];
+      };
+      const twinRobots = Array.isArray(twinDevices)
+        ? twinDevices.filter((device) => device.kind === 'robot').map((device) => ({
+          ...device,
+          id: device.id ?? device.device_id,
+          robot_id: device.device_id,
+          type: 'robot',
+          position: twinPosition(device.position),
+          state: device.state || {},
+        }))
+        : [];
+      const twinSensors = Array.isArray(twinDevices)
+        ? twinDevices.filter((device) => device.kind === 'sensor').map((device) => ({
+          ...device,
+          id: device.id ?? device.device_id,
+          sensor_id: device.device_id,
+          type: 'sensor',
+          sensor_type: device.device_type,
+          value: device.state?.value,
+          position: twinPosition(device.position),
+        }))
+        : [];
+
+      const fallbackRobots = [
+        { id: 'fallback-robot-1', robot_id: 'fallback-robot-1', type: 'robot', status: 'active', position: [-8, 1, 4] },
+        { id: 'fallback-robot-2', robot_id: 'fallback-robot-2', type: 'robot', status: 'charging', position: [8, 1, 4] },
+      ];
+      const fallbackSensors = [
+        { id: 'fallback-sensor-1', sensor_id: 'fallback-sensor-1', type: 'sensor', sensor_type: 'temperature', value: 24.5, status: 'active', position: [-6, 1, -4] },
+        { id: 'fallback-sensor-2', sensor_id: 'fallback-sensor-2', type: 'sensor', sensor_type: 'humidity', value: 57, status: 'active', position: [6, 1, -4] },
+      ];
+      const fallbackZones = [
+        { id: 'fallback-zone-1', type: 'zone', name: 'Operations Zone', status: 'secure', position: [-10, 0, -8], size: [10, 2, 10], color: '#10b981' },
+        { id: 'fallback-zone-2', type: 'zone', name: 'Service Lane', status: 'warning', position: [12, 0, -8], size: [10, 2, 10], color: '#f59e0b' },
+      ];
+
+      const safeRobots = twinRobots.length > 0 ? twinRobots : (Array.isArray(robots) && robots.length > 0 ? robots : fallbackRobots);
+      const safeSensors = twinSensors.length > 0 ? twinSensors : (Array.isArray(sensors) && sensors.length > 0 ? sensors : fallbackSensors);
+      const safeZones = Array.isArray(zones) && zones.length > 0 ? zones : fallbackZones;
+
+      const robotsWithPositions = safeRobots.map((robot, idx) => ({
+        ...robot,
+        id: robot.id ?? robot.robot_id ?? `robot_${idx}`,
+        robot_id: robot.robot_id ?? robot.id ?? `robot_${idx}`,
+        type: 'robot',
+        position: robot.position || [-(6 - (idx % 4)) + (idx % 4) * 4, 1, 6 - Math.floor(idx / 4) * 4],
+        status: robot.status || (idx % 2 === 0 ? 'active' : 'charging'),
+      }));
+
+      const sensorsWithPositions = safeSensors.map((sensor, idx) => ({
+        ...sensor,
+        id: sensor.id ?? sensor.sensor_id ?? `sensor_${idx}`,
+        sensor_id: sensor.sensor_id ?? sensor.id ?? `sensor_${idx}`,
+        type: 'sensor',
+        position: sensor.position || [-(7 - (idx % 5)) + (idx % 5) * 3, 2, 7 - Math.floor(idx / 5) * 3],
+        sensor_type: sensor.type || sensor.sensor_type || ['temperature', 'humidity', 'light', 'pressure', 'motion'][idx % 5],
+        value: sensor.value ?? `${Math.floor(20 + idx * 2)}${idx % 2 === 0 ? '°C' : '%'}`,
+        status: sensor.status || 'active',
+      }));
+
+      const zonesWithPositions = safeZones.map((zone, idx) => ({
+        ...zone,
+        id: zone.id ?? `zone_${idx}`,
+        type: 'zone',
+        position: zone.position || [-(6 - (idx % 2)) + (idx % 2) * 12, 0, 6 - Math.floor(idx / 2) * 10],
+        size: zone.size || [3 + (idx % 2), 3 + (idx % 3), 3 + ((idx + 1) % 2)],
+        color: zone.color || ['#0088ff', '#00ffaa', '#88ff00', '#ff8800', '#ffaa00'][idx % 5],
+      }));
+
+      currentEstateState.setRobots(robotsWithPositions);
+      currentEstateState.setSensors(sensorsWithPositions);
+      currentEstateState.setZones(zonesWithPositions);
+
+      setMetrics({
+        zones: safeZones.length,
+        sensors: safeSensors.length,
+        users: userCount,
+        auditLogs: Array.isArray(auditLogs) ? auditLogs.length : 0,
+      });
+
+      currentEstateState.updateMetrics({
+        activeRobots: robotsWithPositions.filter((robot) => robot.status === 'active').length,
+        sensorsOnline: sensorsWithPositions.length,
+        systemHealth: estateStatus?.overall_health ?? 96,
+        cpuUsage: 42,
+        memoryUsage: 58,
+        networkLatency: 14,
+      });
+
+      setSystemHealth((prev) => ({
+        ...prev,
+        status: estateStatus?.overall_health >= 80 ? 'healthy' : estateStatus?.overall_health >= 60 ? 'degraded' : 'critical',
+      }));
+
+      if (estateStatus) {
+        setSystemDataCache((prev) => ({
+          ...prev,
+          climate: { ...prev.climate, status: estateStatus.climate?.status || prev.climate?.status, health_score: estateStatus.climate?.health_score || prev.climate?.health_score, last_update: estateStatus.climate?.last_update || prev.climate?.last_update },
+          energy: { ...prev.energy, status: estateStatus.energy?.status || prev.energy?.status, health_score: estateStatus.energy?.health_score || prev.energy?.health_score, last_update: estateStatus.energy?.last_update || prev.energy?.last_update },
+          security: { ...prev.security, status: estateStatus.security?.status || prev.security?.status, health_score: estateStatus.security?.health_score || prev.security?.health_score, last_update: estateStatus.security?.last_update || prev.security?.last_update },
+          water: { ...prev.water, status: estateStatus.water?.status || prev.water?.status, health_score: estateStatus.water?.health_score || prev.water?.health_score, last_update: estateStatus.water?.last_update || prev.water?.last_update },
+          communications: { ...prev.communications, status: estateStatus.communications?.status || prev.communications?.status, health_score: estateStatus.communications?.health_score || prev.communications?.health_score, last_update: estateStatus.communications?.last_update || prev.communications?.last_update },
+        }));
+      }
+
+      const promises = ESTATE_SYSTEMS.map((sys) => Promise.resolve().then(() => setSystemDataCache((prev) => ({ ...prev, [sys.id]: getMockSystemData(sys.id) }))));
+      await Promise.all(promises);
+      setLastRefresh(new Date());
+    } catch (error) {
+      console.error('Dashboard data fetch failed:', error);
+      setError(error.message || 'Unable to load estate data.');
+      currentEstateState.setError(error.message || 'Unable to load estate data.');
+    } finally {
+      currentEstateState.setLoading(false);
+      setIsRefreshing(false);
+      fetchLockRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     if (!loading && user) {
       fetchInitialData();
     }
-  }, [user, loading]);
+  }, [user, loading, fetchInitialData]);
 
   useEffect(() => {
     if (!liveSystemStatus?.systems?.length) return;
@@ -222,9 +478,9 @@ export default function EstateDashboard() {
         const id = system.id === 'comms' ? 'communications' : system.id;
         updated[id] = {
           ...updated[id],
-          status: system.status,
-          health_score: system.health_score || 0,
-          last_update: system.last_update,
+          ...(system.status ? { status: system.status } : {}),
+          ...(system.health_score !== undefined ? { health_score: system.health_score } : {}),
+          ...(system.last_update ? { last_update: system.last_update } : {}),
           data: updated[id]?.data || {},
         };
       });
@@ -235,143 +491,31 @@ export default function EstateDashboard() {
   useEffect(() => {
     if (!user || !autoRefresh) return undefined;
 
-    const timer = window.setInterval(() => {
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    timerRef.current = window.setInterval(() => {
       fetchInitialData();
     }, refreshInterval);
 
     return () => {
-      window.clearInterval(timer);
+      if (timerRef.current) window.clearInterval(timerRef.current);
     };
-  }, [user, autoRefresh, refreshInterval]);
+  }, [user, autoRefresh, refreshInterval, fetchInitialData]);
 
-  const fetchInitialData = async () => {
-    try {
-      setIsRefreshing(true);
-      setError(null);
-      estateState.setLoading(true);
-      const token = getAuthToken();
-      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  useEffect(() => {
+    if (!liveSensorReadings.length) return;
 
-      // Fetch entities and metrics in parallel
-      const [estateStatusRes, robotsRes, sensorsRes, zonesRes, auditRes, usersRes] = await Promise.all([
-        fetch(`${API_URL}/api/v1/estate/status`, { headers: authHeaders }).catch(() => ({ ok: false })),
-        fetch(`${API_URL}/api/v1/robotics/active`, { headers: authHeaders }).catch(() => ({ ok: false })),
-        fetch(`${API_URL}/api/v1/sensors`, { headers: authHeaders }).catch(() => ({ ok: false })),
-        fetch(`${API_URL}/api/v1/zones`, { headers: authHeaders }).catch(() => ({ ok: false })),
-        fetch(`${API_URL}/api/v1/audit`, { headers: authHeaders }).catch(() => ({ ok: false })),
-        fetch(`${API_URL}/api/v1/auth/users`, { headers: authHeaders }).catch(() => ({ ok: false })),
-      ]);
+    const sensorSummary = liveSensorReadings.reduce((acc, reading) => {
+      const sensorKey = reading.sensor_id ?? reading.id ?? 'unknown';
+      acc[sensorKey] = reading.value ?? acc[sensorKey];
+      return acc;
+    }, {});
 
-      const estateStatus = estateStatusRes?.ok ? await estateStatusRes.json().catch(() => null) : null;
-      const robots = robotsRes?.ok ? await robotsRes.json().catch(() => []) : [];
-      const sensors = sensorsRes?.ok ? await sensorsRes.json().catch(() => []) : [];
-      const zones = zonesRes?.ok ? await zonesRes.json().catch(() => []) : [];
-      const auditLogs = auditRes?.ok ? await auditRes.json().catch(() => []) : [];
-      const users = usersRes?.ok ? await usersRes.json().catch(() => []) : [];
-      const userCount = Array.isArray(users) && users.length > 0 ? users.length : 1;
-
-      const robotsWithPositions = (Array.isArray(robots) ? robots : []).map((robot, idx) => ({
-        ...robot,
-        id: robot.id ?? robot.robot_id ?? `robot_${idx}`,
-        robot_id: robot.robot_id ?? robot.id ?? `robot_${idx}`,
-        type: 'robot',
-        position: [-(6 - (idx % 4)) + (idx % 4) * 4, 1, 6 - Math.floor(idx / 4) * 4],
-        status: robot.status || (idx % 2 === 0 ? 'active' : 'charging'),
-      }));
-
-      const sensorsWithPositions = (Array.isArray(sensors) ? sensors : []).map((sensor, idx) => ({
-        ...sensor,
-        id: sensor.id ?? sensor.sensor_id ?? `sensor_${idx}`,
-        sensor_id: sensor.sensor_id ?? sensor.id ?? `sensor_${idx}`,
-        type: 'sensor',
-        position: [-(7 - (idx % 5)) + (idx % 5) * 3, 2, 7 - Math.floor(idx / 5) * 3],
-        sensor_type: sensor.type || ['temperature', 'humidity', 'light', 'pressure', 'motion'][idx % 5],
-        value: sensor.value ?? `${Math.floor(20 + idx * 2)}${idx % 2 === 0 ? '°C' : '%'}`,
-      }));
-
-      const zonesWithPositions = (Array.isArray(zones) ? zones : []).map((zone, idx) => ({
-        ...zone,
-        id: zone.id ?? `zone_${idx}`,
-        type: 'zone',
-        position: [-(6 - (idx % 2)) + (idx % 2) * 12, 0, 6 - Math.floor(idx / 2) * 10],
-        size: [3 + (idx % 2), 3 + (idx % 3), 3 + ((idx + 1) % 2)],
-        color: ['#0088ff', '#00ffaa', '#88ff00', '#ff8800', '#ffaa00'][idx % 5],
-      }));
-
-      // Update entity state
-      estateState.setRobots(robotsWithPositions);
-      estateState.setSensors(sensorsWithPositions);
-      estateState.setZones(zonesWithPositions);
-      
-      // Update metrics
-      setMetrics({
-        zones: Array.isArray(zones) ? zones.length : 0,
-        sensors: Array.isArray(sensors) ? sensors.length : 0,
-        users: userCount,
-        auditLogs: Array.isArray(auditLogs) ? auditLogs.length : 0,
-      });
-
-      estateState.updateMetrics({
-        activeRobots: robotsWithPositions.filter((robot) => robot.status === 'active').length,
-        sensorsOnline: sensorsWithPositions.length,
-        systemHealth: estateStatus?.overall_health ?? 96,
-        cpuUsage: 42,
-        memoryUsage: 58,
-        networkLatency: 14,
-      });
-      setSystemHealth((prev) => ({
-        ...prev,
-        status: estateStatus?.overall_health >= 80 ? 'healthy' : estateStatus?.overall_health >= 60 ? 'degraded' : 'critical',
-      }));
-
-      if (estateStatus) {
-        setSystemDataCache((prev) => ({
-          ...prev,
-          climate: {
-            ...prev.climate,
-            status: estateStatus.climate?.status || prev.climate?.status,
-            health_score: estateStatus.climate?.health_score || prev.climate?.health_score,
-            last_update: estateStatus.climate?.last_update || prev.climate?.last_update,
-          },
-          energy: {
-            ...prev.energy,
-            status: estateStatus.energy?.status || prev.energy?.status,
-            health_score: estateStatus.energy?.health_score || prev.energy?.health_score,
-            last_update: estateStatus.energy?.last_update || prev.energy?.last_update,
-          },
-          security: {
-            ...prev.security,
-            status: estateStatus.security?.status || prev.security?.status,
-            health_score: estateStatus.security?.health_score || prev.security?.health_score,
-            last_update: estateStatus.security?.last_update || prev.security?.last_update,
-          },
-          water: {
-            ...prev.water,
-            status: estateStatus.water?.status || prev.water?.status,
-            health_score: estateStatus.water?.health_score || prev.water?.health_score,
-            last_update: estateStatus.water?.last_update || prev.water?.last_update,
-          },
-          communications: {
-            ...prev.communications,
-            status: estateStatus.communications?.status || prev.communications?.status,
-            health_score: estateStatus.communications?.health_score || prev.communications?.health_score,
-            last_update: estateStatus.communications?.last_update || prev.communications?.last_update,
-          },
-        }));
-      }
-
-      const promises = ESTATE_SYSTEMS.map((sys) => Promise.resolve().then(() => setSystemDataCache((prev) => ({ ...prev, [sys.id]: getMockSystemData(sys.id) }))));
-      await Promise.all(promises);
-      setLastRefresh(new Date());
-    } catch (error) {
-      console.error('Dashboard data fetch failed:', error);
-      setError(error.message || 'Unable to load estate data.');
-      estateState.setError(error.message || 'Unable to load estate data.');
-    } finally {
-      estateState.setLoading(false);
-      setIsRefreshing(false);
-    }
-  };
+    estateState.setSensors((prevSensors) => prevSensors.map((sensor) => {
+      const key = sensor.sensor_id ?? sensor.id;
+      const nextValue = sensorSummary[key];
+      return nextValue === undefined ? sensor : { ...sensor, value: nextValue };
+    }));
+  }, [liveSensorReadings, estateState]);
 
   const handleEntityDelete = useCallback(async (type, id) => {
     const token = getAuthToken();
@@ -406,7 +550,7 @@ export default function EstateDashboard() {
     } finally {
       setIsRefreshing(false);
     }
-  }, []);
+  }, [fetchInitialData]);
 
   const handleEntityCreate = useCallback(async (type, data) => {
     try {
@@ -467,7 +611,7 @@ export default function EstateDashboard() {
     } finally {
       setIsRefreshing(false);
     }
-  }, []);
+  }, [fetchInitialData]);
 
   const dispatchRobotTask = useCallback(async (operationType) => {
     if (!selectedEntity || selectedEntity.type !== 'robot') return;
@@ -590,6 +734,24 @@ export default function EstateDashboard() {
     }
   }, [selectedEntity]);
 
+  const createPanelTilt = useCallback((event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    const rotateY = (x - 0.5) * 12;
+    const rotateX = (0.5 - y) * 12;
+
+    event.currentTarget.style.transform = `perspective(1200px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-4px)`;
+    event.currentTarget.style.transition = 'transform 0.18s ease-out';
+    event.currentTarget.style.boxShadow = '0 20px 45px rgba(59, 130, 246, 0.18)';
+  }, []);
+
+  const resetPanelTilt = useCallback((event) => {
+    event.currentTarget.style.transform = 'translate3d(0,0,0)';
+    event.currentTarget.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
+    event.currentTarget.style.boxShadow = '';
+  }, []);
+
   if (loading || estateState.loading) {
     return (
       <Layout3D title="Estate Dashboard" icon="🏢" subtitle="Loading...">
@@ -620,24 +782,30 @@ export default function EstateDashboard() {
       
       <div className="space-y-6">
         {/* Welcome Header with Refresh */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-4xl font-bold text-cyan-300 tracking-[0.2em] mb-2">Estate Command Center</h1>
-            <p className="text-slate-300 text-sm">Welcome, {user?.email}. Monitor & manage all zones, sensors, systems and data in one unified interface</p>
-            <p className="text-xs text-slate-500 mt-1">
-              Realtime connection: <span className={`font-semibold ${socketConnected ? 'text-green-300' : 'text-red-300'}`}>{socketConnected ? 'Online' : 'Offline'}</span>
-              {liveSystemStatus?.timestamp ? ` • Last status ${new Date(liveSystemStatus.timestamp).toLocaleTimeString()}` : ''}
-              {realtimeError ? ` • ${realtimeError}` : ''}
-            </p>
-          </div>
-          <div className="flex gap-3 items-center flex-wrap">
-            <button onClick={() => fetchInitialData()} className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/50 rounded-lg text-blue-300 text-sm transition-all disabled:opacity-50" disabled={isRefreshing}>
-              {isRefreshing ? '⟳ Syncing...' : '⟳ Refresh'}
-            </button>
-            <label className="flex items-center gap-2 text-sm text-slate-300 hover:text-slate-200 cursor-pointer transition-colors">
-              <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} className="w-4 h-4 accent-blue-500" />
-              Auto
-            </label>
+        <div
+          className="rounded-3xl border border-white/10 bg-slate-900/40 backdrop-blur-xl shadow-[0_0_25px_rgba(34,211,238,0.08)] p-5 relative overflow-hidden"
+          style={{ transform: 'translate3d(0,0,0)', perspective: '1200px' }}
+        >
+          <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_42%)]" />
+          <div className="relative flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-4xl font-bold text-cyan-300 tracking-[0.2em] mb-2">Estate Command Center</h1>
+              <p className="text-slate-300 text-sm">Welcome, {user?.email}. Monitor & manage all zones, sensors, systems and data in one unified interface</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Realtime connection: <span className={`font-semibold ${socketConnected ? 'text-green-300' : 'text-red-300'}`}>{socketConnected ? 'Online' : 'Offline'}</span>
+                {liveSystemStatus?.timestamp ? ` • Last status ${new Date(liveSystemStatus.timestamp).toLocaleTimeString()}` : ''}
+                {realtimeError ? ` • ${realtimeError}` : ''}
+              </p>
+            </div>
+            <div className="flex gap-3 items-center flex-wrap">
+              <button onClick={() => fetchInitialData()} className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/50 rounded-lg text-blue-300 text-sm transition-all disabled:opacity-50" disabled={isRefreshing}>
+                {isRefreshing ? '⟳ Syncing...' : '⟳ Refresh'}
+              </button>
+              <label className="flex items-center gap-2 text-sm text-slate-300 hover:text-slate-200 cursor-pointer transition-colors">
+                <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+                Auto
+              </label>
+            </div>
           </div>
         </div>
 
@@ -647,7 +815,7 @@ export default function EstateDashboard() {
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-purple-900/20 to-violet-900/20 border border-purple-700/30 rounded-lg p-6 flex items-center justify-between">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-xl shadow-[0_0_25px_rgba(168,85,247,0.12)] p-6 flex items-center justify-between">
             <div>
               <p className="text-xs uppercase text-purple-400 font-semibold">System Status</p>
               <p className="text-2xl font-bold text-purple-300 mt-2">Operational</p>
@@ -658,7 +826,12 @@ export default function EstateDashboard() {
 
         {/* Key Metrics Cards - from Dashboard */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-          <div className="bg-gradient-to-br from-blue-900/30 to-blue-800/10 border border-blue-700/50 rounded-lg p-6 hover:border-blue-600/80 transition-colors">
+          <div
+            className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(96,165,250,0.12)] p-6 hover:border-blue-500/60 transition-all duration-300 ease-out"
+            style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(30,64,175,0.12), rgba(15,23,42,0.86))' }}
+            onMouseMove={createPanelTilt}
+            onMouseLeave={resetPanelTilt}
+          >
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Zones</p>
@@ -670,7 +843,7 @@ export default function EstateDashboard() {
             <Link href="/zones" className="text-blue-400 text-xs font-semibold mt-4 inline-block hover:text-blue-300">Manage Zones →</Link>
           </div>
 
-          <div className="bg-gradient-to-br from-green-900/30 to-green-800/10 border border-green-700/50 rounded-lg p-6 hover:border-green-600/80 transition-colors">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(16,185,129,0.12)] p-6 hover:border-green-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(20,83,45,0.12), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Sensors</p>
@@ -682,7 +855,7 @@ export default function EstateDashboard() {
             <Link href="/sensors" className="text-green-400 text-xs font-semibold mt-4 inline-block hover:text-green-300">View Sensors →</Link>
           </div>
 
-          <div className="bg-gradient-to-br from-yellow-900/30 to-yellow-800/10 border border-yellow-700/50 rounded-lg p-6 hover:border-yellow-600/80 transition-colors">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(250,204,21,0.12)] p-6 hover:border-yellow-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(120,53,15,0.12), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Audit Logs</p>
@@ -694,7 +867,7 @@ export default function EstateDashboard() {
             <Link href="/audit-logs" className="text-yellow-400 text-xs font-semibold mt-4 inline-block hover:text-yellow-300">View Logs →</Link>
           </div>
 
-          <div className="bg-gradient-to-br from-red-900/30 to-red-800/10 border border-red-700/50 rounded-lg p-6 hover:border-red-600/80 transition-colors">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(248,113,113,0.12)] p-6 hover:border-red-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(127,29,29,0.14), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Users</p>
@@ -708,7 +881,7 @@ export default function EstateDashboard() {
             )}
           </div>
 
-          <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/10 border border-purple-700/50 rounded-lg p-6 hover:border-purple-600/80 transition-colors">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(168,85,247,0.12)] p-6 hover:border-purple-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(88,28,135,0.14), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Status</p>
@@ -1053,9 +1226,52 @@ export default function EstateDashboard() {
                   {selectedEntity.value !== undefined && <p className="text-xs text-slate-400">Value: {selectedEntity.value}</p>}
                 </div>
 
-                {selectedEntity.type === 'robot' && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold text-slate-300">Robot Commands</p>
+                <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+                  <p className="mb-2 text-[10px] uppercase tracking-[0.22em] text-slate-400">Entity data</p>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300">
+                    {getEntityDataEntries(selectedEntity).map(([key, value]) => (
+                      <div key={key} className="rounded border border-slate-700 bg-slate-800/40 p-2">
+                        <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">{String(key).replace(/_/g, ' ')}</div>
+                        <div className="mt-1 truncate font-mono text-cyan-200">
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-slate-300">Quick actions</p>
+                  {selectedEntity.type === 'sensor' && (
+                    <Button3D
+                      variant="primary"
+                      size="sm"
+                      className="w-full flex items-center justify-center gap-2"
+                      onClick={() => {
+                        const reading = selectedEntity.value ?? selectedEntity.state?.value ?? 'No current reading';
+                        setStatusMessage(`${selectedEntity.name || 'Sensor'} telemetry: ${String(reading)}`);
+                        setCommandResult({ id: selectedEntity.id, type: 'sensor', value: reading, status: selectedEntity.status || 'active' });
+                      }}
+                    >
+                      Read telemetry
+                    </Button3D>
+                  )}
+
+                  {selectedEntity.type === 'device' && (
+                    <Button3D
+                      variant="primary"
+                      size="sm"
+                      className="w-full flex items-center justify-center gap-2"
+                      onClick={() => {
+                        setStatusMessage(`${selectedEntity.name || 'Device'} is ${selectedEntity.status || 'online'} and ready for inspection.`);
+                        setCommandResult({ id: selectedEntity.id, type: 'device', status: selectedEntity.status || 'online', metadata: selectedEntity });
+                      }}
+                    >
+                      Inspect device
+                    </Button3D>
+                  )}
+
+                  {selectedEntity.type === 'robot' && (
                     <div className="grid grid-cols-2 gap-2">
                       <Button3D
                         variant="success"
@@ -1076,12 +1292,9 @@ export default function EstateDashboard() {
                         Emergency Stop
                       </Button3D>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {selectedEntity.type === 'zone' && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold text-slate-300">Zone Automation</p>
+                  {selectedEntity.type === 'zone' && (
                     <Button3D
                       variant="primary"
                       size="sm"
@@ -1091,8 +1304,8 @@ export default function EstateDashboard() {
                     >
                       Schedule Irrigation
                     </Button3D>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <Button3D 

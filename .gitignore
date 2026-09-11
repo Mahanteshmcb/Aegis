@@ -1,5 +1,6 @@
 # Python
 *.pip_check/
+.pip_check/
 __pycache__/
 *.py[cod]
 *.pyo
@@ -30,6 +31,13 @@ yarn-error.log*
 
 # Test coverage
 coverage/
+.coverage
+.coverage.*
+.pytest_cache/
+
+# Captured test output
+tests/results/*
+!tests/results/README.md
 
 # Build output
 dist/
@@ -39,6 +47,9 @@ build/
 # Database
 *.sqlite3
 *.db
+
+# Local backup/export data
+backups/
 
 # Report
 ProjectReport/

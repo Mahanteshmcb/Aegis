@@ -41,19 +41,19 @@ Comprehensive integration testing suite for validating gRPC contracts in the Aeg
 
 ### Running All Tests
 ```bash
-python run_grpc_integration_tests.py --all
+python scripts/integration/run_grpc_integration_tests.py --all
 ```
 
 ### Running Specific Test Categories
 ```bash
 # Performance benchmarks only
-python run_grpc_integration_tests.py --performance
+python scripts/integration/run_grpc_integration_tests.py --performance
 
 # Security validation only
-python run_grpc_integration_tests.py --security
+python scripts/integration/run_grpc_integration_tests.py --security
 
 # Verbose output
-python run_grpc_integration_tests.py --all --verbose
+python scripts/integration/run_grpc_integration_tests.py --all --verbose
 ```
 
 ### Running Individual Test Files
@@ -141,7 +141,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio grpcio-tools
       - name: Run integration tests
-        run: python run_grpc_integration_tests.py --all
+        run: python scripts/integration/run_grpc_integration_tests.py --all
       - name: Upload test reports
         uses: actions/upload-artifact@v3
         with:
@@ -189,7 +189,7 @@ jobs:
 ### Debug Mode
 ```bash
 # Enable debug logging
-python run_grpc_integration_tests.py --all --verbose
+python scripts/integration/run_grpc_integration_tests.py --all --verbose
 
 # Run specific test with debug
 pytest tests/test_grpc_integration.py::TestGRPCIntegration::test_sensor_registration_and_streaming -s -v

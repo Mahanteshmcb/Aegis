@@ -89,6 +89,188 @@ body {
   min-height: 0;
 }
 
+.aegis-scene-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.aegis-editor-page {
+  min-height: 100dvh;
+  padding: 1.5rem;
+  color: #e2e8f0;
+  background: radial-gradient(circle at 80% 0%, #123148 0, #07111d 42%, #020617 100%);
+}
+
+.aegis-editor-header,
+.aegis-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.aegis-editor-header h1 {
+  margin: 0.2rem 0;
+  color: #f8fafc;
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+  letter-spacing: 0.04em;
+}
+
+.aegis-editor-header p:last-child,
+.aegis-editor-help {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.aegis-eyebrow {
+  margin: 0;
+  color: #67e8f9;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+}
+
+.aegis-editor-identity,
+.aegis-editor-message {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid #164e63;
+  border-radius: 0.5rem;
+  color: #a5f3fc;
+  background: rgba(8, 47, 73, 0.65);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.aegis-editor-message {
+  margin-bottom: 1rem;
+  color: #bbf7d0;
+  border-color: #166534;
+  background: rgba(20, 83, 45, 0.45);
+}
+
+.aegis-editor-page .aegis-scene-layout {
+  min-height: calc(100dvh - 10rem);
+  flex-direction: row;
+  gap: 1rem;
+}
+
+.aegis-editor-page .aegis-scene-entities {
+  flex: 0 0 19rem;
+  padding: 1rem;
+  overflow: auto;
+  border: 1px solid #1e3a4a;
+  border-radius: 0.75rem;
+  background: rgba(2, 15, 28, 0.88);
+}
+
+.aegis-editor-page .aegis-scene-entities h2 {
+  margin: 0 0 0.5rem;
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.aegis-editor-page .aegis-scene-entities ul {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0;
+  list-style: none;
+}
+
+.aegis-editor-page .aegis-scene-entities li {
+  padding: 0.65rem;
+  border: 1px solid #1e293b;
+  border-radius: 0.4rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.aegis-editor-page .aegis-scene-entities li:hover,
+.aegis-editor-page .aegis-scene-entities li.is-selected {
+  border-color: #22d3ee;
+  color: #cffafe;
+  background: rgba(8, 47, 73, 0.7);
+}
+
+.aegis-property-panel {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #1e3a4a;
+}
+
+.aegis-property-panel label {
+  display: grid;
+  gap: 0.25rem;
+  color: #94a3b8;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.aegis-property-panel input {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #334155;
+  border-radius: 0.35rem;
+  color: #e2e8f0;
+  background: #0f172a;
+}
+
+.aegis-editor-page .aegis-scene-canvas {
+  flex: 1 1 auto;
+  width: auto;
+  height: auto;
+  min-height: calc(100dvh - 10rem);
+  border: 1px solid #1e3a4a;
+  border-radius: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .aegis-editor-page .aegis-scene-layout {
+    flex-direction: column-reverse;
+  }
+
+  .aegis-editor-page .aegis-scene-entities,
+  .aegis-editor-page .aegis-scene-canvas {
+    flex-basis: auto;
+    min-height: 28rem;
+  }
+}
+
+.aegis-scene-entities,
+.aegis-scene-canvas {
+  min-width: 0;
+}
+
+.aegis-twin-scene {
+  min-height: 360px;
+}
+
+.aegis-scene-canvas {
+  width: 100%;
+  height: min(70vh, 480px);
+  min-height: 360px;
+  border: 1px solid #334155;
+}
+
+@media (min-width: 1024px) {
+  .aegis-scene-layout {
+    flex-direction: row;
+  }
+
+  .aegis-scene-entities {
+    flex: 1 1 0%;
+  }
+
+  .aegis-scene-canvas {
+    flex: 0 1 640px;
+  }
+}
+
 @media (max-width: 767px) {
   .aegis-header {
     min-height: 4.5rem;
@@ -125,6 +307,41 @@ body {
 
   .aegis-main {
     padding: 1rem;
+  }
+
+  .aegis-twin-page {
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: auto;
+  }
+
+  .aegis-twin-header {
+    padding: 1rem;
+  }
+
+  .aegis-twin-header h1 {
+    font-size: 1.25rem;
+    line-height: 1.35;
+    letter-spacing: 0.08em;
+  }
+
+  .aegis-twin-layout {
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .aegis-twin-scene {
+    flex: none;
+    width: 100%;
+    height: 55dvh;
+    min-height: 360px;
+  }
+
+  .aegis-twin-creator {
+    width: 100%;
+    max-height: 45dvh;
+    border-left: 0;
+    border-top: 1px solid #1e293b;
   }
 }
 

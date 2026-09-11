@@ -6,23 +6,21 @@ const SOCKET_PATH = process.env.NEXT_PUBLIC_SOCKET_PATH || '/socket.io';
 let socket = null;
 
 export const initializeSocket = (token, url) => {
-  if (socket?.connected) {
+  if (socket && socket.connected) {
     return socket;
   }
 
-  const connectUrl = url || SOCKET_URL
+  const connectUrl = url || SOCKET_URL;
 
   socket = io(connectUrl, {
     path: SOCKET_PATH,
-    transports: ['polling'],
-    upgrade: false,
-    auth: {
-      token,
-    },
+    transports: ['websocket', 'polling'],
+    auth: { token },
     reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    reconnectionAttempts: 5,
+    reconnectionDelay: 800,
+    reconnectionDelayMax: 4000,
+    reconnectionAttempts: 10,
+    timeout: 8000,
   });
 
   socket.on('connect', () => {
@@ -132,6 +130,12 @@ export const subscribeToSensorReadings = (callback) => {
   });
 };
 
+export const subscribeToDigitalTwinUpdates = (callback) => {
+  if (!socket) return;
+
+  socket.on('digital_twin:device_update', callback);
+};
+
 export const subscribeToSceneEntities = (callback) => {
   if (!socket) return;
 
@@ -148,6 +152,11 @@ export const unsubscribeFromSystemStatusUpdates = () => {
 export const unsubscribeFromSensorReadings = () => {
   if (!socket) return;
   socket.off('sensor:reading');
+};
+
+export const unsubscribeFromDigitalTwinUpdates = () => {
+  if (!socket) return;
+  socket.off('digital_twin:device_update');
 };
 
 export const subscribeToCommunicationUpdates = (callback) => {
@@ -244,7 +253,7 @@ export const unsubscribeFromSceneEntities = () => {
   socket.off('scene:entity_update');
 };
 
-export default {
+const socketClient = {
   initializeSocket,
   getSocket,
   disconnectSocket,
@@ -253,6 +262,7 @@ export default {
   subscribeToSystemAlerts,
   subscribeToSystemStatusUpdates,
   subscribeToSensorReadings,
+  subscribeToDigitalTwinUpdates,
   subscribeToCommunicationUpdates,
   subscribeToZoneUpdates,
   subscribeToSceneEntities,
@@ -264,7 +274,10 @@ export default {
   unsubscribeFromSystemAlerts,
   unsubscribeFromSystemStatusUpdates,
   unsubscribeFromSensorReadings,
+  unsubscribeFromDigitalTwinUpdates,
   unsubscribeFromCommunicationUpdates,
   unsubscribeFromZoneUpdates,
   unsubscribeFromSceneEntities,
 };
+
+export default socketClient;

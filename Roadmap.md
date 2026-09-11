@@ -159,9 +159,9 @@
 |-----|------|---------|
 | 71 | Finalize digital-twin product vision and degree submission scope | Approved software-first project scope — ✅ Completed (2026-08-15) |
 | 72 | Confirm live simulation architecture and backend event flow | Realtime model confirmed — ✅ Completed (2026-08-15). Implementations: DB-backed telemetry emitter, tenant-aware automation listener, robot lifecycle worker, short integration harness, frontend 401/unauthorized handling, unit tests and `tests/conftest.py`. |
-| 73 | Extend 3D scene with realistic estate/farm objects and animated entities | Scene visibly represents a live estate concept — ✅ Completed (2026-08-15). See `Day73_COMPLETE.md` for implementation notes. Frontend 3D models are available under `frontend/public/models` (absolute: C:\Users\Mahantesh\DevelopmentProjects\Aegis\frontend\public\models). These models may be used as vehicles, machines, robots, devices, or servers in the scene and can be referenced by the frontend at `/models/<filename>`.
-| 74 | Implement device state models and simulation engine | Virtual sensors, robots, and zones usable in backend — In Progress (2026-08-15) |
-| 75 | Connect estate simulation to frontend state and 3D dashboard | Live UI shows model and state changes |
+| 73 | Extend 3D scene with realistic estate/farm objects and animated entities | Scene visibly represents a live estate concept — ✅ Completed (2026-08-15). See `docs/guides/Day73_COMPLETE.md` for implementation notes. Frontend 3D models are available under `frontend/public/models` (absolute: C:\Users\Mahantesh\DevelopmentProjects\Aegis\frontend\public\models). These models may be used as vehicles, machines, robots, devices, or servers in the scene and can be referenced by the frontend at `/models/<filename>`.
+| 74 | Implement device state models and simulation engine | Virtual sensor, robot, and actuator state persisted in `digital_twin_devices`; tenant-scoped device APIs and deterministic simulation tick added; local-first command queue, telemetry ingest, and twin snapshot runtime implemented and verified — ✅ Completed (2026-08-29) |
+| 75 | Connect estate simulation to frontend state and 3D dashboard | Live UI shows model and state changes — ✅ Completed (2026-09-11). Twin devices now hydrate the estate state, simulation update events update visible robots/sensors, and legacy API fallbacks remain available. See `docs/day75_progress.md`. |
 
 ### Days 76–80: Realtime telemetry and automation
 | Day | Task | Outcome |
@@ -235,6 +235,124 @@
 
 ---
 
+## Blender model build strategy after Day 110 (general for all customers)
+After Day 110, the project should no longer depend on one fixed licensed 3D estate model. Instead, the Blender pipeline should become a reusable customer-model system that supports multiple estate types, custom layouts, and future expansion without rewriting the entire scene.
+
+### 1. Build a generalized Blender asset library
+Create a shared library of basic 3D components that can be reused across every customer project. These should be modeled as clean, modular collections rather than one fixed final estate map.
+
+Core reusable components:
+- terrain base / plot boundary
+- road networks and pathways
+- fences, gates, and entry zones
+- residential blocks / houses / villas
+- office, admin, and control buildings
+- farm / greenhouse structures
+- workshop and storage units
+- water tanks, pumps, and utility modules
+- solar arrays and energy stations
+- sensor nodes, drones, robots, and vehicles
+- landscaping, trees, crops, and vegetation
+- lighting, signage, and infrastructure props
+
+Each component should be built as a separate Blender collection or object group with:
+- consistent origin point at the real-world center
+- normalized scale and dimensions
+- clean naming convention
+- material assignment separated from geometry
+- exported file or group naming that supports automatic reuse
+
+### 2. Build reusable estate templates, not one single model
+The final scene should be constructed from reusable templates rather than a single custom handcrafted environment. For every customer, the system should assemble a model from a selected combination of modules.
+
+General template categories:
+- residential estate
+- research campus
+- farm and agri estate
+- industrial/warehouse zone
+- eco-lab / sustainability estate
+- mixed-use smart community
+
+Each customer model should be built from:
+- site footprint and terrain layout
+- zone definitions (living, production, utility, lab, security, agriculture)
+- building type selection
+- room/section layout
+- asset placement rules
+- lighting and material style
+
+This allows the same base library to generate a different estate scenario for each client without creating a completely new scene from scratch.
+
+### 3. Remove licensed dependency by switching to customer-specific model packs
+To remove heavy reliance on a licensed model, use a modular switch system where each customer gets a personalized model configuration instead of editing one giant imported scene.
+
+Recommended approach:
+- Keep a master base library in Blender with all self-made assets.
+- Create customer-specific “model packs” or “scene profiles” with:
+  - customer name
+  - estate type
+  - zone arrangement
+  - selected building modules
+  - branding and color theme
+  - environment style
+- Use a switchable scene configuration to load only the relevant collection set for that customer.
+- Replace imported licensed scene parts with custom author-built equivalents, so the project is no longer tied to vendor content.
+
+This means:
+- one customer may use a farm layout
+- another may use a research campus layout
+- another may use a residential luxury estate layout
+- all are generated from the same reusable component system
+
+The key principle is: never create a single monolithic customer model that cannot be reused. Instead, separate the scene into reusable modules and swap the configuration per customer.
+
+### 4. Generalized framework for future customers and development
+The long-term architecture should be model-driven and not manually hardcoded.
+
+Build the Blender system as follows:
+- Master asset library: reusable models, materials, props, and environment pieces
+- Component registry: list of all available building types and assets
+- Customer profile config: defines what belongs in a specific client model
+- Layout generator: arranges buildings, roads, terrain, and utilities based on customer data
+- Material/theme pack: colors, branding, finishes, and visual identity
+- Variant pack: alternate versions of the same model for different customer styles
+
+Example structure:
+- Base components: terrain, roads, fences, utilities
+- Building modules: house, lab, office, greenhouse, workshop
+- Environment modules: trees, crops, solar panels, water towers
+- System modules: sensors, robots, control panels, energy units
+- Customer config: selected modules and configuration parameters
+
+This makes it easy to improve one asset and automatically propagate the improvement to every customer model using it.
+
+### 5. Improvement strategy for future reuse
+To keep the system scalable, every asset should be versioned and updated centrally.
+
+Best practice:
+- maintain a master library of all reusable geometry
+- document component versions and changes
+- use naming standards such as: `asset_residential_villa_01`, `asset_solar_array_02`, `asset_greenhouse_advanced_01`
+- store customer-specific layouts separately from the core library
+- update base components first, then regenerate customer scenes using the latest master library
+- keep old variants for comparison, but never break the reusable base system
+
+This creates a clean product pipeline where:
+- new customer requirements can be fulfilled by combining existing components
+- old or outdated models can be revised without redoing the whole project
+- future development becomes faster because all assets are modular and reusable
+
+### 6. Deliverable target after Day 110
+By the end of the software and 3D model phase, the project should deliver:
+- one general Blender library for all estate and agricultural structures
+- customer-specific scene profiles for different clients
+- no single hardcoded licensed model dependency
+- a reusable model-generation pipeline for future customers
+- modular components that can be upgraded without rebuilding all scenes from scratch
+- a scalable architecture that supports new customer styles, regional layouts, and future visualization needs
+
+---
+
 ## Core outcome of Phase 2
 This Phase 2 proves the project is fully functional in software and can be extended to real hardware in the future without redesigning the overall system. It is suitable for a degree submission while also creating a realistic startup path for actual device deployment afterward.
 
@@ -300,7 +418,7 @@ Deliver a complete software-first digital twin and realtime smart-estate automat
 | 71 | Finalize product scope for software-first Phase 2 | Phase 2 scope approved for degree submission |
 | 72 | Confirm realtime architecture and live state flow | Simulation model confirmed — ✅ Completed (2026-08-15). Implemented: DB-backed telemetry emitter, tenant-aware automation listener, robot task worker, short integration harness, frontend unauthorized handling, unit tests and `tests/conftest.py`. |
 | 73 | Improve 3D estate scene with realistic zones, assets, and movement | ✅ Completed (2026-08-15). Implementations: seeded demo scene entities, scene entity model and CRUD API, Socket.IO broadcasting, backend scene simulator, admin controls for seed/pause/resume/clear/speed, Three.js `ThreeScene` component, orbit controls, labels, selection/follow-camera, and automation/job scheduling tied to scene entity updates. |
-| 74 | Implement virtual sensor, robot, and automation state models | Backend simulates operational systems |
+| 74 | Implement virtual sensor, robot, and automation state models | Backend simulates operational systems; measured 135 m x 90 m three-acre estate template and hierarchy foundation added |
 | 75 | Connect frontend and backend for live scene updates | 3D dashboard reflects live estate states |
 
 ### Days 76–80: Real-Time Telemetry and Automation

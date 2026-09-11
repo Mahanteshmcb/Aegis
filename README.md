@@ -71,16 +71,16 @@ Moving beyond the single-user estate prototype, the system is engineered with a 
 * **AI Orchestration:** Python (LangChain/CrewAI) enabling Vryndara's multi-agent function calling.
 * **Blockchain Integration:** Solidity smart contracts deployed via Hardhat; Web3.py for backend integration.
   - **AegisAudit Contract:** Advanced audit logging with severity levels, batch operations, emergency logging, and compliance reporting (Day 23 Enhancement)
-  - See [Blockchain Features Guide](BLOCKCHAIN_FEATURES.md) for comprehensive contract documentation
+  - See [Blockchain Features Guide](docs/BLOCKCHAIN_FEATURES.md) for comprehensive contract documentation
 * **Database:** PostgreSQL with PostGIS for mobility tracking and strict tenant isolation.
 * **Frontend Interface:** React / Next.js with Tailwind CSS for high-performance data visualization.
 
 ---
 
 ## Quick Links
-- [Project Vision](VISION.md)
-- [Development Roadmap](roadmap.md)
-- [Blockchain Features Guide](BLOCKCHAIN_FEATURES.md) - Comprehensive AegisAudit contract documentation
+- [Project Vision](docs/VISION.md)
+- [Development Roadmap](Roadmap.md)
+- [Blockchain Features Guide](docs/BLOCKCHAIN_FEATURES.md) - Comprehensive AegisAudit contract documentation
 - [Day 23 Completion Report](DAY_23_COMPLETION_REPORT.md) - Smart contract enhancement details
 - [Day 24 Coverage Report](DAY_24_COVERAGE_REPORT.md) - Test coverage analysis and metrics
 - [License](LICENSE.txt)

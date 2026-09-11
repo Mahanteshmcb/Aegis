@@ -157,9 +157,9 @@ export default function Monitor3D({ zones = [], sensors = [], robots = [] }) {
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-slate-900">
+    <div className="aegis-canvas-shell w-full h-full min-h-[360px] flex flex-col bg-slate-900">
       {/* View Mode Controls */}
-      <div className="flex gap-2 p-4 bg-slate-800/50 border-b border-slate-700">
+      <div className="flex flex-wrap gap-2 p-4 bg-slate-800/50 border-b border-slate-700">
         {modes.map((mode) => {
           const Icon = mode.icon;
           return (
@@ -180,7 +180,7 @@ export default function Monitor3D({ zones = [], sensors = [], robots = [] }) {
       </div>
 
       {/* 3D Canvas */}
-      <div className="flex-1 relative">
+      <div className="aegis-monitor-canvas flex-1 min-h-[300px] relative">
         {viewMode === '3d' && (
           <Canvas camera={{ position: [15, 12, 15], fov: 50 }} {...canvasProps}>
             <MonitoringScene

@@ -66,6 +66,16 @@ def test_robotics_register_and_task_routes(client):
     assert len(active_data) >= 1
 
 
+def test_robotics_active_endpoint_reports_active_robot_status(client):
+    headers = auth_headers(client)
+    response = client.get("/api/v1/robotics/active", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    assert any((robot.get("status") or "").lower() == "active" for robot in data)
+
+
 def test_robotics_concurrent_multi_robot_dispatch(client):
     """Test that multiple robots can be controlled concurrently."""
     headers = auth_headers(client)

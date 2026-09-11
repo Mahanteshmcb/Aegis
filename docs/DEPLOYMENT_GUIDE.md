@@ -573,7 +573,7 @@ alembic upgrade head
 ## Support & Documentation
 
 - **API Documentation:** http://localhost:8001/docs (Swagger UI)
-- **Component Documentation:** See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)
+- **Component Documentation:** See [DEVELOPER_GUIDE.md](guides/DEVELOPER_GUIDE.md)
 - **System Architecture:** See [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)
 - **Integration Guide:** See [VRYNDARA_INTEGRATION_GUIDE.md](VRYNDARA_INTEGRATION_GUIDE.md)
 
