@@ -78,6 +78,9 @@ def get_settings() -> Settings:
     """Get application settings (singleton)."""
     settings = Settings()
 
+    if not settings.jwt_secret_key or not settings.jwt_secret_key.strip():
+        settings.jwt_secret_key = "aegis-dev-secret-key"
+
     if settings.database_url.startswith("sqlite:///"):
         sqlite_path = settings.database_url[len("sqlite:///"):]
         if sqlite_path and not Path(sqlite_path).is_absolute():

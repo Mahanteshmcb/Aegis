@@ -15,10 +15,11 @@ def setup_tenant_and_admin(test_db):
 
 def test_sensors_bulk_import(client, test_db):
     db, tenant, admin = setup_tenant_and_admin(test_db)
+    headers = {"Authorization": "Bearer test-token"}
 
     csv_content = "name,type,location,zone_id\nSensor A,temperature,Lab,\nSensor B,humidity,Greenhouse,1\n"
     files = {"file": ("sensors.csv", csv_content, "text/csv")}
-    r = client.post(f"{BASE}/sensors/bulk_import", files=files)
+    r = client.post(f"{BASE}/sensors/bulk_import", files=files, headers=headers)
     assert r.status_code == 200
     summary = r.json().get("summary")
     assert summary["created"] == 2
@@ -26,7 +27,7 @@ def test_sensors_bulk_import(client, test_db):
     # Re-run with updated location for Sensor A to trigger update
     csv_content2 = "name,type,location,zone_id\nSensor A,temperature,Lab Updated,\n"
     files = {"file": ("sensors.csv", csv_content2, "text/csv")}
-    r2 = client.post(f"{BASE}/sensors/bulk_import", files=files)
+    r2 = client.post(f"{BASE}/sensors/bulk_import", files=files, headers=headers)
     assert r2.status_code == 200
     summary2 = r2.json().get("summary")
     assert summary2["updated"] == 1

@@ -18,6 +18,7 @@ def create_tenant(session):
 def test_storage_facilities_and_inventory_endpoints(client, test_db):
     db = test_db()
     create_tenant(db)
+    headers = {"Authorization": "Bearer test-token"}
 
     facility_payload = {
         "name": "Seed Vault A",
@@ -25,7 +26,7 @@ def test_storage_facilities_and_inventory_endpoints(client, test_db):
         "type": "cold",
         "capacity": 150.0,
     }
-    resp = client.post("/api/v1/storage/facilities", json=facility_payload)
+    resp = client.post("/api/v1/storage/facilities", json=facility_payload, headers=headers)
     assert resp.status_code == 200
     facility = resp.json()
     assert facility["name"] == facility_payload["name"]
@@ -41,18 +42,18 @@ def test_storage_facilities_and_inventory_endpoints(client, test_db):
         "lot_number": "SEED-2026-01",
         "expires_at": datetime.utcnow().isoformat(),
     }
-    resp = client.post("/api/v1/storage/inventory", json=inventory_payload)
+    resp = client.post("/api/v1/storage/inventory", json=inventory_payload, headers=headers)
     assert resp.status_code == 200
     item = resp.json()
     assert item["facility_id"] == facility["id"]
     assert item["name"] == inventory_payload["name"]
 
-    list_resp = client.get("/api/v1/storage/facilities")
+    list_resp = client.get("/api/v1/storage/facilities", headers=headers)
     assert list_resp.status_code == 200
     facilities = list_resp.json()
     assert any(f["id"] == facility["id"] for f in facilities)
 
-    items_resp = client.get("/api/v1/storage/inventory")
+    items_resp = client.get("/api/v1/storage/inventory", headers=headers)
     assert items_resp.status_code == 200
     items = items_resp.json()
     assert any(i["id"] == item["id"] for i in items)

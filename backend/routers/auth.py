@@ -3,11 +3,14 @@ Aegis Backend - Authentication Router
 Login, token refresh, user management.
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from backend.dependencies import get_db, get_current_user
 from backend.exceptions import AuthenticationError
@@ -62,8 +65,8 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     try:
         crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
     except Exception:
-        pass 
-        
+        logger.exception("Failed to write user_created audit log for tenant %s", user.tenant_id)
+
     return schemas.UserRead.from_orm(user)
 
 @router.post("/auth/signup", response_model=schemas.UserRead)
@@ -96,7 +99,7 @@ async def reset_password(request: Request, db: Session = Depends(get_db)):
         try:
             crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
         except Exception:
-            pass
+            logger.exception("Failed to write password_reset_requested audit log for tenant %s", user.tenant_id)
 
     return {"message": "If the email exists, password reset instructions have been issued."}
 
@@ -163,17 +166,31 @@ async def login(
     
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
+
+    try:
+        import hashlib as _hashlib
+        login_time = datetime.now(timezone.utc)
+        login_data = f"email={user.email}|tenant_id={user.tenant_id}|role={user.role}|timestamp={login_time.isoformat()}"
+        data_hash = _hashlib.sha256(login_data.encode()).hexdigest()
+        audit = schemas.AuditLogCreate(
+            event_type="login_success",
+            data_hash=data_hash,
+            blockchain_tx=None,
+        )
+        crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
+    except Exception:
+        logger.exception("Failed to write login_success audit log for tenant %s", user.tenant_id)
+
     # Record session for revocation support
     try:
         import hashlib as _hashlib
         from backend import crud as _crud
-        from datetime import datetime
         # Compute token hash and expiry
         token_hash = _hashlib.sha256(access_token.encode()).hexdigest()
         # decode to get exp
         payload_decoded = jwt.decode(access_token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         exp_ts = payload_decoded.get("exp")
-        expires_at = datetime.utcfromtimestamp(exp_ts) if exp_ts else None
+        expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc) if exp_ts else None
         try:
             _crud.create_session(db, user.tenant_id, user.id, token_hash, token_type="access", expires_at=expires_at)
         except Exception:

@@ -5,6 +5,8 @@ from backend import models_db
 
 
 def test_communication_network_and_broadcast_flow(client, test_db):
+    headers = {"Authorization": "Bearer test-token"}
+
     # Create required tenant so foreign key constraints succeed
     db_session = test_db()
     tenant = models_db.Tenant(id=1, name="Test Tenant", created_at=datetime.utcnow(), updated_at=datetime.utcnow())
@@ -20,7 +22,7 @@ def test_communication_network_and_broadcast_flow(client, test_db):
         "metadata": {"band": "900MHz", "redundancy": "dual"}
     }
 
-    network_response = client.post("/api/v1/communication/networks/register", json=network_payload)
+    network_response = client.post("/api/v1/communication/networks/register", json=network_payload, headers=headers)
     assert network_response.status_code == 200
     network_data = network_response.json()
     assert network_data["name"] == "Estate Mesh"
@@ -28,7 +30,7 @@ def test_communication_network_and_broadcast_flow(client, test_db):
     assert network_data["secure"] is True
     assert network_data["node_count"] == 5
 
-    status_response = client.get("/api/v1/communication/status")
+    status_response = client.get("/api/v1/communication/status", headers=headers)
     assert status_response.status_code == 200
     status_data = status_response.json()
     assert status_data["total_networks"] == 1
@@ -44,7 +46,7 @@ def test_communication_network_and_broadcast_flow(client, test_db):
         "target_groups": ["staff", "security"]
     }
 
-    broadcast_response = client.post("/api/v1/communication/broadcast/emergency", json=broadcast_payload)
+    broadcast_response = client.post("/api/v1/communication/broadcast/emergency", json=broadcast_payload, headers=headers)
     assert broadcast_response.status_code == 200
     broadcast_data = broadcast_response.json()
     assert broadcast_data["message"] == "Test emergency alert"
@@ -57,13 +59,13 @@ def test_communication_network_and_broadcast_flow(client, test_db):
         "metadata": {"origin": "dashboard"}
     }
 
-    queue_response = client.post("/api/v1/communication/offline/queue", json=queue_payload)
+    queue_response = client.post("/api/v1/communication/offline/queue", json=queue_payload, headers=headers)
     assert queue_response.status_code == 200
     queue_data = queue_response.json()
     assert queue_data["destination"] == "backup.gateway"
     assert queue_data["status"] == "queued"
 
-    list_response = client.get("/api/v1/communication/offline/queue")
+    list_response = client.get("/api/v1/communication/offline/queue", headers=headers)
     assert list_response.status_code == 200
     offline_items = list_response.json()
     assert isinstance(offline_items, list)

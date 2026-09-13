@@ -22,12 +22,15 @@ def test_execute_job_moves_entity():
     session = SessionLocal()
     try:
         session.query(models_scene.SceneEntity).delete()
+        from backend.models.lab_automation import AutomationExecutionLog
+        session.query(AutomationExecutionLog).delete()
         session.query(AutomationJob).delete()
         from backend.models.lab_automation import AutomationDevice
         session.query(AutomationDevice).delete()
+        # Avoid deleting the tenant table directly; some other tests may have created tenant rows
+        # and SQLite will reject this when foreign keys are still present. Create a fresh tenant
+        # instead so the test remains isolated without cross-test cleanup conflicts.
         from backend.models_db import Tenant
-        session.query(Tenant).delete()
-        session.commit()
 
         # Ensure a tenant exists for FK constraints
         import uuid

@@ -105,7 +105,16 @@ export default function AuditLogsPage() {
         {loadingLogs ? (
           <div className="p-8 text-center text-aegis-muted">Loading audit logs...</div>
         ) : filteredLogs.length === 0 ? (
-          <div className="p-8 text-center text-aegis-muted">{logs.length === 0 ? 'No audit logs found.' : 'No logs match your filters.'}</div>
+          <div className="p-8 text-center">
+            <div className="mb-2 text-xl font-semibold text-white">
+              {logs.length === 0 ? 'No audit events recorded yet.' : 'No audit events match the current filters.'}
+            </div>
+            <p className="text-aegis-muted">
+              {logs.length === 0
+                ? 'This tenant has not generated any audit records yet. Successful logins, sensor changes, and admin actions will appear here.'
+                : 'Try clearing the event-type filter or searching for a different keyword.'}
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">

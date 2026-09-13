@@ -326,28 +326,62 @@ function AlertPanel({ alerts }) {
   );
 }
 
-function PredictiveMaintenancePanel() {
-  const predictions = [
-    { system: 'Climate HVAC', daysUntil: 5, confidence: 92, action: 'Filter replacement' },
-    { system: 'Solar Inverter', daysUntil: 12, confidence: 87, action: 'Firmware update' },
-    { system: 'Battery Pack', daysUntil: 45, confidence: 79, action: 'Capacity test' },
-  ];
+function PredictiveMaintenancePanel({ recommendations = [], optimization = [], adaptation = [] }) {
+  const predictions = Array.isArray(recommendations) && recommendations.length > 0
+    ? recommendations.map((item) => ({
+        system: item.focus || 'System',
+        daysUntil: item.days_until_action ?? item.daysUntil ?? 7,
+        confidence: item.confidence ?? 80,
+        action: item.message || 'Monitor and inspect',
+        severity: item.severity || 'monitor',
+        domain: item.type || 'maintenance',
+      }))
+    : [
+        { system: 'System', daysUntil: 14, confidence: 88, action: 'Routine monitoring remains within target range', severity: 'normal', domain: 'maintenance' },
+      ];
+
+  const optimizationCards = Array.isArray(optimization) && optimization.length > 0
+    ? optimization.map((item) => ({
+        system: item.focus || 'Estate',
+        confidence: item.confidence ?? 80,
+        action: item.message || 'Optimize scheduling and load balancing',
+        severity: item.severity || 'medium',
+        domain: item.domain || 'system',
+      }))
+    : [];
+
+  const adaptationCards = Array.isArray(adaptation) && adaptation.length > 0
+    ? adaptation.map((item) => ({
+        system: item.focus || 'Environment',
+        confidence: item.confidence ?? 80,
+        action: item.message || 'Adjust climate and resource response',
+        severity: item.severity || 'medium',
+        domain: item.domain || 'weather',
+      }))
+    : [];
+
+  const combinedCards = [...predictions, ...optimizationCards, ...adaptationCards].slice(0, 6);
+
   return (
     <Card3D variant="success" glowing className="p-4">
       <div className="flex items-center gap-2 mb-3">
         <TrendingUp size={16} className="text-green-400" />
-        <h3 className="text-sm font-bold text-green-300">Predictive Maintenance</h3>
+        <h3 className="text-sm font-bold text-green-300">Predictive Maintenance & Optimization</h3>
       </div>
       <div className="space-y-2">
-        {predictions.map((pred, idx) => (
-          <div key={idx} className="p-2 rounded bg-slate-900/50 border-l-2 border-green-600">
-            <div className="flex justify-between items-start">
+        {combinedCards.map((pred, idx) => (
+          <div key={`${pred.domain}-${pred.system}-${idx}`} className="p-2 rounded bg-slate-900/50 border-l-2 border-green-600">
+            <div className="flex justify-between items-start gap-2">
               <p className="text-xs font-semibold text-slate-200">{pred.system}</p>
-              <span className="text-[10px] bg-green-900/30 text-green-200 px-1.5 py-0.5 rounded">{pred.daysUntil} days</span>
+              <span className="text-[10px] bg-green-900/30 text-green-200 px-1.5 py-0.5 rounded">{pred.domain === 'maintenance' ? `${pred.daysUntil || 7} days` : pred.domain}</span>
             </div>
             <p className="text-[10px] text-slate-400 mt-1">{pred.action}</p>
+            <div className="mt-2 flex items-center justify-between text-[9px] uppercase tracking-wide text-slate-400">
+              <span>{pred.severity}</span>
+              <span>{pred.confidence}% confidence</span>
+            </div>
             <div className="mt-2 h-1 bg-slate-700 rounded overflow-hidden">
-              <div className="h-full bg-green-500" style={{ width: `${pred.confidence}%` }} />
+              <div className="h-full bg-green-500" style={{ width: `${Math.min(100, Math.max(10, pred.confidence))}%` }} />
             </div>
           </div>
         ))}
@@ -389,6 +423,54 @@ export default function EstateDashboard() {
   const fetchLockRef = useRef(false);
   const timerRef = useRef(null);
   const estateStateRef = useRef(estateState);
+
+  const metricCards = React.useMemo(() => [
+    {
+      key: 'zones',
+      label: 'Zones',
+      value: metrics.zones,
+      tone: 'blue',
+      detail: 'Active security zones',
+      href: '/zones',
+      icon: '📍',
+    },
+    {
+      key: 'sensors',
+      label: 'Sensors',
+      value: metrics.sensors,
+      tone: 'green',
+      detail: 'IoT devices online',
+      href: '/sensors',
+      icon: '📊',
+    },
+    {
+      key: 'auditLogs',
+      label: 'Audit Logs',
+      value: metrics.auditLogs,
+      tone: 'yellow',
+      detail: 'Compliance events recorded',
+      href: '/audit-logs',
+      icon: '📋',
+    },
+    {
+      key: 'users',
+      label: 'Users',
+      value: metrics.users,
+      tone: 'red',
+      detail: 'Active tenant users',
+      href: user?.role === 'admin' ? '/admin/users' : undefined,
+      icon: '👥',
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      value: systemHealth.status === 'healthy' ? 'Healthy' : systemHealth.status === 'degraded' ? 'Degraded' : 'Critical',
+      tone: systemHealth.status === 'healthy' ? 'green' : systemHealth.status === 'degraded' ? 'yellow' : 'red',
+      detail: `Latency: ${systemHealth.latency}ms`,
+      href: '/system-control',
+      icon: '⚡',
+    },
+  ], [metrics, systemHealth, user?.role]);
 
   useEffect(() => {
     estateStateRef.current = estateState;
@@ -543,8 +625,11 @@ export default function EstateDashboard() {
         }));
       }
 
-      const promises = ESTATE_SYSTEMS.map((sys) => Promise.resolve().then(() => setSystemDataCache((prev) => ({ ...prev, [sys.id]: getMockSystemData(sys.id) }))));
-      await Promise.all(promises);
+      const systemStateSnapshot = ESTATE_SYSTEMS.reduce((accumulator, system) => {
+        accumulator[system.id] = getMockSystemData(system.id);
+        return accumulator;
+      }, {});
+      setSystemDataCache((previous) => ({ ...previous, ...systemStateSnapshot }));
       setLastRefresh(new Date());
     } catch (error) {
       console.error('Dashboard data fetch failed:', error);
@@ -965,78 +1050,48 @@ export default function EstateDashboard() {
         </div>
 
         {/* Key Metrics Cards - from Dashboard */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-          <div
-            className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(96,165,250,0.12)] p-6 hover:border-blue-500/60 transition-all duration-300 ease-out"
-            style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(30,64,175,0.12), rgba(15,23,42,0.86))' }}
-            onMouseMove={createPanelTilt}
-            onMouseLeave={resetPanelTilt}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Zones</p>
-                <p className="text-4xl font-bold text-blue-400 mt-2">{isRefreshing ? '—' : metrics.zones}</p>
-              </div>
-              <div className="text-3xl text-blue-500 opacity-50">📍</div>
-            </div>
-            <p className="text-aegis-muted text-xs mt-4">Active security zones</p>
-            <Link href="/zones" className="text-blue-400 text-xs font-semibold mt-4 inline-block hover:text-blue-300">Manage Zones →</Link>
-          </div>
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {metricCards.map((card) => {
+            const toneClasses = {
+              blue: 'border-blue-500/40 bg-gradient-to-br from-slate-900/80 via-blue-900/20 to-slate-900/90',
+              green: 'border-green-500/40 bg-gradient-to-br from-slate-900/80 via-green-900/20 to-slate-900/90',
+              yellow: 'border-yellow-500/40 bg-gradient-to-br from-slate-900/80 via-yellow-900/20 to-slate-900/90',
+              red: 'border-red-500/40 bg-gradient-to-br from-slate-900/80 via-red-900/20 to-slate-900/90',
+            };
 
-          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(16,185,129,0.12)] p-6 hover:border-green-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(20,83,45,0.12), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Sensors</p>
-                <p className="text-4xl font-bold text-green-400 mt-2">{isRefreshing ? '—' : metrics.sensors}</p>
-              </div>
-              <div className="text-3xl text-green-500 opacity-50">📊</div>
-            </div>
-            <p className="text-aegis-muted text-xs mt-4">IoT devices online</p>
-            <Link href="/sensors" className="text-green-400 text-xs font-semibold mt-4 inline-block hover:text-green-300">View Sensors →</Link>
-          </div>
+            const textClasses = {
+              blue: 'text-blue-400',
+              green: 'text-green-400',
+              yellow: 'text-yellow-400',
+              red: 'text-red-400',
+            };
 
-          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(250,204,21,0.12)] p-6 hover:border-yellow-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(120,53,15,0.12), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Audit Logs</p>
-                <p className="text-4xl font-bold text-yellow-400 mt-2">{isRefreshing ? '—' : metrics.auditLogs}</p>
-              </div>
-              <div className="text-3xl text-yellow-500 opacity-50">📋</div>
-            </div>
-            <p className="text-aegis-muted text-xs mt-4">Compliance events recorded</p>
-            <Link href="/audit-logs" className="text-yellow-400 text-xs font-semibold mt-4 inline-block hover:text-yellow-300">View Logs →</Link>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(248,113,113,0.12)] p-6 hover:border-red-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(127,29,29,0.14), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Users</p>
-                <p className="text-4xl font-bold text-red-400 mt-2">{isRefreshing ? '—' : metrics.users}</p>
-              </div>
-              <div className="text-3xl text-red-500 opacity-50">👥</div>
-            </div>
-            <p className="text-aegis-muted text-xs mt-4">Active tenant users</p>
-            {user?.role === 'admin' && (
-              <Link href="/admin/users" className="text-red-400 text-xs font-semibold mt-4 inline-block hover:text-red-300">Manage Users →</Link>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-900/35 backdrop-blur-2xl shadow-[0_0_24px_rgba(168,85,247,0.12)] p-6 hover:border-purple-500/60 transition-all duration-300 ease-out" style={{ transform: 'translate3d(0,0,0)', perspective: '1200px', background: 'linear-gradient(135deg, rgba(15,23,42,0.78), rgba(88,28,135,0.14), rgba(15,23,42,0.86))' }} onMouseMove={createPanelTilt} onMouseLeave={resetPanelTilt}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">Status</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <div className={`w-3 h-3 rounded-full animate-pulse ${systemHealth.status === 'healthy' ? 'bg-green-400' : systemHealth.status === 'degraded' ? 'bg-yellow-400' : 'bg-red-400'}`}></div>
-                  <p className={`text-xl font-bold ${systemHealth.status === 'healthy' ? 'text-green-400' : systemHealth.status === 'degraded' ? 'text-yellow-400' : 'text-red-400'}`}>{systemHealth.status === 'healthy' ? 'Healthy' : systemHealth.status === 'degraded' ? 'Degraded' : 'Critical'}</p>
+            const cardBody = (
+              <div
+                key={card.key}
+                className={`rounded-2xl border p-6 shadow-[0_0_24px_rgba(96,165,250,0.12)] transition-all duration-300 ease-out hover:border-slate-500/60 ${toneClasses[card.tone]}`}
+                style={{ transform: 'translate3d(0,0,0)', perspective: '1200px' }}
+                onMouseMove={createPanelTilt}
+                onMouseLeave={resetPanelTilt}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-aegis-muted text-sm font-semibold uppercase tracking-wider">{card.label}</p>
+                    <p className={`mt-2 text-3xl font-bold ${textClasses[card.tone]}`}>{isRefreshing && card.key !== 'status' ? '—' : card.value}</p>
+                  </div>
+                  <div className="text-3xl opacity-60">{card.icon}</div>
                 </div>
+                <p className="text-aegis-muted text-xs mt-4">{card.detail}</p>
+                {card.href && (
+                  <Link href={card.href} className={`${textClasses[card.tone]} text-xs font-semibold mt-4 inline-block hover:opacity-90`}>
+                    {card.key === 'zones' ? 'Manage Zones' : card.key === 'sensors' ? 'View Sensors' : card.key === 'auditLogs' ? 'View Logs' : card.key === 'users' ? 'Manage Users' : 'System Control'} →
+                  </Link>
+                )}
               </div>
-              <div className="text-3xl text-purple-500 opacity-50">⚡</div>
-            </div>
-            <div className="text-aegis-muted text-xs mt-4 space-y-1">
-              <p>Latency: {systemHealth.latency}ms</p>
-            </div>
-            <Link href="/system-control" className="text-purple-400 text-xs font-semibold mt-4 inline-block hover:text-purple-300">System Control →</Link>
-          </div>
+            );
+
+            return card.href ? <Link key={card.key} href={card.href} className="block">{cardBody}</Link> : cardBody;
+          })}
         </div>
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Zones Section */}
@@ -1185,6 +1240,30 @@ export default function EstateDashboard() {
                 <span>Actuators {twinHealth.active_actuators}/{twinHealth.actuators}</span>
               </div>
             </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="rounded border border-slate-800 bg-slate-950/50 p-3">
+                <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400">Recommendation summary</p>
+                <p className="mt-2 text-sm font-semibold text-green-300">{twinHealth.recommendation_summary?.total ?? 0} active recommendations</p>
+                <p className="mt-1 text-[11px] text-slate-300">{(twinHealth.recommendation_summary?.top_actions || []).slice(0, 2).join(' • ') || 'No immediate actions required'}</p>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/50 p-3">
+                <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400">Alert summary</p>
+                <p className="mt-2 text-sm font-semibold text-amber-300">{twinHealth.alert_summary?.total ?? 0} active alerts</p>
+                <p className="mt-1 text-[11px] text-slate-300">{(twinHealth.alert_summary?.top_alerts || []).slice(0, 2).join(' • ') || 'No active alert conditions detected'}</p>
+              </div>
+            </div>
+            {twinHealth.workflow && (
+              <div className="mt-3 rounded border border-cyan-700/50 bg-cyan-950/30 p-3">
+                <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-300">Workflow summary</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-cyan-100">
+                  <span className="rounded border border-cyan-500/40 bg-cyan-900/40 px-2 py-1">{twinHealth.workflow.status}</span>
+                  <span>Predictive {twinHealth.workflow.modules?.predictive?.count ?? 0}</span>
+                  <span>Optimization {twinHealth.workflow.modules?.optimization?.count ?? 0}</span>
+                  <span>Adaptation {twinHealth.workflow.modules?.adaptation?.count ?? 0}</span>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-200">{twinHealth.workflow.summary}</p>
+              </div>
+            )}
           </Card3D>
         )}
 
@@ -1551,7 +1630,11 @@ export default function EstateDashboard() {
 
         <div className="grid lg:grid-cols-2 gap-6">
           <div />
-          <PredictiveMaintenancePanel />
+          <PredictiveMaintenancePanel
+            recommendations={twinHealth?.recommendations || []}
+            optimization={twinHealth?.optimization || []}
+            adaptation={twinHealth?.adaptation || []}
+          />
         </div>
 
         {selectedSystem && (

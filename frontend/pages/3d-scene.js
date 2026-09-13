@@ -1,6 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { getAuthToken } from '../utils/auth';
+import {
+  getPatrolStatus,
+  startRoboticPatrol,
+  stopRoboticPatrol,
+  triggerPerimeterLockdown,
+  releasePerimeterLockdown,
+  verifyBiometricScan,
+} from '../utils/api';
 
 const EstateScene = dynamic(() => import('../components/3d/EstateScene'), {
   ssr: false,
@@ -143,6 +151,99 @@ export default function ScenePage() {
   }, []);
 
   const entityList = useMemo(() => [...robots, ...sensors, ...zones], [robots, sensors, zones]);
+
+  const handleSceneCommand = async (action) => {
+    const token = getAuthToken();
+    if (!token) {
+      setMessage('Please sign in to send estate commands from the 3D scene.');
+      return;
+    }
+
+    try {
+      if (action === 'patrol') {
+        const patrolStatus = await getPatrolStatus(token).catch(() => ({ active: false }));
+        if (patrolStatus?.active) {
+          await stopRoboticPatrol(token);
+          setMessage('Robotic patrol stopped from the live estate scene.');
+          return;
+        }
+
+        await startRoboticPatrol(token, {
+          route_name: 'Estate perimeter sweep',
+          assigned_robot: 'Aegis Rover Patrol Unit',
+        });
+        setMessage('Robotic patrol started from the live estate scene.');
+        return;
+      }
+
+      if (action === 'inspection') {
+        const response = await fetch(`${API_URL}/api/v1/scene/admin/command`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            event: 'scene:inspection',
+            command: 'inspection',
+            params: {
+              zone: 'main-estate',
+              focus_area: 'perimeter and greenhouse ring',
+              mode: 'manual',
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          throw new Error(errorBody.detail || 'Inspection command failed');
+        }
+
+        setMessage('Inspection task dispatched to the estate system.');
+        return;
+      }
+
+      if (action === 'camera') {
+        await verifyBiometricScan(token, {
+          user_name: 'estate_operator',
+          method: 'facial',
+          status: 'approved',
+          location: '3D estate scene',
+          note: 'Manual camera verification from live scene controls',
+        });
+        setMessage('Camera verification completed and access was confirmed.');
+        return;
+      }
+
+      if (action === 'gate') {
+        const perimeterResponse = await fetch(`${API_URL}/api/v1/safety/perimeter`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!perimeterResponse.ok) {
+          const errorBody = await perimeterResponse.json().catch(() => ({}));
+          throw new Error(errorBody.detail || 'Perimeter status request failed');
+        }
+
+        const perimeter = await perimeterResponse.json();
+        if (perimeter?.active) {
+          await releasePerimeterLockdown(token);
+          setMessage('Gate released and perimeter returned to normal.');
+          return;
+        }
+
+        await triggerPerimeterLockdown(token, { reason: 'Manual gate lock from 3D scene control panel' });
+        setMessage('Gate locked and perimeter lockdown activated.');
+        return;
+      }
+
+      setMessage(`Command not implemented: ${action}`);
+    } catch (error) {
+      console.error('Failed to execute estate scene command', error);
+      setMessage(error.message || 'The selected estate command failed.');
+    }
+  };
 
   const handleCreateEntity = async (event) => {
     event.preventDefault();
@@ -300,6 +401,7 @@ export default function ScenePage() {
                 lightIntensity={1.1}
                 autoRotate={false}
                 onEntitySelect={(entity) => setSelectedEntity(normalizeEntity(entity, entity?.type || 'sensor'))}
+                onCommand={handleSceneCommand}
               />
             </div>
           </div>

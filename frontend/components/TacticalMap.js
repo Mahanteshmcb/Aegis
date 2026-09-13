@@ -185,7 +185,6 @@ const TacticalMap = ({ anomaly = false }) => {
           rotateSpeed={0.5}
           autoRotate={!anomaly}
           autoRotateSpeed={anomaly ? 3 : 0.5}
-          dampingFactor={0.05}
         />
 
         {/* Ambients and Lights */}

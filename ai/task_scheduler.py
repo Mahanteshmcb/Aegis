@@ -61,7 +61,13 @@ class TaskScheduler:
 
     def assign_pending_tasks(self) -> List[Dict[str, Any]]:
         active_robots = self.connector.list_active_robots()
-        idle_robots = [robot["robot_id"] for robot in active_robots if robot.get("status") == "IDLE"]
+        idle_robots = []
+        for robot in active_robots:
+            status = str(robot.get("status") or "").upper()
+            if status in {"IDLE", "ACTIVE", "READY"}:
+                robot_id = robot.get("robot_id") or robot.get("id")
+                if robot_id:
+                    idle_robots.append(robot_id)
         assigned_tasks: List[Dict[str, Any]] = []
 
         pending_tasks = [task for task in self.queue if task.status == "pending"]

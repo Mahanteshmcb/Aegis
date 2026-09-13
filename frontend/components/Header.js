@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { getAuthToken, clearAuthToken } from '../utils/auth';
 import { getSystemHealthStatus } from '../utils/api';
@@ -63,8 +64,8 @@ export default function Header() {
       <div className="aegis-header-session flex items-center gap-4 shrink-0">
         {!isLoggedIn ? (
           <div className="flex items-center gap-3">
-            <a href="/login" className="text-sm text-aegis-muted hover:text-aegis-primary transition-colors">Login</a>
-            <a href="/signup" className="text-sm text-aegis-muted hover:text-aegis-primary transition-colors">Sign Up</a>
+            <Link href="/login" className="text-sm text-aegis-muted hover:text-aegis-primary transition-colors">Login</Link>
+            <Link href="/signup" className="text-sm text-aegis-muted hover:text-aegis-primary transition-colors">Sign Up</Link>
           </div>
         ) : (
           <>

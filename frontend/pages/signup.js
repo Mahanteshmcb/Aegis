@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { registerAPI } from '../utils/api';
 import { getAuthToken } from '../utils/auth';
@@ -89,7 +90,7 @@ export default function Signup() {
             Only authorized operator registrations are permitted. Your session is recorded for audit.
           </div>
           <div className="mt-4 text-sm text-center">
-            <a href="/login" className="text-aegis-primary hover:text-violet-300 transition-colors">Already have an account? Login</a>
+            <Link href="/login" className="text-aegis-primary hover:text-violet-300 transition-colors">Already have an account? Login</Link>
           </div>
         </div>
       </div>

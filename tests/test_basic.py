@@ -5,6 +5,30 @@ def test_backend_health():
     # Placeholder test
     assert True
 
+
+def test_login_creates_audit_log(client):
+    email = "auditlogin@example.com"
+    password = "auditpass"
+    tenant_name = "Audit Login Tenant"
+
+    client.post("/api/v1/tenants", json={"name": tenant_name})
+    client.post("/api/v1/auth/register", json={
+        "email": email,
+        "password": password,
+        "tenant_id": 1,
+        "role": "admin",
+    })
+
+    login_resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert login_resp.status_code == 200, login_resp.text
+    token = login_resp.json()["access_token"]
+
+    audit_resp = client.get("/api/v1/audit", headers={"Authorization": f"Bearer {token}"})
+    assert audit_resp.status_code == 200, audit_resp.text
+    logs = audit_resp.json()
+    assert any(log.get("event_type") in {"login_success", "user_login", "auth_login"} for log in logs)
+
+
 def auth_headers(client, email="user@example.com", password="testpass", tenant_name="Test Tenant"):
     # Register tenant
     client.post("/api/v1/tenants", json={"name": tenant_name})

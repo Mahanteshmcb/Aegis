@@ -17,16 +17,17 @@ def setup_tenant_and_admin(test_db):
 
 def test_admin_create_list_update_delete(client, test_db):
     db, tenant, admin = setup_tenant_and_admin(test_db)
+    headers = {"Authorization": "Bearer test-token"}
 
     # Create a new operator user via admin endpoint
     payload = {"email": "operator1@example.com", "password": "opPass123", "role": "operator"}
-    r = client.post(f"{BASE}/auth/users", json=payload)
+    r = client.post(f"{BASE}/auth/users", json=payload, headers=headers)
     assert r.status_code == 200, r.text
     data = r.json()
     assert "email" in data and data["email"] == payload["email"]
 
     # List users as admin
-    r2 = client.get(f"{BASE}/users")
+    r2 = client.get(f"{BASE}/users", headers=headers)
     assert r2.status_code == 200
     users = r2.json()
     assert any(u["email"] == payload["email"] for u in users)
@@ -36,17 +37,17 @@ def test_admin_create_list_update_delete(client, test_db):
     user_id = created["id"]
 
     # Update role to admin
-    r3 = client.put(f"{BASE}/users/{user_id}/role", json={"role": "admin"})
+    r3 = client.put(f"{BASE}/users/{user_id}/role", json={"role": "admin"}, headers=headers)
     assert r3.status_code == 200
     resp = r3.json()
     assert resp["role"] == "admin"
 
     # Prevent self-demotion: attempt to demote admin (id 1) to operator
-    r4 = client.put(f"{BASE}/users/{admin.id}/role", json={"role": "viewer"})
+    r4 = client.put(f"{BASE}/users/{admin.id}/role", json={"role": "viewer"}, headers=headers)
     assert r4.status_code == 400
 
     # Delete the newly created user
-    r5 = client.delete(f"{BASE}/users/{user_id}")
+    r5 = client.delete(f"{BASE}/users/{user_id}", headers=headers)
     assert r5.status_code == 200
     assert "deleted" in r5.json().get("message", "").lower()
 

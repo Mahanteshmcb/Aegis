@@ -16,12 +16,13 @@ def setup_tenant_and_admin(test_db):
 
 def test_audit_export(client, test_db):
     db, tenant, admin = setup_tenant_and_admin(test_db)
+    headers = {"Authorization": "Bearer test-token"}
 
     # create a few audit logs
     for i in range(3):
         create_audit_log_with_transaction(db, event_type="user_created", data_hash=f"h{i}", tenant_id=tenant.id)
 
-    r = client.get(f"{BASE}/audit/export")
+    r = client.get(f"{BASE}/audit/export", headers=headers)
     assert r.status_code == 200
     text = r.text
     assert "event_type" in text or "user_created" in text

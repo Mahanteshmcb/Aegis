@@ -82,27 +82,38 @@ def _ensure_audit_log_tenant_column_sqlite() -> None:
 def _seed_default_tenant_and_sample_data() -> None:
     """Seed a default tenant, admin user, sample zone, and sample sensor."""
     with engine.begin() as conn:
-        result = conn.execute(text("SELECT COUNT(*) FROM tenants"))
-        if result.scalar_one() == 0:
-            now = datetime.utcnow().isoformat(sep=' ')
-            conn.execute(
-                text(
-                    "INSERT INTO tenants (name, settings, created_at, updated_at) VALUES (:name, :settings, :created_at, :updated_at)"
-                ),
-                {
-                    "name": "Aegis Tenant",
-                    "settings": "{}",
-                    "created_at": now,
-                    "updated_at": now,
-                },
-            )
-
-        tenant_id = conn.execute(
+        tenant_row = conn.execute(
             text("SELECT id FROM tenants WHERE name = :name"),
             {"name": "Aegis Tenant"},
-        ).scalar_one()
+        ).fetchone()
 
-        # Ensure a default admin user exists for tank setup/login.
+        if tenant_row is None:
+            existing_tenant = conn.execute(
+                text("SELECT id FROM tenants ORDER BY id LIMIT 1")
+            ).fetchone()
+            if existing_tenant is not None:
+                tenant_id = existing_tenant[0]
+            else:
+                now = datetime.utcnow().isoformat(sep=' ')
+                conn.execute(
+                    text(
+                        "INSERT INTO tenants (name, settings, created_at, updated_at) VALUES (:name, :settings, :created_at, :updated_at)"
+                    ),
+                    {
+                        "name": "Aegis Tenant",
+                        "settings": "{}",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+                tenant_id = conn.execute(
+                    text("SELECT id FROM tenants WHERE name = :name"),
+                    {"name": "Aegis Tenant"},
+                ).scalar_one()
+        else:
+            tenant_id = tenant_row[0]
+
+        # Ensure a default admin user exists for login and setup.
         admin_email = "admin@aegis.com"
         legacy_admin_email = "admin@aegis.local"
 
@@ -138,7 +149,7 @@ def _seed_default_tenant_and_sample_data() -> None:
             admin_password = bcrypt.hash("admin1234")
             conn.execute(
                 text(
-                    "UPDATE users SET email = :email, hashed_password = :hashed_password, role = :role, updated_at = :updated_at "
+                    "UPDATE users SET email = :email, hashed_password = :hashed_password, role = :role, tenant_id = :tenant_id, updated_at = :updated_at "
                     "WHERE id = :id"
                 ),
                 {
@@ -146,6 +157,7 @@ def _seed_default_tenant_and_sample_data() -> None:
                     "email": admin_email,
                     "hashed_password": admin_password,
                     "role": "admin",
+                    "tenant_id": tenant_id,
                     "updated_at": now,
                 },
             )

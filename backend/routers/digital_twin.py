@@ -95,6 +95,23 @@ def twin_health(current_user=Depends(get_current_user)) -> dict:
             if (device.state or {}).get("reading_status") in {"warning", "critical"}
         ]
         health = 100 if not devices else round((len(online) / len(devices)) * 100)
+        recommendations = digital_twin.build_predictive_recommendations(devices)
+        optimization = digital_twin.build_optimization_recommendations(devices)
+        adaptation = digital_twin.build_adaptation_recommendations(devices)
+        recommendation_summary = digital_twin.build_recommendation_summary(recommendations, optimization, adaptation)
+        alert_summary = digital_twin.build_alert_summary(devices)
+        stability = digital_twin.build_stability_summary(devices)
+        workflow = digital_twin.build_workflow_summary(
+            recommendations,
+            optimization,
+            adaptation,
+            health_score=health,
+            alert_summary=alert_summary,
+            stability=stability,
+        )
+        api_status = digital_twin.build_api_status(health, devices, alert_summary)
+        session = digital_twin.build_session_summary(tenant_id=_tenant_id(current_user), active=True)
+        interaction_summary = digital_twin.build_interaction_summary(devices)
         return {
             "status": "healthy" if health >= 80 else "degraded" if health >= 50 else "critical",
             "health_score": health,
@@ -104,6 +121,16 @@ def twin_health(current_user=Depends(get_current_user)) -> dict:
             "actuators": len(actuators),
             "active_actuators": sum(1 for device in actuators if (device.state or {}).get("output") == "active"),
             "alerts": len(alerts),
+            "recommendations": recommendations,
+            "optimization": optimization,
+            "adaptation": adaptation,
+            "recommendation_summary": recommendation_summary,
+            "alert_summary": alert_summary,
+            "stability": stability,
+            "workflow": workflow,
+            "api_status": api_status,
+            "session": session,
+            "interaction_summary": interaction_summary,
         }
 
 

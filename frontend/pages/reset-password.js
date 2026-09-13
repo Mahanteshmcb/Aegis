@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Link from 'next/link';
 import { resetPasswordAPI } from '../utils/api';
 
 export default function ResetPassword() {
@@ -59,7 +60,7 @@ export default function ResetPassword() {
             If your address exists, reset instructions will be issued securely.
           </div>
           <div className="mt-4 text-sm text-center">
-            <a href="/login" className="text-aegis-primary hover:text-violet-300 transition-colors">Back to Login</a>
+            <Link href="/login" className="text-aegis-primary hover:text-violet-300 transition-colors">Back to Login</Link>
           </div>
         </div>
       </div>

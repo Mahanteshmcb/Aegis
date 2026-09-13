@@ -16,6 +16,7 @@ def setup_tenant_and_admin(test_db):
 
 def test_session_list_and_revoke(client, test_db):
     db, tenant, admin = setup_tenant_and_admin(test_db)
+    headers = {"Authorization": "Bearer test-token"}
 
     # Perform login to create a session record
     login_payload = {"email": admin.email, "password": "admin1234"}
@@ -26,7 +27,7 @@ def test_session_list_and_revoke(client, test_db):
     assert access
 
     # List sessions (admin)
-    r2 = client.get(f"{BASE}/sessions")
+    r2 = client.get(f"{BASE}/sessions", headers=headers)
     assert r2.status_code == 200
     sessions = r2.json()
     assert isinstance(sessions, list)
@@ -34,7 +35,7 @@ def test_session_list_and_revoke(client, test_db):
 
     # Revoke first session
     sid = sessions[0]["id"]
-    r3 = client.post(f"{BASE}/sessions/{sid}/revoke")
+    r3 = client.post(f"{BASE}/sessions/{sid}/revoke", headers=headers)
     assert r3.status_code == 200
     assert r3.json().get("message") == "Session revoked"
 
