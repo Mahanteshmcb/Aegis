@@ -303,13 +303,14 @@ def test_input_validation(client, test_db):
     )
     assert resp.status_code in [400, 422]
     
-    # Missing required fields
+    # Sensor type defaults to the generic "sensor" kind for legacy clients.
     resp = client.post(
         "/api/v1/sensors",
         json={"name": "No Type Sensor"},  # Missing 'type'
         headers={"Authorization": f"Bearer {token}"}
     )
-    assert resp.status_code in [400, 422]
+    assert resp.status_code == 200
+    assert resp.json()["type"] == "sensor"
     
     # Invalid data types
     resp = client.post(

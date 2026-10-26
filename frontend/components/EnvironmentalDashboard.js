@@ -9,20 +9,20 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
  * Living Quarters Environmental Control Dashboard
  * Temperature, humidity, air quality, HVAC status, comfort management
  */
-export default function EnvironmentalDashboard({ zoneId }) {
+export default function EnvironmentalDashboard({ zoneId, token }) {
   const [currentEnv, setCurrentEnv] = useState(null);
   const [airQuality, setAirQuality] = useState(null);
   const [setpoint, setSetpoint] = useState(22);
   const [selectedScene, setSelectedScene] = useState('home');
   const [trendData, setTrendData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [updatingControl, setUpdatingControl] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!zoneId) return;
 
     const fetchData = async () => {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('aegis_token') : null;
       if (!token) {
         setError('Authentication token missing');
         setLoading(false);
@@ -31,37 +31,26 @@ export default function EnvironmentalDashboard({ zoneId }) {
 
       try {
         setLoading(true);
-
-        const envResponse = await fetch(`${API_URL}/api/v1/environmental/zones/${zoneId}/current`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!envResponse.ok) throw new Error('Failed to load current environmental state');
-        const envData = await envResponse.json();
+        const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+        const envResponse = await fetch(`${API_URL}/api/v1/environmental/zones/${zoneId}/current`, { headers });
+        if (!envResponse.ok) {
+          const body = await envResponse.json().catch(() => ({}));
+          throw new Error(body.detail || 'Failed to load current environmental state');
+        }
+        const [aqResponse, trendResponse] = await Promise.all([
+          fetch(`${API_URL}/api/v1/environmental/zones/${zoneId}/air-quality/current`, { headers }),
+          fetch(`${API_URL}/api/v1/environmental/zones/${zoneId}/air-quality/24h`, { headers }).catch(() => null),
+        ]);
+        if (!aqResponse.ok) {
+          const body = await aqResponse.json().catch(() => ({}));
+          throw new Error(body.detail || 'No current air-quality reading is available for this zone.');
+        }
+        const [envData, aqData] = await Promise.all([envResponse.json(), aqResponse.json()]);
         setCurrentEnv(envData);
-        setSetpoint(envData.setpoint || 22);
-
-        const aqResponse = await fetch(`${API_URL}/api/v1/environmental/zones/${zoneId}/air-quality/current`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!aqResponse.ok) throw new Error('Failed to load air quality');
-        const aqData = await aqResponse.json();
+        setSetpoint(envData.setpoint ?? 22);
         setAirQuality(aqData);
-
-        const trendResponse = await fetch(`${API_URL}/api/v1/environmental/zones/${zoneId}/air-quality/24h`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!trendResponse.ok) throw new Error('Failed to load air quality history');
-        const trendResult = await trendResponse.json();
-        setTrendData(trendResult.data || []);
+        const trendResult = trendResponse?.ok ? await trendResponse.json().catch(() => ({})) : {};
+        setTrendData(Array.isArray(trendResult.data) ? trendResult.data : []);
 
         setError(null);
       } catch (err) {
@@ -75,10 +64,9 @@ export default function EnvironmentalDashboard({ zoneId }) {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [zoneId]);
+  }, [zoneId, token]);
 
   const getAuthHeaders = () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('aegis_token') : null;
     return {
       Authorization: token ? `Bearer ${token}` : undefined,
       'Content-Type': 'application/json',
@@ -86,8 +74,10 @@ export default function EnvironmentalDashboard({ zoneId }) {
   };
 
   const handleSetpointChange = async (newSetpoint) => {
-    if (!zoneId) return;
+    if (!zoneId || !Number.isFinite(newSetpoint) || newSetpoint < 16 || newSetpoint > 28 || updatingControl) return;
+    const previousSetpoint = currentEnv?.setpoint ?? setpoint;
     setSetpoint(newSetpoint);
+    setUpdatingControl(true);
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('aegis_token') : null;
       if (!token) return;
@@ -101,17 +91,44 @@ export default function EnvironmentalDashboard({ zoneId }) {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update setpoint');
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || 'Failed to update setpoint');
       }
+      setError(null);
     } catch (err) {
-      console.error('Failed to update setpoint:', err);
-      setSetpoint(currentEnv?.setpoint || 22);
+      setError(err.message || 'Failed to update setpoint');
+      setSetpoint(previousSetpoint);
+    } finally {
+      setUpdatingControl(false);
+    }
+  };
+
+  const handleModeChange = async (mode) => {
+    if (!zoneId || updatingControl) return;
+    const previousMode = currentEnv?.hvac_mode;
+    setUpdatingControl(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/environmental/zones/${zoneId}/hvac-mode`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ mode }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || 'Failed to update HVAC mode');
+      setCurrentEnv((previous) => previous ? { ...previous, hvac_mode: result.mode || mode } : previous);
+    } catch (err) {
+      setError(err.message || 'Failed to update HVAC mode');
+      setCurrentEnv((previous) => previous ? { ...previous, hvac_mode: previousMode } : previous);
+    } finally {
+      setUpdatingControl(false);
     }
   };
 
   const handleSceneChange = async (scene) => {
-    if (!zoneId) return;
-    setSelectedScene(scene);
+    if (!zoneId || updatingControl) return;
+    setUpdatingControl(true);
+    setError(null);
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('aegis_token') : null;
       if (!token) return;
@@ -124,16 +141,24 @@ export default function EnvironmentalDashboard({ zoneId }) {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to activate scene');
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || 'Failed to activate scene');
       }
+      const result = await response.json();
+      setSelectedScene(scene);
+      setSetpoint(result.setpoint ?? setpoint);
+      setCurrentEnv((previous) => previous ? { ...previous, setpoint: result.setpoint ?? previous.setpoint } : previous);
+      setError(null);
     } catch (err) {
-      console.error('Failed to activate scene:', err);
+      setError(err.message || 'Failed to activate scene');
+    } finally {
+      setUpdatingControl(false);
     }
   };
 
   if (loading) return <div className="p-8 text-center">Loading environmental data...</div>;
   if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
-  if (!currentEnv || !airQuality) return <div className="p-8 text-center">No data available</div>;
+  if (!currentEnv || !airQuality) return <div role="status" className="p-8 text-center">No current climate and air-quality readings are available for this zone.</div>;
 
   // Determine status colors
   const getTempStatus = () => {
@@ -155,7 +180,8 @@ export default function EnvironmentalDashboard({ zoneId }) {
   };
 
   return (
-    <div className="space-y-6 p-6 bg-gradient-to-br from-blue-50 to-indigo-50">
+    <div className="space-y-6 p-6 br-linear-to-br from-blue-50 to-indigo-50">
+      {error && <div role="alert" className="rounded border border-red-700 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-4xl font-bold text-gray-800">Climate Control</h1>
         <div className="flex items-center space-x-4">
@@ -191,7 +217,12 @@ export default function EnvironmentalDashboard({ zoneId }) {
               <input
                 type="number"
                 value={setpoint}
-                onChange={(e) => handleSetpointChange(parseFloat(e.target.value))}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (e.target.value !== '' && Number.isFinite(value) && value >= 16 && value <= 28) setSetpoint(value);
+                }}
+                onBlur={() => handleSetpointChange(setpoint)}
+                disabled={updatingControl}
                 className="w-24 text-center text-2xl font-bold border-2 border-blue-500 py-2"
                 min="16"
                 max="28"
@@ -210,7 +241,10 @@ export default function EnvironmentalDashboard({ zoneId }) {
               max="28"
               step="0.5"
               value={setpoint}
-              onChange={(e) => handleSetpointChange(parseFloat(e.target.value))}
+              onChange={(e) => setSetpoint(parseFloat(e.target.value))}
+              onMouseUp={() => handleSetpointChange(setpoint)}
+              onTouchEnd={() => handleSetpointChange(setpoint)}
+              disabled={updatingControl}
               className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer"
             />
             <p className="text-xs text-gray-600 mt-2 text-center">16°C — 28°C</p>
@@ -230,7 +264,9 @@ export default function EnvironmentalDashboard({ zoneId }) {
           </div>
           <div className="text-center">
             <p className="text-gray-600 text-sm">Mode</p>
-            <p className="text-xl font-bold text-purple-600">{currentEnv.hvac_mode.toUpperCase()}</p>
+            <select aria-label="HVAC mode" value={currentEnv.hvac_mode || 'auto'} onChange={(event) => handleModeChange(event.target.value)} disabled={updatingControl} className="mt-1 rounded border border-gray-300 bg-white px-2 py-1 text-sm font-bold text-purple-700 disabled:opacity-50">
+              {['auto', 'heat', 'cool', 'off'].map((mode) => <option key={mode} value={mode}>{mode.toUpperCase()}</option>)}
+            </select>
           </div>
         </div>
       </Card>
@@ -238,7 +274,7 @@ export default function EnvironmentalDashboard({ zoneId }) {
       {/* Comfort Scenes */}
       <Card className="bg-white shadow-lg">
         <h2 className="text-xl font-bold mb-4">Quick Scenes</h2>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {[
             { name: 'home', label: '🏠 Home', setpoint: 22 },
             { name: 'away', label: '🚗 Away', setpoint: 26 },
@@ -248,6 +284,7 @@ export default function EnvironmentalDashboard({ zoneId }) {
             <button
               key={scene.name}
               onClick={() => handleSceneChange(scene.name)}
+              disabled={updatingControl}
               className={`p-4 rounded-lg font-semibold transition ${
                 selectedScene === scene.name
                   ? 'bg-blue-600 text-white shadow-lg'
@@ -320,7 +357,7 @@ export default function EnvironmentalDashboard({ zoneId }) {
             <p className="text-3xl font-bold text-blue-600 mb-2">
               {airQuality.pm25 ? airQuality.pm25.value.toFixed(0) : 'N/A'} µg/m³
             </p>
-            <p className="text-xs text-green-600">✓ Air purifier: Off</p>
+            <p className="text-xs text-gray-600">Status: {airQuality.pm25?.status || 'Not reported'}</p>
           </div>
         </Card>
 
@@ -331,7 +368,7 @@ export default function EnvironmentalDashboard({ zoneId }) {
             <p className="text-3xl font-bold text-green-600 mb-2">
               {airQuality.voc ? airQuality.voc.ppb.toFixed(0) : 'N/A'} ppb
             </p>
-            <p className="text-xs text-green-600">✓ Safe level</p>
+            <p className="text-xs text-gray-600">Status: {airQuality.voc?.status || 'Not classified'}</p>
           </div>
         </Card>
       </div>

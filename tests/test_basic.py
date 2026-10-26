@@ -1,4 +1,5 @@
 import pytest
+from backend.models_db import AuditLog, Session as UserSession
 
 
 def test_backend_health():
@@ -29,6 +30,39 @@ def test_login_creates_audit_log(client):
     assert any(log.get("event_type") in {"login_success", "user_login", "auth_login"} for log in logs)
 
 
+def test_logout_revokes_session_and_records_session_duration(client, test_db):
+    email = "logout-audit@example.com"
+    password = "auditpass"
+    tenant_response = client.post("/api/v1/tenants", json={"name": "Logout Audit Tenant"})
+    tenant_id = tenant_response.json()["id"]
+    register_response = client.post("/api/v1/auth/register", json={
+        "email": email,
+        "password": password,
+        "tenant_id": tenant_id,
+        "role": "admin",
+    })
+    assert register_response.status_code == 200
+
+    login_response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    logout_response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+
+    assert logout_response.status_code == 200
+    assert logout_response.json()["session_duration_seconds"] >= 0
+    db = test_db()
+    try:
+        session = db.query(UserSession).filter_by(user_id=register_response.json()["id"]).one()
+        audit = db.query(AuditLog).filter_by(event_type="user_logout", actor_user_id=session.user_id).one()
+        assert session.revoked is True
+        assert audit.actor_email == email
+        assert audit.entity_type == "session"
+        assert audit.outcome == "success"
+        assert audit.details["session_duration_seconds"] >= 0
+    finally:
+        db.close()
+
+
 def auth_headers(client, email="user@example.com", password="testpass", tenant_name="Test Tenant"):
     # Register tenant
     client.post("/api/v1/tenants", json={"name": tenant_name})
@@ -47,7 +81,7 @@ def auth_headers(client, email="user@example.com", password="testpass", tenant_n
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
-def test_create_zone(client):
+def test_create_zone(client, test_db):
     headers = auth_headers(client)
     zone_data = {
         "name": "Zone 1",
@@ -60,6 +94,19 @@ def test_create_zone(client):
     data = response.json()
     assert data["name"] == zone_data["name"]
     assert data["tenant_id"] == zone_data["tenant_id"]
+
+    update_response = client.put(f"/api/v1/zones/{data['id']}", json={"name": "Updated Zone"}, headers=headers)
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "Updated Zone"
+
+    delete_response = client.delete(f"/api/v1/zones/{data['id']}", headers=headers)
+    assert delete_response.status_code == 200
+    db = test_db()
+    try:
+        zone_logs = db.query(AuditLog).filter(AuditLog.entity_type == "zone", AuditLog.entity_id == str(data["id"])).all()
+        assert {log.event_type for log in zone_logs} >= {"zone_created", "zone_updated", "zone_deleted"}
+    finally:
+        db.close()
 
 def test_create_and_get_sensor(client):
     headers = auth_headers(client)

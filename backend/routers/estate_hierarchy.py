@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.dependencies import get_current_user, get_db
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models.estate_hierarchy import Estate, EstateNode
 
 router = APIRouter(prefix="/api/v1/estate-layout", tags=["estate-layout"])
@@ -24,6 +26,13 @@ THREE_ACRE_TEMPLATE = [
     ("zone", "Grains and Rice", None, {"x": 28, "y": 0, "z": 5}, {"x": 42, "y": 0.3, "z": 35}),
     ("zone", "Residential Estate", None, {"x": 25, "y": 0, "z": 30}, {"x": 45, "y": 5, "z": 18}),
 ]
+
+
+def _record_estate_layout_action(db, actor, event_type: str, entity_type: str, entity_id, details: dict):
+    return record_actor_audit_event(
+        db, tenant_id_for(actor), actor, event_type, entity_type, entity_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 class EstateCreate(BaseModel):
@@ -67,7 +76,11 @@ def list_estates(current_user=Depends(get_current_user), db=Depends(get_db)) -> 
 def create_estate(schema: EstateCreate, current_user=Depends(get_current_user), db=Depends(get_db)) -> dict:
     estate = Estate(tenant_id=tenant_id_for(current_user), **schema.dict())
     db.add(estate)
-    db.commit()
+    db.flush()
+    _record_estate_layout_action(
+        db, current_user, "estate_created", "estate", estate.id,
+        {"name": estate.name, "description": estate.description, "layout": estate.layout or {}},
+    )
     db.refresh(estate)
     return estate_dict(estate)
 
@@ -115,7 +128,11 @@ def create_three_acre_template(current_user=Depends(get_current_user), db=Depend
             estate_id=estate.id, parent_id=building.id, node_type="room",
             name=name, position=position, dimensions=dimensions,
         ))
-    db.commit()
+    _record_estate_layout_action(
+        db, current_user, "estate_template_created", "estate", estate.id,
+        {"name": estate.name, "node_count": len(THREE_ACRE_TEMPLATE) + 4,
+         "layout": estate.layout},
+    )
     return get_estate_tree(estate.id, current_user, db)
 
 
@@ -155,6 +172,11 @@ def create_estate_node(estate_id: int, schema: NodeCreate, current_user=Depends(
         node_metadata=schema.metadata,
     )
     db.add(node)
-    db.commit()
+    db.flush()
+    _record_estate_layout_action(
+        db, current_user, "estate_node_created", "estate_node", node.id,
+        {"estate_id": estate.id, "parent_id": node.parent_id, "node_type": node.node_type,
+         "name": node.name, "position": node.position or {}, "dimensions": node.dimensions or {}},
+    )
     db.refresh(node)
     return node_dict(node)

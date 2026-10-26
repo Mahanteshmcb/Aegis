@@ -1,18 +1,27 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+"""Compatibility layer for older imports that expect a database module.
 
-from .config import settings
+The canonical SQLAlchemy registry lives in backend.database. This module does not
+recreate its own engine or metadata; it delegates attribute access to the
+canonical module so all services share one DB source of truth.
+"""
+
+from __future__ import annotations
+
+import backend.database as _database
 
 
-engine = create_engine(settings.database_url, connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+def __getattr__(name):
+    if hasattr(_database, name):
+        return getattr(_database, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_db():
-    db = SessionLocal()
+    db = _database.SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+__all__ = ["Base", "SessionLocal", "engine", "get_db"]

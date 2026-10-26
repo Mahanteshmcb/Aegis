@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import useCurrentUser from '../hooks/useCurrentUser';
 import ConfirmModal from '../components/ConfirmModal';
@@ -7,37 +7,32 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export default function SensorsPage() {
   const router = useRouter();
-  const { user, loading } = useCurrentUser();
+  const { user, loading, token } = useCurrentUser();
   const [sensors, setSensors] = useState([]);
+  const [zones, setZones] = useState([]);
   const [loadingSensors, setLoadingSensors] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [editingSensorId, setEditingSensorId] = useState(null);
-  const [editSensorData, setEditSensorData] = useState({ location: '', name: '' });
+  const [editSensorData, setEditSensorData] = useState({ name: '', zone_id: '', value: '' });
   const [confirmDeleteSensorId, setConfirmDeleteSensorId] = useState(null);
   const [confirmDeleteSensorName, setConfirmDeleteSensorName] = useState('');
 
-  useEffect(() => {
-    if (!loading && user) {
-      fetchSensors();
+  const fetchSensors = useCallback(async () => {
+    if (!token) {
+      router.push('/login');
+      return;
     }
-  }, [user, loading]);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(fetchSensors, 5000);
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
-
-  async function fetchSensors() {
     try {
       setLoadingSensors(true);
-      const token = localStorage.getItem('aegis_token');
-      const resp = await fetch(`${API_URL}/api/v1/sensors`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const [resp, zonesResp] = await Promise.all([
+        fetch(`${API_URL}/api/v1/digital-twin/devices`, { headers }),
+        fetch(`${API_URL}/api/v1/zones`, { headers }).catch(() => null),
+      ]);
 
       if (resp.status === 401) {
         router.push('/login');
@@ -49,7 +44,24 @@ export default function SensorsPage() {
       }
 
       const data = await resp.json();
-      setSensors(Array.isArray(data) ? data : []);
+      const zoneData = zonesResp?.ok ? await zonesResp.json().catch(() => []) : [];
+      setZones(Array.isArray(zoneData) ? zoneData : []);
+      const zoneNames = new Map((Array.isArray(zoneData) ? zoneData : []).map((zone) => [String(zone.id), zone.name]));
+      const twinSensors = (Array.isArray(data) ? data : [])
+        .filter((device) => device.kind === 'sensor')
+        .map((device) => ({
+          ...device,
+          id: device.id ?? device.device_id,
+          twin_id: device.device_id,
+          name: device.name,
+          type: device.device_type,
+          location: zoneNames.get(String(device.zone_id)) || 'Unassigned',
+          value: device.state?.value,
+          unit: device.state?.unit,
+          reading_status: device.state?.reading_status,
+          last_reading: device.last_updated,
+        }));
+      setSensors(twinSensors);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -57,7 +69,19 @@ export default function SensorsPage() {
     } finally {
       setLoadingSensors(false);
     }
-  }
+  }, [router, token]);
+
+  useEffect(() => {
+    if (!loading && user) {
+      fetchSensors();
+    }
+  }, [user, loading, fetchSensors]);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    const interval = setInterval(fetchSensors, 15000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetchSensors]);
 
   function openDeleteSensorConfirm(sensor) {
     setConfirmDeleteSensorId(sensor.id);
@@ -71,31 +95,51 @@ export default function SensorsPage() {
 
   async function handleSaveSensor(sensorId) {
     if (!sensorId) return;
+    if (!editSensorData.name.trim()) {
+      setError('Sensor name is required.');
+      return;
+    }
+    const selectedSensor = sensors.find((sensor) => String(sensor.id) === String(sensorId));
+    const nextState = { ...(selectedSensor?.state || {}) };
+    if (editSensorData.value !== '') {
+      const reading = Number(editSensorData.value);
+      if (!Number.isFinite(reading)) {
+        setError('Sensor reading must be a valid number.');
+        return;
+      }
+      nextState.value = reading;
+    }
     try {
-      const token = localStorage.getItem('aegis_token');
-      const resp = await fetch(`${API_URL}/api/v1/sensors/${sensorId}`, {
+      setIsSubmitting(true);
+      const resp = await fetch(`${API_URL}/api/v1/digital-twin/devices/${sensorId}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(editSensorData),
+        body: JSON.stringify({
+          name: editSensorData.name.trim(),
+          zone_id: editSensorData.zone_id === '' ? null : Number(editSensorData.zone_id),
+          state: nextState,
+        }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.detail || 'Failed to update sensor');
       }
-      console.log('Sensor updated successfully');
       setEditingSensorId(null);
-      fetchSensors();
+      setError(null);
+      await fetchSensors();
     } catch (err) {
       setError(err.message);
       console.error('Error updating sensor:', err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   async function handleConfirmDeleteSensor() {
     if (!confirmDeleteSensorId) return;
     try {
-      const token = localStorage.getItem('aegis_token');
-      const resp = await fetch(`${API_URL}/api/v1/sensors/${confirmDeleteSensorId}`, {
+      setIsSubmitting(true);
+      const resp = await fetch(`${API_URL}/api/v1/digital-twin/devices/${confirmDeleteSensorId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -103,27 +147,30 @@ export default function SensorsPage() {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.detail || 'Failed to delete sensor');
       }
-      console.log('Sensor deleted successfully');
       setConfirmDeleteSensorId(null);
       setConfirmDeleteSensorName('');
-      fetchSensors();
+      await fetchSensors();
     } catch (err) {
       setError(err.message);
       console.error('Error deleting sensor:', err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   const filteredSensors = sensors.filter((sensor) => {
     const searchText = searchTerm.toLowerCase();
-    const matchesSearch = (sensor.location || '').toLowerCase().includes(searchText) ||
+    const matchesSearch = (sensor.name || '').toLowerCase().includes(searchText) ||
+      (sensor.location || '').toLowerCase().includes(searchText) ||
       (sensor.type || '').toLowerCase().includes(searchText) ||
-      (sensor.id?.toString() || '').includes(searchText);
+      (sensor.id?.toString() || '').includes(searchText) ||
+      (sensor.twin_id || '').toLowerCase().includes(searchText);
     const matchesType = filterType === 'all' || (sensor.type || '').toLowerCase() === filterType.toLowerCase();
     return matchesSearch && matchesType;
   });
 
   const sensorTypes = ['all', ...new Set(sensors.map((s) => s.type).filter(Boolean))];
-  const onlineSensors = sensors.filter((s) => s.status !== 'offline').length;
+  const onlineSensors = sensors.filter((sensor) => String(sensor.status || '').toLowerCase() === 'online').length;
 
   return (
     <div className="min-h-[calc(100vh-4rem)] space-y-8">
@@ -132,8 +179,8 @@ export default function SensorsPage() {
           <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Sensor Fleet</h1>
           <p className="text-aegis-muted">Monitor and manage connected IoT devices.</p>
         </div>
-        <button onClick={fetchSensors} className="px-5 py-3 rounded-2xl bg-aegis-primary text-white font-semibold hover:bg-sky-400 transition-all">
-          Refresh
+        <button onClick={fetchSensors} disabled={loadingSensors} className="px-5 py-3 rounded-2xl bg-aegis-primary text-white font-semibold hover:bg-sky-400 transition-all disabled:opacity-50">
+          {loadingSensors ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
@@ -147,7 +194,7 @@ export default function SensorsPage() {
           <p className="text-3xl font-bold text-green-400 mt-3">{onlineSensors}</p>
         </div>
         <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-6">
-          <p className="text-xs uppercase tracking-[0.3em] text-red-400">Offline</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-red-400">Not online</p>
           <p className="text-3xl font-bold text-red-400 mt-3">{sensors.length - onlineSensors}</p>
         </div>
         <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-6">
@@ -204,23 +251,33 @@ export default function SensorsPage() {
                     </td>
                     <td className="px-6 py-4 text-slate-400">{sensor.type || 'Unknown'}</td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${sensor.status === 'offline' ? 'bg-red-900/30 text-red-400' : 'bg-green-900/30 text-green-400'}`}>
-                        <span className={`h-2.5 w-2.5 rounded-full ${sensor.status === 'offline' ? 'bg-red-400' : 'bg-green-400'}`} />
-                        {sensor.status === 'offline' ? 'Offline' : 'Online'}
+                      <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${sensor.status === 'online' ? 'bg-green-900/30 text-green-400' : sensor.status === 'offline' ? 'bg-red-900/30 text-red-400' : 'bg-slate-800 text-slate-300'}`}>
+                        <span className={`h-2.5 w-2.5 rounded-full ${sensor.status === 'online' ? 'bg-green-400' : sensor.status === 'offline' ? 'bg-red-400' : 'bg-slate-400'}`} />
+                        {sensor.status || 'Unknown'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-slate-400 text-xs">{sensor.last_reading ? new Date(sensor.last_reading).toLocaleString() : 'N/A'}</td>
-                    <td className="px-6 py-4 text-slate-500 font-mono text-xs">{sensor.id}</td>
+                    <td className="px-6 py-4 text-slate-400 text-xs">{sensor.value ?? 'N/A'} {sensor.unit || ''}<div className="text-[10px] text-cyan-300">{sensor.reading_status || 'No threshold status'}</div><div className="text-[10px] text-slate-500">{sensor.last_reading ? new Date(sensor.last_reading).toLocaleString() : 'No reading time'}</div></td>
+                    <td className="px-6 py-4 text-slate-500 font-mono text-xs">{sensor.twin_id || sensor.id}</td>
                     <td className="px-6 py-4">
                       {editingSensorId === sensor.id ? (
                         <div className="flex gap-2">
-                          <button onClick={() => handleSaveSensor(sensor.id)} className="rounded-xl bg-aegis-primary px-3 py-1 text-xs text-white">Save</button>
+                          <button onClick={() => handleSaveSensor(sensor.id)} disabled={isSubmitting} className="rounded-xl bg-aegis-primary px-3 py-1 text-xs text-white disabled:opacity-50">Save</button>
                           <button onClick={() => setEditingSensorId(null)} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted">Cancel</button>
                         </div>
                       ) : (
                         <div className="flex gap-2">
-                          <button onClick={() => { setEditingSensorId(sensor.id); setEditSensorData({ location: sensor.location || '', name: sensor.name || '' }); }} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted hover:border-aegis-primary hover:text-aegis-primary">Edit</button>
+                          <button onClick={() => { setEditingSensorId(sensor.id); setEditSensorData({ name: sensor.name || '', zone_id: sensor.zone_id ?? '', value: sensor.value ?? '' }); }} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted hover:border-aegis-primary hover:text-aegis-primary">Edit</button>
                           <button onClick={() => openDeleteSensorConfirm(sensor)} className="rounded-xl border border-rose-700 px-3 py-1 text-xs text-rose-400 hover:bg-rose-900/20">Delete</button>
+                        </div>
+                      )}
+                      {editingSensorId === sensor.id && (
+                        <div className="mt-2 grid gap-2">
+                          <input aria-label="Sensor name" value={editSensorData.name} onChange={(e) => setEditSensorData({ ...editSensorData, name: e.target.value })} className="w-full rounded-md bg-slate-900 px-2 py-1 text-white border border-slate-700" />
+                          <select aria-label="Sensor zone" value={editSensorData.zone_id} onChange={(e) => setEditSensorData({ ...editSensorData, zone_id: e.target.value })} className="w-full rounded-md bg-slate-900 px-2 py-1 text-white border border-slate-700">
+                            <option value="">Unassigned</option>
+                            {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
+                          </select>
+                          <input aria-label="Current sensor reading" type="number" step="any" value={editSensorData.value} onChange={(e) => setEditSensorData({ ...editSensorData, value: e.target.value })} className="w-full rounded-md bg-slate-900 px-2 py-1 text-white border border-slate-700" />
                         </div>
                       )}
                     </td>
@@ -242,7 +299,7 @@ export default function SensorsPage() {
         title="Confirm delete"
         message={`Delete ${confirmDeleteSensorName} and remove its sensor record? This action cannot be undone.`}
         confirmLabel="Delete Sensor"
-        loading={false}
+        loading={isSubmitting}
         onConfirm={handleConfirmDeleteSensor}
         onCancel={closeDeleteSensorConfirm}
       />

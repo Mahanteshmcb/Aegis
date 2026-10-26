@@ -9,8 +9,18 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_current_user, get_db
 from backend import crud, schemas
 from backend import playback_engine
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 
 router = APIRouter(prefix="/api/v1/telemetry", tags=["Telemetry Playback"])
+
+
+def _record_playback_action(db: Session, actor, event_type: str, session_id: int, details: dict):
+    tenant_id = actor.tenant_id if hasattr(actor, "tenant_id") else actor["tenant_id"]
+    return record_actor_audit_event(
+        db, tenant_id, actor, event_type, "telemetry_playback", session_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 @router.post("/playbacks")
@@ -19,6 +29,12 @@ async def create_playback(payload: schemas.TelemetryPlaybackCreate, current_user
         session = crud.create_playback_session(db, current_user["tenant_id"], current_user["id"], payload.dict())
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _record_playback_action(
+        db, current_user, "telemetry_playback_created", session.id,
+        {"name": session.name, "start_time": session.start_time.isoformat(),
+         "end_time": session.end_time.isoformat(),
+         "filter_names": sorted((session.filters or {}).keys())},
+    )
     return {"status": "success", "data": {"id": session.id, "name": session.name}}
 
 
@@ -73,7 +89,12 @@ async def update_playback(session_id: int, payload: schemas.TelemetryPlaybackUpd
     session = crud.get_playback_session(db, current_user["tenant_id"], session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Playback session not found")
+    changes = payload.dict(exclude_unset=True)
     updated = crud.update_playback_session(db, session, payload.dict(exclude_unset=True))
+    _record_playback_action(
+        db, current_user, "telemetry_playback_updated", updated.id,
+        {"changed_fields": sorted(changes), "name": updated.name},
+    )
     return {
         "status": "success",
         "data": {
@@ -100,6 +121,9 @@ async def pause_playback(session_id: int, current_user=Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Playback session not found")
     playback_engine.pause_playback(session.id)
     session = crud.update_playback_status(db, session, "paused")
+    _record_playback_action(
+        db, current_user, "telemetry_playback_paused", session.id, {"status": session.status}
+    )
     return {"status": "success", "data": {"id": session.id, "status": session.status}}
 
 
@@ -110,6 +134,9 @@ async def resume_playback(session_id: int, current_user=Depends(get_current_user
         raise HTTPException(status_code=404, detail="Playback session not found")
     playback_engine.resume_playback(session.id, current_user["tenant_id"], session.start_time, session.end_time, session.playback_speed)
     session = crud.update_playback_status(db, session, "running")
+    _record_playback_action(
+        db, current_user, "telemetry_playback_resumed", session.id, {"status": session.status}
+    )
     return {"status": "success", "data": {"id": session.id, "status": session.status}}
 
 
@@ -122,6 +149,9 @@ async def start_playback(session_id: int, current_user=Depends(get_current_user)
     session = crud.update_playback_status(db, session, "running")
     # start engine
     playback_engine.start_playback(session.id, current_user["tenant_id"], session.start_time, session.end_time, session.playback_speed)
+    _record_playback_action(
+        db, current_user, "telemetry_playback_started", session.id, {"status": session.status}
+    )
     return {"status": "success", "data": {"id": session.id, "status": session.status}}
 
 
@@ -133,6 +163,9 @@ async def stop_playback(session_id: int, current_user=Depends(get_current_user),
     # stop engine and mark stopped
     playback_engine.stop_playback(session.id)
     session = crud.update_playback_status(db, session, "stopped")
+    _record_playback_action(
+        db, current_user, "telemetry_playback_stopped", session.id, {"status": session.status}
+    )
     return {"status": "success", "data": {"id": session.id, "status": session.status}}
 
 

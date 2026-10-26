@@ -104,7 +104,8 @@ class VryndaraConnector:
     def __init__(self, 
                  app_id: str = "aegis-audit-engine",
                  kernel_address: str = "localhost:50051",
-                 fallback_mode: bool = True):
+                 fallback_mode: bool = True,
+                 timeout: float = 5.0):
         """
         Initialize Vryndara connector for Aegis.
         
@@ -117,6 +118,7 @@ class VryndaraConnector:
         self.app_id = app_id
         self.kernel_address = kernel_address
         self.fallback_mode = fallback_mode
+        self.timeout = timeout
         self.is_connected = False
         
         # gRPC connection
@@ -150,7 +152,7 @@ class VryndaraConnector:
                 id=self.app_id,
                 capabilities=["audit.research", "audit.analysis", "audit.code_generation"]
             )
-            self.stub.Register(info)
+            self.stub.Register(info, timeout=self.timeout)
             self.is_connected = True
             logger.info(f"✅ Connected to Vryndara kernel at {self.kernel_address}")
         except Exception as e:
@@ -210,7 +212,7 @@ class VryndaraConnector:
             )
             
             # Send request
-            self.stub.Publish(signal)
+            self.stub.Publish(signal, timeout=min(timeout, self.timeout))
             logger.info(f"📤 Sent request to {agent_id}")
             
             # Wait for response with timeout
@@ -566,7 +568,7 @@ class VryndaraConnector:
         try:
             if VRYNDARA_AVAILABLE and hasattr(self.stub, "HealthCheck"):
                 request = vryndara_pb2.HealthCheckRequest(agent_id=self.app_id)
-                response = self.stub.HealthCheck(request)
+                response = self.stub.HealthCheck(request, timeout=self.timeout)
                 healthy = getattr(response, "healthy", True)
                 logger.info(f"✅ Vryndara kernel health: {healthy}")
                 return healthy

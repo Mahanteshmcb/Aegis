@@ -3,7 +3,11 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from backend.database import SessionLocal
+from sqlalchemy.orm import Session
+
+from backend.dependencies import get_current_user, get_db, require_permission
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend import models_scene as models
 from backend.services import scene as scene_service
 
@@ -24,18 +28,18 @@ class SceneEntityIn(BaseModel):
 class SceneEntityOut(SceneEntityIn):
     id: int
 
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def _record_scene_action(db: Session, actor, event_type: str, entity_id: int, details: dict):
+    tenant_id = actor.tenant_id if hasattr(actor, "tenant_id") else actor["tenant_id"]
+    return record_actor_audit_event(
+        db, tenant_id, actor, event_type, "scene_entity", entity_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 @router.get("/entities", response_model=List[SceneEntityOut])
-def list_entities(db=Depends(get_db)):
-    rows = db.query(models.SceneEntity).all()
+def list_entities(db=Depends(get_db), current_user=Depends(get_current_user)):
+    tenant_id = current_user.tenant_id if hasattr(current_user, "tenant_id") else current_user["tenant_id"]
+    rows = db.query(models.SceneEntity).filter(models.SceneEntity.tenant_id == tenant_id).all()
     return [
         SceneEntityOut(
             id=r.id,
@@ -53,9 +57,16 @@ def list_entities(db=Depends(get_db)):
 
 
 @router.post("/entities", response_model=SceneEntityOut)
-async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
-    # If an entity with this name exists, update it instead of creating duplicates
-    existing = db.query(models.SceneEntity).filter(models.SceneEntity.name == schema.name).first()
+async def create_entity(
+    schema: SceneEntityIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("devices.manage")),
+):
+    tenant_id = current_user.tenant_id if hasattr(current_user, "tenant_id") else current_user["tenant_id"]
+    existing = db.query(models.SceneEntity).filter(
+        models.SceneEntity.name == schema.name,
+        models.SceneEntity.tenant_id == tenant_id,
+    ).first()
     if existing:
         existing.type = schema.type
         existing.model = schema.model
@@ -65,7 +76,13 @@ async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
         existing.rotation = schema.rotation
         existing.state = schema.state or {}
         db.add(existing)
-        db.commit()
+        db.flush()
+        _record_scene_action(
+            db, current_user, "scene_entity_updated", existing.id,
+            {"name": existing.name, "type": existing.type, "model": existing.model,
+             "position": {"x": existing.x, "y": existing.y, "z": existing.z},
+             "rotation": existing.rotation, "state": existing.state or {}},
+        )
         db.refresh(existing)
         ent = existing
     else:
@@ -78,9 +95,16 @@ async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
             z=schema.z,
             rotation=schema.rotation,
             state=schema.state or {},
+            tenant_id=tenant_id,
         )
         db.add(ent)
-        db.commit()
+        db.flush()
+        _record_scene_action(
+            db, current_user, "scene_entity_created", ent.id,
+            {"name": ent.name, "type": ent.type, "model": ent.model,
+             "position": {"x": ent.x, "y": ent.y, "z": ent.z},
+             "rotation": ent.rotation, "state": ent.state or {}},
+        )
         db.refresh(ent)
     # Broadcast to realtime clients (best-effort)
     try:
@@ -111,8 +135,16 @@ async def create_entity(schema: SceneEntityIn, db=Depends(get_db)):
 
 
 @router.put("/entities/{entity_id}", response_model=SceneEntityOut)
-async def update_entity(entity_id: int, schema: SceneEntityIn, db=Depends(get_db)):
-    ent = db.query(models.SceneEntity).filter(models.SceneEntity.id == entity_id).first()
+async def update_entity(
+    entity_id: int,
+    schema: SceneEntityIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("devices.manage")),
+):
+    tenant_id = current_user.tenant_id if hasattr(current_user, "tenant_id") else current_user["tenant_id"]
+    ent = db.query(models.SceneEntity).filter(
+        models.SceneEntity.id == entity_id, models.SceneEntity.tenant_id == tenant_id
+    ).first()
     if not ent:
         raise HTTPException(status_code=404, detail="Entity not found")
     ent.name = schema.name
@@ -124,7 +156,13 @@ async def update_entity(entity_id: int, schema: SceneEntityIn, db=Depends(get_db
     ent.rotation = schema.rotation
     ent.state = schema.state or {}
     db.add(ent)
-    db.commit()
+    db.flush()
+    _record_scene_action(
+        db, current_user, "scene_entity_updated", ent.id,
+        {"name": ent.name, "type": ent.type, "model": ent.model,
+         "position": {"x": ent.x, "y": ent.y, "z": ent.z},
+         "rotation": ent.rotation, "state": ent.state or {}},
+    )
     db.refresh(ent)
     try:
         await scene_service.broadcast_entity_update({
@@ -154,12 +192,23 @@ async def update_entity(entity_id: int, schema: SceneEntityIn, db=Depends(get_db
 
 
 @router.delete("/entities/{entity_id}")
-async def delete_entity(entity_id: int, db=Depends(get_db)):
-    ent = db.query(models.SceneEntity).filter(models.SceneEntity.id == entity_id).first()
+async def delete_entity(
+    entity_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("devices.manage")),
+):
+    tenant_id = current_user.tenant_id if hasattr(current_user, "tenant_id") else current_user["tenant_id"]
+    ent = db.query(models.SceneEntity).filter(
+        models.SceneEntity.id == entity_id, models.SceneEntity.tenant_id == tenant_id
+    ).first()
     if not ent:
         raise HTTPException(status_code=404, detail="Entity not found")
+    details = {
+        "name": ent.name, "type": ent.type, "model": ent.model,
+        "position": {"x": ent.x, "y": ent.y, "z": ent.z},
+    }
     db.delete(ent)
-    db.commit()
+    _record_scene_action(db, current_user, "scene_entity_deleted", entity_id, details)
     try:
         await scene_service.broadcast_entity_update({"id": entity_id, "deleted": True})
     except Exception:

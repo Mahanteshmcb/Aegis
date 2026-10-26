@@ -1,12 +1,16 @@
 # Backend Router for Orchestration Engine
 # Provides REST API endpoints for the Succession & Orchestration Engine
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
+from sqlalchemy.orm import Session
 
+from backend.dependencies import get_current_user, get_db, require_permission
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from ai.orchestrator import (
     run_orchestration_cycle,
     initialize_orchestration_engine,
@@ -18,6 +22,15 @@ from ai.robotics_connector import RoboticsConnector
 
 router = APIRouter(prefix="/api/v1/orchestration", tags=["orchestration"])
 logger = logging.getLogger(__name__)
+
+
+def _record_orchestration_action(db: Session, actor, event_type: str, entity_id: str, details: dict, outcome: str = "success"):
+    tenant_id = actor.tenant_id if hasattr(actor, "tenant_id") else actor["tenant_id"]
+    return record_actor_audit_event(
+        db, tenant_id, actor, event_type, "orchestration", entity_id, details,
+        blockchain=get_blockchain_connector(), outcome=outcome,
+    )
+
 
 # Pydantic models for API requests/responses
 class ZoneConfig(BaseModel):
@@ -51,7 +64,12 @@ _vryndara_connector: Optional[VryndaraConnector] = None
 _robotics_connector: Optional[RoboticsConnector] = None
 
 @router.post("/initialize", summary="Initialize Orchestration Engine")
-async def initialize_engine(zone_configs: List[ZoneConfig], background_tasks: BackgroundTasks):
+async def initialize_engine(
+    zone_configs: List[ZoneConfig],
+    background_tasks: BackgroundTasks,
+    current_user=Depends(require_permission("devices.manage")),
+    db: Session = Depends(get_db),
+):
     """
     Initialize the Succession & Orchestration Engine with zone configurations.
 
@@ -85,6 +103,11 @@ async def initialize_engine(zone_configs: List[ZoneConfig], background_tasks: Ba
         )
 
         _orchestration_initialized = True
+        _record_orchestration_action(
+            db, current_user, "orchestration_engine_initialized", "engine",
+            {"zone_ids": [config.zone_id for config in zone_configs],
+             "zones_configured": len(zone_configs)},
+        )
 
         return {
             "message": "Orchestration engine initialized successfully",
@@ -97,7 +120,12 @@ async def initialize_engine(zone_configs: List[ZoneConfig], background_tasks: Ba
         raise HTTPException(status_code=500, detail=f"Initialization failed: {str(e)}")
 
 @router.post("/cycle", summary="Execute Orchestration Cycle")
-async def execute_cycle(request: OrchestrationCycleRequest, background_tasks: BackgroundTasks):
+async def execute_cycle(
+    request: OrchestrationCycleRequest,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(require_permission("devices.control")),
+    db: Session = Depends(get_db),
+):
     """
     Execute a complete orchestration cycle for a specific zone.
 
@@ -110,6 +138,10 @@ async def execute_cycle(request: OrchestrationCycleRequest, background_tasks: Ba
     try:
         # Run orchestration cycle in background
         background_tasks.add_task(run_orchestration_cycle, request.zone_id)
+        _record_orchestration_action(
+            db, current_user, "orchestration_cycle_started", str(request.zone_id),
+            {"zone_id": request.zone_id, "force_execution": request.force_execution},
+        )
 
         return {
             "message": f"Orchestration cycle started for zone {request.zone_id}",
@@ -122,7 +154,11 @@ async def execute_cycle(request: OrchestrationCycleRequest, background_tasks: Ba
         raise HTTPException(status_code=500, detail=f"Cycle execution failed: {str(e)}")
 
 @router.post("/trigger", summary="Execute Manual Trigger")
-async def execute_trigger(request: TriggerExecutionRequest):
+async def execute_trigger(
+    request: TriggerExecutionRequest,
+    current_user=Depends(require_permission("devices.control")),
+    db: Session = Depends(get_db),
+):
     """
     Manually execute a specific orchestration trigger.
 
@@ -141,13 +177,19 @@ async def execute_trigger(request: TriggerExecutionRequest):
         # This would integrate with the orchestration engine's trigger execution
         # For now, return success
         logger.info(f"Manual trigger executed: {event_type.value} for zone {request.zone_id}")
+        _record_orchestration_action(
+            db, current_user, "orchestration_trigger_simulated", str(request.zone_id),
+            {"zone_id": request.zone_id, "event_type": event_type.value,
+             "parameter_names": sorted(request.parameters)},
+            outcome="simulated",
+        )
 
         return {
-            "message": f"Trigger {request.event_type} executed for zone {request.zone_id}",
+            "message": f"Trigger {request.event_type} recorded for simulation in zone {request.zone_id}; no physical action was dispatched",
             "event_type": request.event_type,
             "zone_id": request.zone_id,
             "parameters": request.parameters,
-            "status": "executed"
+            "status": "simulated"
         }
 
     except HTTPException:
@@ -230,7 +272,12 @@ async def get_recent_events(zone_id: Optional[int] = None, limit: int = 50):
         raise HTTPException(status_code=500, detail=f"Events retrieval failed: {str(e)}")
 
 @router.post("/maintenance/{zone_id}", summary="Schedule Maintenance Cycle")
-async def schedule_maintenance(zone_id: int, maintenance_type: str):
+async def schedule_maintenance(
+    zone_id: int,
+    maintenance_type: str,
+    current_user=Depends(require_permission("devices.control")),
+    db: Session = Depends(get_db),
+):
     """
     Schedule a maintenance cycle for a specific zone.
 
@@ -246,13 +293,18 @@ async def schedule_maintenance(zone_id: int, maintenance_type: str):
     try:
         # This would trigger maintenance through the orchestration engine
         logger.info(f"Maintenance scheduled: {maintenance_type} for zone {zone_id}")
+        _record_orchestration_action(
+            db, current_user, "maintenance_cycle_simulated", str(zone_id),
+            {"zone_id": zone_id, "maintenance_type": maintenance_type},
+            outcome="simulated",
+        )
 
         return {
-            "message": f"Maintenance {maintenance_type} scheduled for zone {zone_id}",
+            "message": f"Maintenance {maintenance_type} recorded for simulation in zone {zone_id}; no physical action was dispatched",
             "zone_id": zone_id,
             "maintenance_type": maintenance_type,
             "scheduled_time": datetime.now(),
-            "status": "scheduled"
+            "status": "simulated"
         }
 
     except Exception as e:

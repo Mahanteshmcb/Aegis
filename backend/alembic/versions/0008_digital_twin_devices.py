@@ -14,7 +14,7 @@ def upgrade():
         "digital_twin_devices",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("tenant_id", sa.Integer(), sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("zone_id", sa.Integer(), sa.ForeignKey("zones.id"), nullable=True),
+        sa.Column("zone_id", sa.Integer(), sa.ForeignKey("zones.zone_id"), nullable=True),
         sa.Column("device_id", sa.String(length=100), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("kind", sa.String(length=32), nullable=False),

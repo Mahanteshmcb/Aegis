@@ -3,6 +3,7 @@ Add energy_policies table for persisted charging policies.
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = '0002_energy_policy'
@@ -12,6 +13,8 @@ depends_on = None
 
 
 def upgrade():
+    if inspect(op.get_bind()).has_table('energy_policies'):
+        return
     op.create_table(
         'energy_policies',
         sa.Column('id', sa.Integer(), primary_key=True),
@@ -26,4 +29,5 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_table('energy_policies')
+    if inspect(op.get_bind()).has_table('energy_policies'):
+        op.drop_table('energy_policies')

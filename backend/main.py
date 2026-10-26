@@ -62,6 +62,9 @@ from backend.routers import day68_notifications
 from backend.routers import digital_twin
 from backend.routers import local_iot
 from backend.routers import estate_hierarchy
+from backend.routers import estate_config
+from backend.routers import role_definitions
+from backend.routers import digital_twin_history
 
 # Configure logging
 logging.basicConfig(
@@ -85,6 +88,22 @@ async def vryndara_guard_loop():
     except asyncio.CancelledError:
         logger.info("Vryndara Guard: Background Monitoring suspended.")
 
+
+def _configure_arduino_gateway() -> None:
+    token = settings.arduino_gateway_token
+    if token is None:
+        return
+    from backend.device_adapters import ArduinoGatewayAdapter, adapter_registry
+
+    adapter_registry.register(ArduinoGatewayAdapter(
+        gateway_url=settings.arduino_gateway_url,
+        token=token.get_secret_value(),
+        expected_device_id="mega-onboard-led-01",
+        timeout_seconds=settings.arduino_gateway_timeout_seconds,
+    ))
+    logger.info("Local Arduino LED gateway adapter configured")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -94,6 +113,9 @@ async def lifespan(app: FastAPI):
     # --- Startup ---
     logger.info("Starting Aegis backend...")
     logger.info(f"Environment: {settings.environment}")
+
+    if not os.environ.get("PYTEST_RUNNING"):
+        _configure_arduino_gateway()
     
     # Initialize database
     try:
@@ -108,6 +130,17 @@ async def lifespan(app: FastAPI):
     logger.info("Vryndara connector will initialize on first research endpoint call")
 
 
+
+    # Start the local robotics contract service for the software-first MVP.
+    robotics_server = None
+    if not os.environ.get("PYTEST_RUNNING"):
+        try:
+            from ai.robotics_services import create_robotics_server
+            robotics_server = create_robotics_server(settings.robotics_host, settings.robotics_port)
+            robotics_server.start()
+            logger.info("Robotics gRPC demo service started on %s:%s", settings.robotics_host, settings.robotics_port)
+        except Exception as e:
+            logger.error("Failed to start robotics gRPC service: %s", e)
 
     # Start the Day 19 Background Monitor
     guard_task = None
@@ -136,6 +169,11 @@ async def lifespan(app: FastAPI):
             logger.info("Sensor health monitor started")
         except Exception as e:
             logger.error(f"Failed to start sensor monitor: {e}")
+
+    retention_task = None
+    if not os.environ.get("PYTEST_RUNNING"):
+        from backend.services.digital_twin_retention import retention_cleanup_loop
+        retention_task = asyncio.create_task(retention_cleanup_loop())
 
     # Initialize blockchain monitoring (Day 26)
     blockchain_monitor_task = None
@@ -179,6 +217,8 @@ async def lifespan(app: FastAPI):
             monitor.stop_monitoring()
             blockchain_monitor_task.cancel()
             await blockchain_monitor_task
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             logger.error(f"Error stopping blockchain monitoring: {e}")
 
@@ -207,11 +247,22 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Error stopping sensor monitor: {e}")
 
+    if retention_task:
+        retention_task.cancel()
+        try:
+            await retention_task
+        except asyncio.CancelledError:
+            pass
+
     # Stop realtime emitters (Day 62)
     try:
         await realtime.stop_background_emitters()
     except Exception as e:
         logger.error(f"Error stopping realtime emitters: {e}")
+
+    if robotics_server:
+        robotics_server.stop(grace=2)
+        logger.info("Robotics gRPC demo service stopped")
 
 # Security Scheme for Swagger UI
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
@@ -323,6 +374,9 @@ app.include_router(day68_notifications.router)
 app.include_router(digital_twin.router)
 app.include_router(local_iot.router)
 app.include_router(estate_hierarchy.router)
+app.include_router(estate_config.router)
+app.include_router(role_definitions.router)
+app.include_router(digital_twin_history.router)
 
 if __name__ == "__main__":
     import uvicorn

@@ -8,19 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from backend.dependencies import get_db, get_current_user, get_current_admin
 from backend import schemas
+from backend.audit_utils import record_actor_audit_event
 from backend.blockchain_connector import get_blockchain_connector
-from backend.audit_utils import record_audit_event
 from backend.models_db import CropLifecycleEvent, CropInstance, SpatialZone
 
 router = APIRouter(prefix="/api/v1", tags=["Crop Lifecycle"])
 
 
-def _record_lifecycle_audit(db: Session, tenant_id: int, event_type: str, metadata: Dict[str, Any]) -> None:
-    blockchain = get_blockchain_connector()
-    try:
-        record_audit_event(db, blockchain, tenant_id, event_type, metadata)
-    except Exception:
-        pass
+def _record_lifecycle_audit(db: Session, actor: dict, event_type: str, entity_id, details: Dict[str, Any]) -> None:
+    record_actor_audit_event(
+        db, actor["tenant_id"], actor, event_type, "crop_lifecycle_event", entity_id,
+        details, blockchain=get_blockchain_connector(),
+    )
 
 
 @router.post("/crops/{crop_id}/lifecycle", response_model=schemas.CropLifecycleEventResponse)
@@ -44,22 +43,23 @@ async def create_crop_lifecycle_event(
 
     db_event = CropLifecycleEvent(crop_instance_id=crop_id, **event.dict())
     db.add(db_event)
-    db.commit()
-    db.refresh(db_event)
+    db.flush()
 
     _record_lifecycle_audit(
         db,
-        current_admin["tenant_id"],
+        current_admin,
         "crop_lifecycle_event",
+        db_event.id,
         {
             "crop_id": crop_id,
-            "event_type": event.event_type,
+            "lifecycle_type": event.event_type,
             "event_date": str(event.event_date),
             "data": event.data,
             "action_taken": event.action_taken,
             "blockchain_tx": event.blockchain_tx,
         },
     )
+    db.refresh(db_event)
 
     return db_event
 

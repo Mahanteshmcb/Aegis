@@ -2,12 +2,14 @@
 Water management API - collection, purification, irrigation, quality monitoring, and recycling.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from datetime import datetime
 
 from backend.dependencies import get_db, get_current_user
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models.water import (
     WaterCollectionSystem,
     WaterPurificationUnit,
@@ -15,8 +17,26 @@ from backend.models.water import (
     WaterQualityReading,
     WaterRecyclingLoop,
 )
+from backend.services.domain_simulation import advance_water_simulation
 
 router = APIRouter(prefix="/api/v1/water", tags=["water"])
+
+
+def _record_water_action(db, actor, event_type, entity_type, entity_id, details):
+    return record_actor_audit_event(
+        db,
+        actor["tenant_id"],
+        actor,
+        event_type,
+        entity_type,
+        entity_id,
+        details,
+        blockchain=get_blockchain_connector(),
+    )
+
+
+class SimulationAdvanceRequest(BaseModel):
+    step_hours: float = Field(default=24.0, gt=0, le=720)
 
 
 # --- SCHEMAS ---
@@ -166,6 +186,10 @@ def create_collection_system(
     db.add(system)
     db.commit()
     db.refresh(system)
+    _record_water_action(
+        db, current_user, "water_collection_created", "water_collection_system", system.id,
+        {"name": system.system_name, "collection_type": system.collection_type, "location": system.location},
+    )
     return {
         "id": system.id,
         "system_name": system.system_name,
@@ -217,6 +241,10 @@ def create_purification_unit(
     db.add(unit)
     db.commit()
     db.refresh(unit)
+    _record_water_action(
+        db, current_user, "water_purification_unit_created", "water_purification_unit", unit.id,
+        {"name": unit.unit_name, "purification_type": unit.purification_type},
+    )
     return {
         "id": unit.id,
         "unit_name": unit.unit_name,
@@ -271,6 +299,10 @@ def create_irrigation_system(
     db.add(system)
     db.commit()
     db.refresh(system)
+    _record_water_action(
+        db, current_user, "water_irrigation_system_created", "irrigation_system", system.id,
+        {"name": system.system_name, "zone_id": system.zone_id, "irrigation_type": system.irrigation_type},
+    )
     return {
         "id": system.id,
         "system_name": system.system_name,
@@ -319,6 +351,11 @@ def record_water_quality(
     db.add(reading)
     db.commit()
     db.refresh(reading)
+    _record_water_action(
+        db, current_user, "water_quality_reading_recorded", "water_quality_reading", reading.id,
+        {"location": reading.reading_location, "overall_quality_status": reading.overall_quality_status,
+         "contamination_detected": reading.contamination_detected},
+    )
     return {
         "id": reading.id,
         "reading_location": reading.reading_location,
@@ -407,6 +444,10 @@ def create_recycling_loop(
     db.add(loop)
     db.commit()
     db.refresh(loop)
+    _record_water_action(
+        db, current_user, "water_recycling_loop_created", "water_recycling_loop", loop.id,
+        {"name": loop.loop_name, "loop_type": loop.loop_type},
+    )
     return {
         "id": loop.id,
         "loop_name": loop.loop_name,
@@ -416,3 +457,17 @@ def create_recycling_loop(
         "total_recycled_liters": loop.total_recycled_liters,
         "efficiency_percent": loop.efficiency_percent,
     }
+
+
+@router.post("/simulation/advance")
+def advance_water_demo(
+    payload: SimulationAdvanceRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = advance_water_simulation(db, current_user["tenant_id"], payload.step_hours)
+    _record_water_action(
+        db, current_user, "water_demo_simulation_advanced", "water_simulation",
+        current_user["tenant_id"], {"step_hours": payload.step_hours, "result": result},
+    )
+    return result

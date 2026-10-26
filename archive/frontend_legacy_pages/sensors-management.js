@@ -159,7 +159,7 @@ export default function SensorsManagement() {
               location: '',
             });
           }}
-          className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-500 hover:to-emerald-500 transition-all font-mono text-sm font-bold"
+          className="px-6 py-3 br-linear-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-500 hover:to-emerald-500 transition-all font-mono text-sm font-bold"
         >
           {showForm ? '✕ Cancel' : '+ Add Sensor'}
         </button>
@@ -207,7 +207,7 @@ export default function SensorsManagement() {
           filteredSensors.map((sensor) => (
             <div
               key={sensor.id}
-              className="bg-gradient-to-br from-black/40 to-black/60 border border-aegis-primary/30 rounded-lg p-4 hover:border-aegis-primary/60 transition-all"
+              className="bg-linear-to-br from-black/40 to-black/60 border border-aegis-primary/30 rounded-lg p-4 hover:border-aegis-primary/60 transition-all"
             >
               <div className="flex items-start justify-between mb-3">
                 <h3 className="text-lg font-bold text-aegis-primary">{sensor.name || `Sensor ${sensor.id}`}</h3>

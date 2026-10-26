@@ -65,6 +65,23 @@ def send_command(device_id: int, payload: CommandRequest, db: Session = Depends(
         log.status = "success"
         db.add(log)
         db.commit()
+        from backend.audit_utils import record_actor_audit_event
+        from backend.blockchain_connector import get_blockchain_connector
+        record_actor_audit_event(
+            db,
+            current_user["tenant_id"],
+            current_user,
+            "equipment_commanded",
+            "automation_device",
+            device.id,
+            {
+                "command": payload.command,
+                "parameter_names": sorted(payload.parameters),
+                "execution_id": log.id,
+                "outcome": "success",
+            },
+            blockchain=get_blockchain_connector(),
+        )
 
         # publish event for UI
         try:

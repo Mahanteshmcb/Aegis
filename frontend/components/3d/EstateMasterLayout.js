@@ -1,24 +1,32 @@
 import React from 'react';
 import RealisticArchitectureAsset from './RealisticArchitectureAsset';
 
+const finiteDimension = (value, fallback) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(Math.abs(number), 0.04) : fallback;
+};
+
+const safeSize = (value, fallback = [6, 2, 6]) => [0, 1, 2].map((index) => finiteDimension(value?.[index], fallback[index]));
+
 function Building({ position, size, color = '#d8d6ca', roof = '#334155', label }) {
+  const safeBuildingSize = safeSize(size);
   return (
     <group position={position}>
-      <mesh position={[0, size[1] / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={size} />
+      <mesh position={[0, safeBuildingSize[1] / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={safeBuildingSize} />
         <meshStandardMaterial color={color} roughness={0.72} metalness={0.08} />
       </mesh>
-      <mesh position={[0, size[1] + 0.3, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
-        <boxGeometry args={[size[0] * 0.76, 0.6, size[2] * 0.76]} />
+      <mesh position={[0, safeBuildingSize[1] + 0.3, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+        <boxGeometry args={[safeBuildingSize[0] * 0.76, 0.6, safeBuildingSize[2] * 0.76]} />
         <meshStandardMaterial color={roof} roughness={0.55} metalness={0.25} />
       </mesh>
-      <mesh position={[0, size[1] * 0.42, size[2] / 2 + 0.02]}>
-        <boxGeometry args={[Math.min(size[0] * 0.62, 8), Math.min(size[1] * 0.4, 2.2), 0.04]} />
+      <mesh position={[0, safeBuildingSize[1] * 0.42, safeBuildingSize[2] / 2 + 0.02]}>
+        <boxGeometry args={[Math.min(safeBuildingSize[0] * 0.62, 8), Math.min(safeBuildingSize[1] * 0.4, 2.2), 0.04]} />
         <meshStandardMaterial color="#17202b" roughness={0.3} metalness={0.35} />
       </mesh>
       {label && (
-        <mesh position={[0, size[1] + 1.1, 0]}>
-          <boxGeometry args={[Math.min(size[0] * 0.8, 12), 0.06, 0.06]} />
+        <mesh position={[0, safeBuildingSize[1] + 1.1, 0]}>
+          <boxGeometry args={[Math.min(safeBuildingSize[0] * 0.8, 12), 0.06, 0.06]} />
           <meshBasicMaterial color="#f8fafc" />
         </mesh>
       )}
@@ -27,11 +35,12 @@ function Building({ position, size, color = '#d8d6ca', roof = '#334155', label }
 }
 
 function SolarRoof({ position, size }) {
+  const safeRoofSize = safeSize(size, [18, 1, 14]);
   return (
     <group position={position}>
       {[...Array(6)].map((_, index) => (
         <mesh key={index} position={[(index - 2.5) * 1.5, 0.05, 0]} rotation={[-0.55, 0, 0]}>
-          <boxGeometry args={[1.25, 0.04, size[2] * 0.65]} />
+          <boxGeometry args={[1.25, 0.04, safeRoofSize[2] * 0.65]} />
           <meshStandardMaterial color="#173c66" emissive="#0b5b8c" emissiveIntensity={0.2} metalness={0.8} roughness={0.18} />
         </mesh>
       ))}
@@ -40,15 +49,16 @@ function SolarRoof({ position, size }) {
 }
 
 function Field({ position, size, color = '#68884b', rows = 6 }) {
+  const safeFieldSize = safeSize(size, [24, 1, 16]);
   return (
     <group position={position}>
       <mesh receiveShadow>
-        <boxGeometry args={[size[0], 0.12, size[1]]} />
+        <boxGeometry args={[safeFieldSize[0], 0.12, safeFieldSize[2]]} />
         <meshStandardMaterial color={color} roughness={1} />
       </mesh>
       {[...Array(rows)].map((_, index) => (
-        <mesh key={index} position={[(index - (rows - 1) / 2) * (size[0] / rows), 0.09, 0]}>
-          <boxGeometry args={[0.12, 0.04, size[1] * 0.86]} />
+        <mesh key={index} position={[(index - (rows - 1) / 2) * (safeFieldSize[0] / rows), 0.09, 0]}>
+          <boxGeometry args={[0.12, 0.04, safeFieldSize[2] * 0.86]} />
           <meshStandardMaterial color="#b3c779" roughness={1} />
         </mesh>
       ))}

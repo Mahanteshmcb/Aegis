@@ -55,7 +55,10 @@ async def _sensor_monitor_loop(stop_event: asyncio.Event, stale_seconds: int = 3
                 except Exception:
                     pass
 
-            await asyncio.wait([stop_event.wait()], timeout=60)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                pass
     except asyncio.CancelledError:
         logger.info("Sensor health monitor cancelled")
 

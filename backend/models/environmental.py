@@ -5,7 +5,7 @@ Implements database schema for temperature, humidity, air quality sensors
 from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from backend.database import Base
+from backend.database import Base, Zone
 
 
 class EnvironmentalZone(Base):
@@ -43,7 +43,7 @@ class EnvironmentalZone(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    zone = relationship("Zone", back_populates="environmental_zone")
+    zone = relationship(Zone, foreign_keys=[zone_id])
     tenant = relationship("Tenant", back_populates="environmental_zones")
     readings = relationship("EnvironmentalReading", back_populates="zone_config")
 

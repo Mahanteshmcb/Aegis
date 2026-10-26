@@ -65,7 +65,7 @@ def test_execute_job_moves_entity():
         # run the async executor
         old_x = float(ent.x)
         old_y = float(ent.y)
-        asyncio.get_event_loop().run_until_complete(automation_scheduler._execute_job(session, job))
+        asyncio.run(automation_scheduler._execute_job(session, job))
 
         # reload entity and assert deltas match command parameters
         session.refresh(ent)

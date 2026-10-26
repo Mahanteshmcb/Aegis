@@ -50,7 +50,7 @@ export class ErrorBoundary extends React.Component {
       const isDev = process.env.NODE_ENV === 'development';
 
       return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black flex items-center justify-center p-4">
+        <div className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-black flex items-center justify-center p-4">
           <div className="max-w-md w-full rounded-3xl border border-red-900/50 bg-slate-900/80 backdrop-blur p-8">
             <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-900/30 mx-auto mb-4">
               <AlertCircle className="text-red-400" size={24} />
@@ -153,7 +153,7 @@ export function ErrorNotification({ error, onDismiss }) {
   return (
     <div className="fixed top-4 right-4 max-w-md p-4 rounded-lg bg-red-900/80 border border-red-700 backdrop-blur z-50 animate-slide-in">
       <div className="flex items-start gap-3">
-        <AlertCircle className="text-red-400 flex-shrink-0 mt-0.5" size={20} />
+        <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={20} />
         <div className="flex-1">
           <h3 className="font-semibold text-red-200">Error</h3>
           <p className="text-sm text-red-100 mt-1">{error}</p>
@@ -161,7 +161,7 @@ export function ErrorNotification({ error, onDismiss }) {
         {onDismiss && (
           <button
             onClick={onDismiss}
-            className="text-red-400 hover:text-red-300 flex-shrink-0"
+            className="text-red-400 hover:text-red-300 shrink-0"
           >
             ✕
           </button>

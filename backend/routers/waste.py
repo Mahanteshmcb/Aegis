@@ -2,12 +2,14 @@
 Waste management API - sorting, composting, recycling, and hazardous waste containment.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from datetime import datetime
 
 from backend.dependencies import get_db, get_current_user
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models.waste import (
     WasteContainer,
     WasteSortingLog,
@@ -17,8 +19,26 @@ from backend.models.waste import (
     WasteProcessingLog,
     WasteMetrics,
 )
+from backend.services.domain_simulation import advance_waste_simulation
 
 router = APIRouter(prefix="/api/v1/waste", tags=["waste"])
+
+
+def _record_waste_action(db, actor, event_type, entity_type, entity_id, details):
+    return record_actor_audit_event(
+        db,
+        actor["tenant_id"],
+        actor,
+        event_type,
+        entity_type,
+        entity_id,
+        details,
+        blockchain=get_blockchain_connector(),
+    )
+
+
+class SimulationAdvanceRequest(BaseModel):
+    step_hours: float = Field(default=24.0, gt=0, le=720)
 
 
 # --- SCHEMAS ---
@@ -252,6 +272,10 @@ def create_waste_container(
     db.add(container)
     db.commit()
     db.refresh(container)
+    _record_waste_action(
+        db, current_user, "waste_container_created", "waste_container", container.id,
+        {"name": container.container_name, "waste_type": container.waste_type, "location": container.location},
+    )
     return {
         "id": container.id,
         "container_name": container.container_name,
@@ -302,6 +326,11 @@ def log_waste_sorting(
         metrics.inert_waste_kg += log.weight_kg
     _recalculate_metrics(metrics)
     db.commit()
+    _record_waste_action(
+        db, current_user, "waste_sorting_recorded", "waste_sorting_log", log.id,
+        {"waste_type": log.waste_type, "weight_kg": log.weight_kg,
+         "contamination_detected": log.contamination_detected, "quality_score": log.quality_score},
+    )
 
     return {
         "id": log.id,
@@ -369,6 +398,10 @@ def create_composting_process(
     metrics.organic_waste_kg += process.organic_input_kg
     _recalculate_metrics(metrics)
     db.commit()
+    _record_waste_action(
+        db, current_user, "waste_composting_started", "composting_process", process.id,
+        {"name": process.process_name, "pile_id": process.pile_id, "input_kg": process.organic_input_kg},
+    )
 
     return {
         "id": process.id,
@@ -435,6 +468,11 @@ def create_recycling_process(
     metrics.recyclable_waste_kg += process.input_weight_kg
     _recalculate_metrics(metrics)
     db.commit()
+    _record_waste_action(
+        db, current_user, "waste_recycling_started", "recycling_process", process.id,
+        {"name": process.process_name, "material_type": process.material_type,
+         "input_weight_kg": process.input_weight_kg},
+    )
 
     return {
         "id": process.id,
@@ -505,6 +543,11 @@ def create_hazardous_waste_storage(
     metrics.hazardous_waste_kg += storage.quantity_liters
     _recalculate_metrics(metrics)
     db.commit()
+    _record_waste_action(
+        db, current_user, "hazardous_waste_registered", "hazardous_waste_storage", storage.id,
+        {"chemical_name": storage.chemical_name, "chemical_type": storage.chemical_type,
+         "quantity_liters": storage.quantity_liters, "storage_location": storage.storage_location},
+    )
 
     return {
         "id": storage.id,
@@ -583,6 +626,11 @@ def log_waste_processing(
         metrics.total_emissions_kg_co2 += log.emissions_kg_co2
     _recalculate_metrics(metrics)
     db.commit()
+    _record_waste_action(
+        db, current_user, "waste_processing_recorded", "waste_processing_log", log.id,
+        {"operation_type": log.operation_type, "waste_category": log.waste_category,
+         "input_weight_kg": log.input_weight_kg, "output_weight_kg": log.output_weight_kg},
+    )
 
     return {
         "id": log.id,
@@ -645,3 +693,17 @@ def get_waste_metrics(db: Session = Depends(get_db), current_user=Depends(get_cu
         "recycling_rate_percent": metrics.recycling_rate_percent,
         "waste_diversion_rate_percent": metrics.waste_diversion_rate_percent,
     }
+
+
+@router.post("/simulation/advance")
+def advance_waste_demo(
+    payload: SimulationAdvanceRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = advance_waste_simulation(db, current_user["tenant_id"], payload.step_hours)
+    _record_waste_action(
+        db, current_user, "waste_demo_simulation_advanced", "waste_simulation",
+        current_user["tenant_id"], {"step_hours": payload.step_hours, "result": result},
+    )
+    return result

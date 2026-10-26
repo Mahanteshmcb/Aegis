@@ -26,7 +26,7 @@ export const loginAPI = async (email, password) => {
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.detail || 'Authentication failed');
+      throw new Error(errorData.detail || errorData.error || 'Authentication failed');
     }
 
     return await response.json(); 
@@ -36,7 +36,7 @@ export const loginAPI = async (email, password) => {
   }
 };
 
-export const registerAPI = async (email, password, tenantId = 1) => {
+export const registerAPI = async (email, password, tenantId) => {
   try {
     const response = await fetch(`${API_URL}/api/v1/auth/signup`, {
       method: 'POST',
@@ -164,6 +164,19 @@ export const createBackupSnapshot = async (token, payload) => {
     console.error('API Error creating backup snapshot:', error);
     throw error;
   }
+};
+
+export const createEstateStateSnapshot = async (token, label) => {
+  const response = await fetch(`${API_URL}/api/v1/robotics/sync/state-snapshot`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ label }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Estate snapshot creation failed');
+  }
+  return response.json();
 };
 
 export const createDataSyncJob = async (token, payload) => {
@@ -1529,3 +1542,31 @@ export const getWasteMetrics = async (token) => {
     throw error;
   }
 };
+
+export const getWasteProcessingLogs = async (token) => {
+  const response = await fetch(`${API_URL}/api/v1/waste/processing`, {
+    method: 'GET',
+    headers: authHeaders(token),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || 'Failed to fetch waste processing history');
+  }
+  return data;
+};
+
+const advanceDomainSimulation = async (token, domain) => {
+  const response = await fetch(`${API_URL}/api/v1/${domain}/simulation/advance`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ step_hours: 24 }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || `Failed to advance ${domain} simulation`);
+  }
+  return data;
+};
+
+export const advanceWaterSimulation = (token) => advanceDomainSimulation(token, 'water');
+export const advanceWasteSimulation = (token) => advanceDomainSimulation(token, 'waste');

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import useCurrentUser from '../hooks/useCurrentUser';
+import { clearAuthToken } from '../utils/auth';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, loading } = useCurrentUser();
+  const { user, loading, token } = useCurrentUser();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -52,7 +53,7 @@ export default function ProfilePage() {
 
     try {
       setIsSubmitting(true);
-      const token = localStorage.getItem('aegis_token');
+      if (!token) throw new Error('Session expired. Please sign in again.');
       const resp = await fetch(`${API_URL}/api/v1/auth/change-password`, {
         method: 'POST',
         headers: {
@@ -72,8 +73,8 @@ export default function ProfilePage() {
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => {
-        setShowChangePassword(false);
-        setSuccess(false);
+        clearAuthToken();
+        router.replace('/login');
       }, 3000);
     } catch (err) {
       setError(err.message);
@@ -164,16 +165,16 @@ export default function ProfilePage() {
                 {error && <div className="rounded-2xl border border-red-700 bg-red-900/20 p-3 text-red-300">{error}</div>}
                 {success && <div className="rounded-2xl border border-green-700 bg-green-900/20 p-3 text-green-300">Password changed successfully!</div>}
                 <div>
-                  <label className="block text-sm text-aegis-muted mb-2">Current Password</label>
-                  <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
+                  <label className="block text-sm text-aegis-muted mb-2" htmlFor="current-password">Current Password</label>
+                  <input id="current-password" autoComplete="current-password" required minLength={8} type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
                 </div>
                 <div>
-                  <label className="block text-sm text-aegis-muted mb-2">New Password</label>
-                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
+                  <label className="block text-sm text-aegis-muted mb-2" htmlFor="new-password">New Password</label>
+                  <input id="new-password" autoComplete="new-password" required minLength={8} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
                 </div>
                 <div>
-                  <label className="block text-sm text-aegis-muted mb-2">Confirm New Password</label>
-                  <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
+                  <label className="block text-sm text-aegis-muted mb-2" htmlFor="confirm-new-password">Confirm New Password</label>
+                  <input id="confirm-new-password" autoComplete="new-password" required minLength={8} type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white outline-none focus:border-aegis-primary" />
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <button type="submit" disabled={isSubmitting} className="rounded-2xl bg-green-600 px-6 py-3 text-white font-semibold hover:bg-green-500 transition-all">{isSubmitting ? 'Saving...' : 'Save Password'}</button>

@@ -25,9 +25,9 @@ export default function Inspector3D({ selectedEntity, onClose, onUpdate, onDelet
 
   return (
     <div className="fixed bottom-6 right-6 z-50 w-96 max-h-[70vh] overflow-y-auto">
-      <div className={`bg-gradient-to-br ${typeColor} rounded-lg shadow-2xl border border-white/20 overflow-hidden`}>
+      <div className={`br-linear-to-br ${typeColor} rounded-lg shadow-2xl border border-white/20 overflow-hidden`}>
         {/* Header */}
-        <div className="bg-gradient-to-r from-black/40 to-black/20 p-4 border-b border-white/10 flex items-center justify-between">
+        <div className="br-linear-to-r from-black/40 to-black/20 p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">{typeIcon}</span>
             <div>

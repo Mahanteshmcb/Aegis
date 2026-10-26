@@ -13,6 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_db, get_current_user
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models_db import (
     User, Tenant, SpatialZone, BiologicalSpecies,
     CropRotationPlan, SeasonalPlantingSchedule, CompanionPlanting, CropSuccessionHistory
@@ -27,6 +29,17 @@ logger = logging.getLogger(__name__)
 
 # Global succession planner instance
 planner = SuccessionPlanner()
+
+
+def _actor_tenant_id(actor) -> int:
+    return int(actor.tenant_id if hasattr(actor, "tenant_id") else actor["tenant_id"])
+
+
+def _record_succession_action(db: Session, actor, event_type: str, entity_type: str, entity_id, details: dict):
+    return record_actor_audit_event(
+        db, _actor_tenant_id(actor), actor, event_type, entity_type, entity_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 @router.post("/register-crop")
@@ -60,6 +73,8 @@ def register_crop(
     - water_requirements: low/medium/high
     """
     try:
+        if tenant_id != _actor_tenant_id(current_user):
+            raise HTTPException(status_code=403, detail="Tenant access denied")
         # Verify species exists
         species = db.query(BiologicalSpecies).filter(
             BiologicalSpecies.id == species_id
@@ -91,6 +106,13 @@ def register_crop(
         
         # Register in planner
         planner.register_crop(profile)
+        _record_succession_action(
+            db, current_user, "succession_crop_registered", "biological_species", species_id,
+            {"category": category_enum.name, "soil_impact": soil_impact_enum.value,
+             "preferred_season": preferred_season.lower(),
+             "min_rotation_years": min_rotation_years,
+             "water_requirements": water_requirements.lower()},
+        )
         
         logger.info(f"✅ Registered crop: {species.common_name} for tenant {tenant_id}")
         
@@ -100,6 +122,8 @@ def register_crop(
             "data": {"crop_id": profile.crop_id}
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error registering crop: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -132,6 +156,8 @@ def generate_rotation_plan(
     - soil_health: Current soil health (0-1)
     """
     try:
+        if tenant_id != _actor_tenant_id(current_user):
+            raise HTTPException(status_code=403, detail="Tenant access denied")
         # Verify spatial zone exists
         zone = db.query(SpatialZone).filter(
             SpatialZone.id == spatial_zone_id,
@@ -169,7 +195,15 @@ def generate_rotation_plan(
             biodiversity_score=rotation.biodiversity_score
         )
         db.add(db_plan)
-        db.commit()
+        db.flush()
+        _record_succession_action(
+            db, current_user, "crop_rotation_plan_generated", "crop_rotation_plan", db_plan.id,
+            {"spatial_zone_id": spatial_zone_id, "years": years,
+             "crop_count": len(rotation.crops_sequence),
+             "soil_health_projection": rotation.soil_health_projection,
+             "predicted_avg_yield": rotation.predicted_yield,
+             "biodiversity_score": rotation.biodiversity_score},
+        )
         db.refresh(db_plan)
         
         logger.info(
@@ -215,6 +249,8 @@ def check_companionship(
     - tenant_id: Tenant ID for verification
     """
     try:
+        if tenant_id != _actor_tenant_id(current_user):
+            raise HTTPException(status_code=403, detail="Tenant access denied")
         # Calculate compatibility
         score = planner.calculate_companionship_score(crop_a, crop_b)
         
@@ -255,6 +291,8 @@ def get_best_companions(
     - tenant_id: Tenant ID for verification
     """
     try:
+        if tenant_id != _actor_tenant_id(current_user):
+            raise HTTPException(status_code=403, detail="Tenant access denied")
         companions = planner.get_optimal_companions(crop_id, top_n)
         
         companion_data = [
@@ -294,6 +332,8 @@ def generate_seasonal_schedule(
     - tenant_id: Tenant ID for verification
     """
     try:
+        if tenant_id != _actor_tenant_id(current_user):
+            raise HTTPException(status_code=403, detail="Tenant access denied")
         # Fetch rotation plan
         db_plan = db.query(CropRotationPlan).filter(
             CropRotationPlan.id == rotation_plan_id,
@@ -319,6 +359,10 @@ def generate_seasonal_schedule(
             zone_id=f"zone_{db_plan.spatial_zone_id}",
             rotation_plan=rotation,
             start_month=start_month
+        )
+        _record_succession_action(
+            db, current_user, "seasonal_schedule_generated", "crop_rotation_plan", db_plan.id,
+            {"start_month": start_month, "schedule_count": len(schedule) if hasattr(schedule, "__len__") else None},
         )
         
         logger.info(f"📅 Generated seasonal schedule for plan {rotation_plan_id}")
@@ -357,6 +401,8 @@ def validate_rotation_plan(
     - tenant_id: Tenant ID for verification
     """
     try:
+        if tenant_id != _actor_tenant_id(current_user):
+            raise HTTPException(status_code=403, detail="Tenant access denied")
         # Fetch rotation plan
         db_plan = db.query(CropRotationPlan).filter(
             CropRotationPlan.id == rotation_plan_id,
@@ -415,6 +461,8 @@ def list_rotation_plans(
     - is_active: Filter by active/inactive plans (optional)
     """
     try:
+        if tenant_id != _actor_tenant_id(current_user):
+            raise HTTPException(status_code=403, detail="Tenant access denied")
         query = db.query(CropRotationPlan).filter(
             CropRotationPlan.spatial_zone_id == spatial_zone_id,
             CropRotationPlan.tenant_id == tenant_id

@@ -5,9 +5,17 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from backend.dependencies import get_db, get_current_user
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models_db import SystemAlert
 
 router = APIRouter(prefix="/api/v1", tags=["alerts"])
+
+
+def _tenant_id(current_user) -> int | None:
+    if isinstance(current_user, dict):
+        return current_user.get("tenant_id")
+    return getattr(current_user, "tenant_id", None)
 
 
 class AlertCreate(BaseModel):
@@ -45,7 +53,7 @@ class AlertResponse(BaseModel):
 @router.post("/alerts", response_model=AlertResponse)
 async def create_alert(payload: AlertCreate, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
-        tenant_id = current_user.get("tenant_id") if isinstance(current_user, dict) else None
+        tenant_id = _tenant_id(current_user)
         if not tenant_id:
             raise HTTPException(status_code=400, detail="Invalid tenant")
         alert = SystemAlert(
@@ -60,6 +68,21 @@ async def create_alert(payload: AlertCreate, current_user: dict = Depends(get_cu
         db.add(alert)
         db.commit()
         db.refresh(alert)
+        record_actor_audit_event(
+            db,
+            tenant_id,
+            current_user,
+            "alert_created",
+            "system_alert",
+            alert.id,
+            {
+                "alert_type": alert.alert_type,
+                "severity": alert.severity,
+                "source": alert.source,
+                "title": alert.title,
+            },
+            blockchain=get_blockchain_connector(),
+        )
         return {
             "id": alert.id,
             "alert_type": alert.alert_type,
@@ -86,11 +109,7 @@ async def list_alerts(
     db: Session = Depends(get_db)
 ):
     # Accept either dict-like mock or object for current_user
-    tenant_id = None
-    if isinstance(current_user, dict):
-        tenant_id = current_user.get("tenant_id")
-    else:
-        tenant_id = getattr(current_user, "tenant_id", None)
+    tenant_id = _tenant_id(current_user)
     if tenant_id is None:
         raise HTTPException(status_code=400, detail="Invalid tenant")
     query = db.query(SystemAlert).filter(SystemAlert.tenant_id == tenant_id)
@@ -123,15 +142,27 @@ async def acknowledge_alert(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    tenant_id = current_user.get("tenant_id") if isinstance(current_user, dict) else None
+    tenant_id = _tenant_id(current_user)
     alert = db.query(SystemAlert).filter(SystemAlert.id == alert_id, SystemAlert.tenant_id == tenant_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
+    was_acknowledged = alert.acknowledged
     alert.acknowledged = True
     alert.acknowledged_at = datetime.utcnow()
     db.add(alert)
     db.commit()
     db.refresh(alert)
+    if not was_acknowledged:
+        record_actor_audit_event(
+            db,
+            tenant_id,
+            current_user,
+            "alert_acknowledged",
+            "system_alert",
+            alert.id,
+            {"alert_type": alert.alert_type, "severity": alert.severity, "source": alert.source},
+            blockchain=get_blockchain_connector(),
+        )
     return {
         "id": alert.id,
         "alert_type": alert.alert_type,

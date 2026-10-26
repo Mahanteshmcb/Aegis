@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import EnvironmentalDashboard from '../components/EnvironmentalDashboard';
 import useCurrentUser from '../hooks/useCurrentUser';
@@ -7,20 +7,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export default function EnvironmentalControlPage() {
   const router = useRouter();
-  const { user, loading } = useCurrentUser();
+  const { user, loading, token } = useCurrentUser();
   const [zones, setZones] = useState([]);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [loadingZones, setLoadingZones] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (!loading) {
-      fetchZones();
-    }
-  }, [loading]);
-
-  async function fetchZones() {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('aegis_token') : null;
+  const fetchZones = useCallback(async () => {
     if (!token) {
       router.push('/login');
       return;
@@ -49,14 +42,21 @@ export default function EnvironmentalControlPage() {
       const data = await response.json();
       const zonesList = Array.isArray(data) ? data : data?.zones ?? [];
       setZones(zonesList);
-      setSelectedZoneId(zonesList[0]?.id || null);
+      setSelectedZoneId((selectedId) => zonesList.some((zone) => String(zone.id) === String(selectedId))
+        ? selectedId
+        : zonesList[0]?.id ?? null);
     } catch (err) {
       console.error('Failed to fetch zones:', err);
       setError(err.message || 'Unable to load zones');
     } finally {
       setLoadingZones(false);
     }
-  }
+  }, [router, token]);
+
+  useEffect(() => {
+    if (!loading && token) fetchZones();
+    else if (!loading && !token) router.push('/login');
+  }, [loading, token, fetchZones, router]);
 
   if (loading || loadingZones) {
     return (
@@ -68,8 +68,11 @@ export default function EnvironmentalControlPage() {
 
   if (error) {
     return (
-      <div className="p-6 text-red-400">
-        {error}
+      <div role="alert" className="p-6 text-red-400">
+        <p>{error}</p>
+        <button onClick={fetchZones} disabled={loadingZones} className="mt-4 rounded border border-slate-600 px-4 py-2 text-sm text-white disabled:opacity-50">
+          {loadingZones ? 'Retrying...' : 'Retry'}
+        </button>
       </div>
     );
   }
@@ -85,7 +88,10 @@ export default function EnvironmentalControlPage() {
 
       {zones.length === 0 ? (
         <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-8 text-center text-aegis-muted">
-          No zones available. Create a zone first in the Zones section.
+          <p>No zones available for environmental monitoring.</p>
+          <button onClick={fetchZones} className="mt-4 rounded border border-slate-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={loadingZones}>
+            {loadingZones ? 'Refreshing...' : 'Retry'}
+          </button>
         </div>
       ) : (
         <div className="space-y-6">
@@ -104,7 +110,7 @@ export default function EnvironmentalControlPage() {
             </select>
           </div>
 
-          {selectedZoneId && <EnvironmentalDashboard zoneId={selectedZoneId} />}
+          {selectedZoneId && <EnvironmentalDashboard zoneId={selectedZoneId} token={token} />}
         </div>
       )}
     </div>

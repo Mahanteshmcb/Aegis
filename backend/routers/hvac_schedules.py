@@ -8,9 +8,18 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_db, get_current_user
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models.hvac_schedule import HVACSchedule
 
 router = APIRouter(prefix="/api/v1/hvac", tags=["hvac_schedules"])
+
+
+def _record_hvac_action(db: Session, actor: dict, event_type: str, schedule_id: int, details: dict):
+    return record_actor_audit_event(
+        db, actor["tenant_id"], actor, event_type, "hvac_schedule", schedule_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 class HVACCreate(BaseModel):
@@ -45,7 +54,12 @@ def create_schedule(payload: HVACCreate, db: Session = Depends(get_db), current_
         enabled=True,
     )
     db.add(sched)
-    db.commit()
+    db.flush()
+    _record_hvac_action(
+        db, current_user, "hvac_schedule_created", sched.id,
+        {"name": sched.name, "zone_id": sched.zone_id, "setpoint": sched.setpoint,
+         "scheduled_at": sched.scheduled_at.isoformat(), "recurring": sched.recurring},
+    )
     db.refresh(sched)
     return sched
 
@@ -61,8 +75,9 @@ def delete_schedule(sched_id: int, db: Session = Depends(get_db), current_user=D
     sched = db.query(HVACSchedule).filter(HVACSchedule.id == sched_id, HVACSchedule.tenant_id == current_user["tenant_id"]).first()
     if not sched:
         raise HTTPException(status_code=404, detail="Schedule not found")
+    details = {"name": sched.name, "zone_id": sched.zone_id, "setpoint": sched.setpoint}
     db.delete(sched)
-    db.commit()
+    _record_hvac_action(db, current_user, "hvac_schedule_deleted", sched_id, details)
     return {"status": "deleted", "id": sched_id}
 
 
@@ -81,6 +96,7 @@ def update_schedule(sched_id: int, payload: HVACUpdate, db: Session = Depends(ge
     sched = db.query(HVACSchedule).filter(HVACSchedule.id == sched_id, HVACSchedule.tenant_id == current_user["tenant_id"]).first()
     if not sched:
         raise HTTPException(status_code=404, detail="Schedule not found")
+    changed_fields = payload.dict(exclude_unset=True)
     if payload.name is not None:
         sched.name = payload.name
     if payload.zone_id is not None:
@@ -96,6 +112,9 @@ def update_schedule(sched_id: int, payload: HVACUpdate, db: Session = Depends(ge
     if payload.enabled is not None:
         sched.enabled = payload.enabled
     db.add(sched)
-    db.commit()
+    _record_hvac_action(
+        db, current_user, "hvac_schedule_updated", sched.id,
+        {"changed_fields": list(changed_fields), "changes": changed_fields},
+    )
     db.refresh(sched)
     return sched

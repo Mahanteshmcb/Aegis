@@ -1,22 +1,20 @@
 import Card from './Card';
 import Button from './Button';
+import Link from 'next/link';
 
 export default function SystemControlPanel({
   onBackup,
   onSyncCreate,
   onSyncComplete,
-  onPauseFleet,
-  onResumeFleet,
   onEmergencyStop,
-  onToggleAnomaly,
   statusMessage,
   actionLoading,
   lastBackupSnapshot,
   lastSyncJob,
-  anomalyMode,
   healthStatus,
   role,
 }) {
+  const canOperate = ['admin', 'superadmin', 'manager', 'operator'].includes(String(role || '').toLowerCase());
   return (
     <Card title="System Control Panel">
       <p className="text-sm text-aegis-muted mb-4">
@@ -24,25 +22,22 @@ export default function SystemControlPanel({
       </p>
 
       <div className="grid gap-4 md:grid-cols-3 mb-6">
-        <Button onClick={onBackup} disabled={actionLoading}>
+        <Button onClick={onBackup} disabled={actionLoading || !canOperate}>
           Start Backup
         </Button>
-        <Button variant="secondary" onClick={onSyncCreate} disabled={actionLoading}>
+        <Button variant="secondary" onClick={onSyncCreate} disabled={actionLoading || !canOperate}>
           Create Sync Job
         </Button>
-        <Button variant="primary" onClick={onSyncComplete} disabled={actionLoading || !lastSyncJob}>
+        <Button variant="primary" onClick={onSyncComplete} disabled={actionLoading || !canOperate || !lastSyncJob}>
           Complete Sync Job
         </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3 mb-6">
-        <Button variant="secondary" onClick={onPauseFleet} disabled={actionLoading}>
-          Pause Fleet
-        </Button>
-        <Button variant="secondary" onClick={onResumeFleet} disabled={actionLoading}>
-          Resume Fleet
-        </Button>
-        <Button variant="danger" onClick={onEmergencyStop} disabled={actionLoading}>
+        <div className="md:col-span-2 rounded-lg border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-300">
+          Routine fleet missions and availability are managed on <Link className="text-cyan-300 underline" href="/robots-management">Robots</Link>.
+        </div>
+        <Button variant="danger" onClick={onEmergencyStop} disabled={actionLoading || !canOperate}>
           Emergency Stop
         </Button>
       </div>
@@ -77,11 +72,6 @@ export default function SystemControlPanel({
         <p className="mt-2 text-aegis-text font-medium">{statusMessage}</p>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Button variant="secondary" onClick={onToggleAnomaly} disabled={actionLoading}>
-          {anomalyMode ? 'Return Nominal' : 'Trigger Anomaly'}
-        </Button>
-      </div>
     </Card>
   );
 }

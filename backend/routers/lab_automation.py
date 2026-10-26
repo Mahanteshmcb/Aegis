@@ -13,8 +13,17 @@ from backend.models.lab_automation import AutomationDevice, AutomationJob, Autom
 from backend.database import SessionLocal
 import asyncio
 from datetime import datetime
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 
 router = APIRouter(prefix="/api/v1/lab", tags=["lab_automation"])
+
+
+def _record_lab_action(db: Session, actor: dict, event_type: str, entity_type: str, entity_id, details: dict):
+    return record_actor_audit_event(
+        db, actor["tenant_id"], actor, event_type, entity_type, entity_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 class DeviceCreate(BaseModel):
@@ -42,7 +51,12 @@ def create_device(payload: DeviceCreate, db: Session = Depends(get_db), current_
         status="online",
     )
     db.add(device)
-    db.commit()
+    db.flush()
+    _record_lab_action(
+        db, current_user, "automation_device_created", "automation_device", device.id,
+        {"name": device.name, "device_type": device.device_type, "zone_id": device.zone_id,
+         "capability_names": sorted((payload.capabilities or {}).keys())},
+    )
     db.refresh(device)
     return device
 
@@ -84,7 +98,14 @@ def create_job(payload: JobCreate, db: Session = Depends(get_db), current_user=D
         status="pending",
     )
     db.add(job)
-    db.commit()
+    db.flush()
+    _record_lab_action(
+        db, current_user, "automation_job_created", "automation_job", job.id,
+        {"name": job.name, "device_id": job.device_id, "command": job.command,
+         "parameter_names": sorted((payload.parameters or {}).keys()),
+         "scheduled_at": job.scheduled_at.isoformat() if job.scheduled_at else None,
+         "recurring": job.recurring, "cron": job.cron},
+    )
     db.refresh(job)
     return job
 
@@ -108,8 +129,12 @@ def cancel_job(job_id: int, db: Session = Depends(get_db), current_user=Depends(
     job = db.query(AutomationJob).filter(AutomationJob.id == job_id, AutomationJob.tenant_id == current_user["tenant_id"]).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    previous_status = job.status
     job.status = "cancelled"
-    db.commit()
+    _record_lab_action(
+        db, current_user, "automation_job_cancelled", "automation_job", job.id,
+        {"name": job.name, "previous_status": previous_status},
+    )
     return {"status": "cancelled", "job_id": job_id}
 
 
@@ -124,7 +149,10 @@ def run_job(job_id: int, db: Session = Depends(get_db), current_user=Depends(get
     job.scheduled_at = datetime.utcnow()
     job.status = "pending"
     db.add(job)
-    db.commit()
+    _record_lab_action(
+        db, current_user, "automation_job_scheduled", "automation_job", job.id,
+        {"name": job.name, "device_id": job.device_id, "command": job.command},
+    )
     return {"status": "scheduled", "job_id": job_id}
 
 
@@ -143,6 +171,7 @@ def update_job(job_id: int, payload: JobUpdate, db: Session = Depends(get_db), c
     job = db.query(AutomationJob).filter(AutomationJob.id == job_id, AutomationJob.tenant_id == current_user["tenant_id"]).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    changed_fields = payload.dict(exclude_unset=True)
     if payload.name is not None:
         job.name = payload.name
     if payload.device_id is not None:
@@ -158,7 +187,14 @@ def update_job(job_id: int, payload: JobUpdate, db: Session = Depends(get_db), c
     if payload.cron is not None:
         job.cron = payload.cron
     db.add(job)
-    db.commit()
+    _record_lab_action(
+        db, current_user, "automation_job_updated", "automation_job", job.id,
+        {
+            "changed_fields": list(changed_fields),
+            "changes": {key: value for key, value in changed_fields.items() if key != "parameters"},
+            "parameter_names": sorted(payload.parameters) if payload.parameters is not None else None,
+        },
+    )
     db.refresh(job)
     return job
 
@@ -169,7 +205,10 @@ def delete_job(job_id: int, db: Session = Depends(get_db), current_user=Depends(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     db.delete(job)
-    db.commit()
+    _record_lab_action(
+        db, current_user, "automation_job_deleted", "automation_job", job_id,
+        {"name": job.name, "command": job.command},
+    )
     return {"status": "deleted", "job_id": job_id}
 
 

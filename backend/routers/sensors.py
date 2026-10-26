@@ -16,8 +16,117 @@ from backend.dependencies import get_db, get_current_user, get_current_admin
 from backend import models_db as models
 from backend import schemas
 from backend import crud
+from backend.database import Zone
+from backend.models.digital_twin import DigitalTwinDevice
+from backend import realtime
+from backend.services import digital_twin
 
 router = APIRouter(prefix="/api/v1", tags=["sensors"])
+
+
+def _record_sensor_audit(db: Session, current_user, event_type: str, sensor, details: dict | None = None):
+    from backend.audit_utils import record_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+
+    metadata = {
+        **(details or {}),
+        "action": event_type,
+        "actor_user_id": current_user["id"],
+        "actor_email": current_user["email"],
+        "entity_type": "sensor",
+        "entity_id": str(sensor.id),
+        "sensor_id": sensor.id,
+        "sensor_name": sensor.name,
+        "sensor_type": sensor.type,
+        "zone_id": sensor.zone_id,
+        "outcome": "success",
+    }
+    record_audit_event(db, get_blockchain_connector(), current_user["tenant_id"], event_type, metadata)
+
+
+def _digital_twin_sensor_type(sensor_type: str | None) -> str:
+    normalized = str(sensor_type or "sensor").strip().lower().replace(" ", "_")
+    normalized = normalized.replace("sensor_", "", 1)
+    for supported in digital_twin.SENSOR_PROFILES:
+        if supported in normalized:
+            return supported
+    return normalized
+
+
+def _ensure_twin_sensor(db: Session, sensor: models.Sensor) -> DigitalTwinDevice:
+    legacy_device_id = f"legacy-sensor-{sensor.id}"
+    device = db.query(DigitalTwinDevice).filter(
+        DigitalTwinDevice.tenant_id == sensor.tenant_id,
+        DigitalTwinDevice.device_id == legacy_device_id,
+        DigitalTwinDevice.kind == "sensor",
+    ).first()
+    if device is None and sensor.name:
+        candidate = db.query(DigitalTwinDevice).filter(
+            DigitalTwinDevice.tenant_id == sensor.tenant_id,
+            DigitalTwinDevice.device_id == sensor.name,
+            DigitalTwinDevice.kind == "sensor",
+        ).first()
+        if candidate and (candidate.state or {}).get("legacy_sensor_id") in (None, sensor.id):
+            device = candidate
+
+    zone = None
+    if sensor.zone_id is not None:
+        zone = db.query(Zone).filter(
+            Zone.id == sensor.zone_id,
+            Zone.tenant_id == sensor.tenant_id,
+        ).first()
+        if zone is None:
+            raise HTTPException(status_code=409, detail="Sensor zone is missing or outside its tenant")
+
+    device_type = _digital_twin_sensor_type(sensor.type)
+    if device is None:
+        device_id = legacy_device_id
+        collision = db.query(DigitalTwinDevice.id).filter(
+            DigitalTwinDevice.tenant_id == sensor.tenant_id,
+            DigitalTwinDevice.device_id == device_id,
+        ).first()
+        if collision:
+            device_id = f"legacy-sensor-{sensor.id}-{sensor.tenant_id}"
+        position = dict(zone.spatial_position or {}) if zone else {}
+        if not all(axis in position for axis in ("x", "y", "z")):
+            position = {"x": 0.0, "y": 0.0, "z": 0.0}
+        device = DigitalTwinDevice(
+            tenant_id=sensor.tenant_id,
+            zone_id=sensor.zone_id,
+            device_id=device_id,
+            name=sensor.name or device_id,
+            kind="sensor",
+            device_type=device_type,
+            status="online" if sensor.last_reading else "offline",
+            position=position,
+            state={"legacy_sensor_id": sensor.id},
+            simulation_enabled=False,
+            control_mode="manual",
+        )
+        db.add(device)
+        db.flush()
+    else:
+        device.name = sensor.name or device.name
+        device.device_type = device_type
+        device.zone_id = sensor.zone_id
+        state = dict(device.state or {})
+        state["legacy_sensor_id"] = sensor.id
+        device.state = state
+        device.simulation_enabled = False
+    return device
+
+
+def _parse_telemetry_time(timestamp: str | None) -> datetime:
+    if timestamp:
+        try:
+            return datetime.fromisoformat(timestamp)
+        except ValueError:
+            try:
+                return datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                pass
+    return datetime.utcnow()
+
 
 class SensorDataIngest(BaseModel):
     """Sensor data ingestion payload."""
@@ -42,24 +151,18 @@ class SensorDataResponse(BaseModel):
 
 @router.post("/sensors", response_model=schemas.Sensor)
 async def create_sensor(sensor: schemas.SensorCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    import hashlib
     tenant_id = current_user.get("tenant_id")
     if tenant_id is None:
         raise HTTPException(status_code=403, detail="Tenant missing from current user")
+    if sensor.zone_id is not None and not db.query(Zone.id).filter(
+        Zone.id == sensor.zone_id,
+        Zone.tenant_id == tenant_id,
+    ).first():
+        raise HTTPException(status_code=404, detail="Zone not found")
     db_sensor = crud.create_sensor(db, sensor, tenant_id=tenant_id)
-    # Audit log for sensor creation
-    sensor_data = f"type={db_sensor.type}|tenant_id={db_sensor.tenant_id}|location={db_sensor.location}"
-    data_hash = hashlib.sha256(sensor_data.encode()).hexdigest()
-    audit = schemas.AuditLogCreate(
-        sensor_id=db_sensor.id,
-        event_type="sensor_created",
-        data_hash=data_hash,
-        blockchain_tx=None,
-    )
-    try:
-        crud.create_audit_log(db, audit, tenant_id=current_user["tenant_id"])
-    except Exception:
-        pass  # Do not block sensor creation if audit log fails
+    _ensure_twin_sensor(db, db_sensor)
+    db.commit()
+    _record_sensor_audit(db, current_user, "sensor_created", db_sensor, {"location": db_sensor.location})
     return db_sensor
 
 @router.post("/sensors/data", response_model=SensorDataResponse)
@@ -81,16 +184,7 @@ async def ingest_sensor_data(data: SensorDataIngest, db: Session = Depends(get_d
     db.commit()
     db.refresh(sensor)
 
-    # Persist raw telemetry for history and energy analysis
-    telemetry_time = datetime.utcnow()
-    if data.timestamp:
-        try:
-            telemetry_time = datetime.fromisoformat(data.timestamp)
-        except ValueError:
-            try:
-                telemetry_time = datetime.strptime(data.timestamp, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                telemetry_time = datetime.utcnow()
+    telemetry_time = _parse_telemetry_time(data.timestamp)
 
     db.add(models.SensorData(
         sensor_id=sensor.id,
@@ -99,6 +193,25 @@ async def ingest_sensor_data(data: SensorDataIngest, db: Session = Depends(get_d
         unit=str(data.unit),
     ))
     db.commit()
+
+    twin_sensor = _ensure_twin_sensor(db, sensor)
+    snapshots = digital_twin.ingest_sensor_sample(
+        db,
+        twin_sensor,
+        data.value,
+        data.unit,
+        telemetry_time,
+    )
+    for snapshot in snapshots:
+        await realtime.emit_tenant_event(
+            "digital_twin:device_update",
+            snapshot,
+            sensor.tenant_id,
+        )
+        if snapshot.get("alert"):
+            await realtime.emit_tenant_event("digital_twin:alert", snapshot["alert"], sensor.tenant_id)
+        if snapshot.get("alert_cleared"):
+            await realtime.emit_tenant_event("digital_twin:alert_cleared", snapshot["alert_cleared"], sensor.tenant_id)
 
     # If this is an environmental or weather-oriented sensor, create a weather observation
     sensor_type = (sensor.type or "").lower()
@@ -191,6 +304,11 @@ async def update_sensor(sensor_id: int, update: schemas.SensorUpdate, db: Sessio
         raise HTTPException(status_code=404, detail="Sensor not found or tenant mismatch")
 
     update_data = update.dict(exclude_unset=True)
+    if update_data.get("zone_id") is not None and not db.query(Zone.id).filter(
+        Zone.id == update_data["zone_id"],
+        Zone.tenant_id == sensor.tenant_id,
+    ).first():
+        raise HTTPException(status_code=404, detail="Zone not found")
     # allow last_reading and other fields to be set via update
     if "last_reading" in update_data:
         sensor.last_reading = update_data.get("last_reading")
@@ -206,6 +324,22 @@ async def update_sensor(sensor_id: int, update: schemas.SensorUpdate, db: Sessio
     db.add(sensor)
     db.commit()
     db.refresh(sensor)
+    twin_sensor = _ensure_twin_sensor(db, sensor)
+    twin_sensor.name = sensor.name or twin_sensor.name
+    twin_sensor.device_type = _digital_twin_sensor_type(sensor.type)
+    twin_sensor.zone_id = sensor.zone_id
+    if sensor.last_reading and sensor.last_reading.get("value") is not None:
+        digital_twin.ingest_sensor_sample(
+            db,
+            twin_sensor,
+            float(sensor.last_reading["value"]),
+            str(sensor.last_reading.get("unit") or ""),
+            _parse_telemetry_time(sensor.last_reading.get("timestamp")),
+        )
+    else:
+        db.commit()
+    db.refresh(sensor)
+    _record_sensor_audit(db, current_user, "sensor_updated", sensor, {"changed_fields": list(update_data.keys()), "changes": update_data})
     return sensor
 
 
@@ -220,13 +354,22 @@ async def delete_sensor(sensor_id: int, db: Session = Depends(get_db), current_a
     if not sensor:
         raise HTTPException(status_code=404, detail="Sensor not found or tenant mismatch")
 
+    twin_sensor = _ensure_twin_sensor(db, sensor)
+    sensor_snapshot = {
+        "sensor_name": sensor.name,
+        "sensor_type": sensor.type,
+        "zone_id": sensor.zone_id,
+    }
+    db.delete(twin_sensor)
     db.delete(sensor)
-    db.commit()
+    _record_sensor_audit(
+        db,
+        current_admin,
+        "sensor_deleted",
+        sensor,
+        sensor_snapshot,
+    )
     return {"detail": "Sensor deleted"}
-
-
-
-
 
 
 

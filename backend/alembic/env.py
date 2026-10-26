@@ -11,13 +11,16 @@ import backend.models.waste  # noqa: F401
 import backend.models.digital_twin  # noqa: F401
 import backend.models.estate_hierarchy  # noqa: F401
 from backend.models_db import Base  # noqa: E402
+from backend.config import settings  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
-fileConfig(config.config_file_name)
+if config.config_file_name and config.get_section("loggers"):
+    fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
 

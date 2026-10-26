@@ -31,7 +31,9 @@ def test_day82_operator_control_updates_device_state(db, monkeypatch):
         User(tenant_id=1, role="operator"),
     )
 
-    assert result["state"] == {"command": "start", "flow": 24}
+    assert result["state"]["command"] == "start"
+    assert result["state"]["flow"] == 24
+    assert result["state"]["last_command_delivery"]["accepted"] is True
     assert result["status"] == "online"
 
 

@@ -201,6 +201,9 @@ class TestSensorServicesIntegration:
         connector = SensorConnector()
 
         # Verify connector has expected methods
+
+
+        # Verify connector has expected methods
         assert hasattr(connector, 'connect')
         assert hasattr(connector, 'register_sensor')
         assert hasattr(connector, 'get_zone_sensors')
@@ -219,6 +222,42 @@ class TestSensorServicesIntegration:
             assert hasattr(sensors_pb2_grpc, 'AcousticPestMonitorServiceStub')
         except ImportError as e:
             pytest.fail(f"Failed to import protobuf modules: {e}")
+
+
+def test_sensor_registration_is_audited(client):
+    from backend.main import app
+    from backend.routers.iot_sensors import get_sensor_conn
+
+    class FakeSensorConnector:
+        async def register_sensor(self, sensor_id, sensor_type, zone_id, position):
+            return True
+
+    app.dependency_overrides[get_sensor_conn] = FakeSensorConnector
+    headers = {"Authorization": "Bearer test-token"}
+    try:
+        response = client.post(
+            "/api/v1/iot-sensors/register",
+            headers=headers,
+            json={
+                "sensor_id": "audited-probe",
+                "sensor_type": "mycelial_probe",
+                "zone_id": 7,
+                "position": {"x": 1.0, "y": 2.0, "z": 0.5},
+            },
+        )
+        assert response.status_code == 200, response.text
+
+        audit = client.get("/api/v1/audit?limit=100", headers=headers)
+        assert audit.status_code == 200, audit.text
+        assert any(
+            event["event_type"] == "iot_sensor_registered"
+            and event["entity_type"] == "iot_sensor"
+            and event["entity_id"] == "audited-probe"
+            and event["actor_email"] == "admin@aegis.com"
+            for event in audit.json()
+        )
+    finally:
+        app.dependency_overrides.pop(get_sensor_conn, None)
 
 
 # Mock sensor service implementations for testing

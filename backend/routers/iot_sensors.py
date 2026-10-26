@@ -7,9 +7,13 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
+from sqlalchemy.orm import Session
 
 from ai.sensor_connector import get_sensor_connector, SensorConnector
 from ai.protos.sensors_pb2 import SensorType, CalibrationType
+from backend.dependencies import get_current_user, get_db, require_permission
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 
 router = APIRouter(prefix="/api/v1/iot-sensors", tags=["iot-sensors"])
 logger = logging.getLogger(__name__)
@@ -82,9 +86,20 @@ async def get_sensor_conn() -> SensorConnector:
     """Dependency to get the sensor connector instance."""
     return await get_sensor_connector()
 
+
+def _record_sensor_action(db: Session, actor, event_type: str, entity_id: str, details: dict, outcome: str = "success"):
+    tenant_id = actor.tenant_id if hasattr(actor, "tenant_id") else actor["tenant_id"]
+    return record_actor_audit_event(
+        db, tenant_id, actor, event_type, "iot_sensor", entity_id, details,
+        blockchain=get_blockchain_connector(), outcome=outcome,
+    )
+
+
 @router.post("/register", summary="Register New IoT Sensor")
 async def register_sensor(request: SensorRegistrationRequest,
-                         sensor_conn: SensorConnector = Depends(get_sensor_conn)):
+                         sensor_conn: SensorConnector = Depends(get_sensor_conn),
+                         current_user=Depends(require_permission("devices.manage")),
+                         db: Session = Depends(get_db)):
     """
     Register a new IoT sensor in the sensor network.
 
@@ -105,7 +120,7 @@ async def register_sensor(request: SensorRegistrationRequest,
         }
 
         sensor_type = sensor_type_map.get(request.sensor_type.lower())
-        if not sensor_type:
+        if sensor_type is None:
             raise HTTPException(status_code=400, detail=f"Invalid sensor type: {request.sensor_type}")
 
         position = (request.position["x"], request.position["y"], request.position.get("z", 0.0))
@@ -118,6 +133,11 @@ async def register_sensor(request: SensorRegistrationRequest,
         )
 
         if success:
+            _record_sensor_action(
+                db, current_user, "iot_sensor_registered", request.sensor_id,
+                {"sensor_type": request.sensor_type, "zone_id": request.zone_id,
+                 "position": request.position},
+            )
             return {
                 "message": f"IoT Sensor {request.sensor_id} registered successfully",
                 "sensor_id": request.sensor_id,
@@ -317,7 +337,9 @@ async def get_pest_activity(zone_id: int, x: float = 0.0, y: float = 0.0, z: flo
 @router.post("/pest/scan/{zone_id}", summary="Trigger Acoustic Pest Scan")
 async def trigger_pest_scan(zone_id: int, duration_seconds: int = 60,
                            x: float = 0.0, y: float = 0.0, z: float = 0.0,
-                           sensor_conn: SensorConnector = Depends(get_sensor_conn)):
+                           sensor_conn: SensorConnector = Depends(get_sensor_conn),
+                           current_user=Depends(require_permission("devices.control")),
+                           db: Session = Depends(get_db)):
     """
     Trigger an intensive acoustic pest scan in a zone.
 
@@ -328,6 +350,11 @@ async def trigger_pest_scan(zone_id: int, duration_seconds: int = 60,
         success = await sensor_conn.trigger_pest_scan(zone_id, position, duration_seconds)
 
         if success:
+            _record_sensor_action(
+                db, current_user, "iot_pest_scan_started", f"zone:{zone_id}",
+                {"zone_id": zone_id, "position": {"x": x, "y": y, "z": z},
+                 "duration_seconds": duration_seconds},
+            )
             return {
                 "message": f"Acoustic pest scan initiated for zone {zone_id}",
                 "zone_id": zone_id,
@@ -346,7 +373,9 @@ async def trigger_pest_scan(zone_id: int, duration_seconds: int = 60,
 
 @router.post("/calibrate", summary="Calibrate IoT Sensors")
 async def calibrate_sensors(request: CalibrationRequestModel,
-                           sensor_conn: SensorConnector = Depends(get_sensor_conn)):
+                           sensor_conn: SensorConnector = Depends(get_sensor_conn),
+                           current_user=Depends(require_permission("devices.control")),
+                           db: Session = Depends(get_db)):
     """
     Calibrate one or more IoT sensors.
 
@@ -371,6 +400,13 @@ async def calibrate_sensors(request: CalibrationRequestModel,
             # Bulk calibration
             successful_count = await sensor_conn.bulk_calibrate_sensors(request.sensor_ids, calibration_type)
 
+        _record_sensor_action(
+            db, current_user, "iot_sensors_calibration_requested",
+            ",".join(request.sensor_ids),
+            {"sensor_ids": request.sensor_ids, "calibration_type": calibration_type.name,
+             "requested_count": len(request.sensor_ids), "successful_count": successful_count},
+            outcome="success" if successful_count == len(request.sensor_ids) else "partial",
+        )
         return BulkOperationResponse(
             total_requested=len(request.sensor_ids),
             successful_operations=successful_count,
@@ -391,7 +427,9 @@ async def calibrate_sensors(request: CalibrationRequestModel,
 
 @router.post("/emergency/shutdown", summary="Emergency IoT Sensor Shutdown")
 async def emergency_shutdown(sensor_ids: List[str], reason: str = "System emergency",
-                            sensor_conn: SensorConnector = Depends(get_sensor_conn)):
+                            sensor_conn: SensorConnector = Depends(get_sensor_conn),
+                            current_user=Depends(require_permission("devices.control")),
+                            db: Session = Depends(get_db)):
     """
     Emergency shutdown of specified IoT sensors.
 
@@ -401,6 +439,10 @@ async def emergency_shutdown(sensor_ids: List[str], reason: str = "System emerge
         success = await sensor_conn.emergency_shutdown(sensor_ids, reason)
 
         if success:
+            _record_sensor_action(
+                db, current_user, "iot_sensors_emergency_shutdown", ",".join(sensor_ids),
+                {"sensor_ids": sensor_ids, "reason": reason},
+            )
             return {
                 "message": f"Emergency shutdown initiated for {len(sensor_ids)} IoT sensors",
                 "sensor_ids": sensor_ids,
@@ -420,7 +462,9 @@ async def emergency_shutdown(sensor_ids: List[str], reason: str = "System emerge
 @router.post("/stream/mycelial/{zone_id}", summary="Start Mycelial Data Streaming")
 async def stream_mycelial_data(zone_id: int, background_tasks: BackgroundTasks,
                               x: float = 0.0, y: float = 0.0, z: float = 0.0,
-                              sensor_conn: SensorConnector = Depends(get_sensor_conn)):
+                              sensor_conn: SensorConnector = Depends(get_sensor_conn),
+                              current_user=Depends(require_permission("devices.control")),
+                              db: Session = Depends(get_db)):
     """
     Start streaming real-time mycelial probe data to the orchestration engine.
 
@@ -435,6 +479,10 @@ async def stream_mycelial_data(zone_id: int, background_tasks: BackgroundTasks,
             sensor_conn.stream_mycelial_data,
             zone_id,
             position
+        )
+        _record_sensor_action(
+            db, current_user, "iot_mycelial_stream_started", f"zone:{zone_id}",
+            {"zone_id": zone_id, "position": {"x": x, "y": y, "z": z}},
         )
 
         return {
@@ -452,7 +500,9 @@ async def stream_mycelial_data(zone_id: int, background_tasks: BackgroundTasks,
 @router.post("/stream/acoustic/{zone_id}", summary="Start Acoustic Data Streaming")
 async def stream_acoustic_data(zone_id: int, background_tasks: BackgroundTasks,
                               x: float = 0.0, y: float = 0.0, z: float = 0.0,
-                              sensor_conn: SensorConnector = Depends(get_sensor_conn)):
+                              sensor_conn: SensorConnector = Depends(get_sensor_conn),
+                              current_user=Depends(require_permission("devices.control")),
+                              db: Session = Depends(get_db)):
     """
     Start streaming real-time acoustic pest monitoring data to the orchestration engine.
 
@@ -467,6 +517,10 @@ async def stream_acoustic_data(zone_id: int, background_tasks: BackgroundTasks,
             sensor_conn.stream_acoustic_data,
             zone_id,
             position
+        )
+        _record_sensor_action(
+            db, current_user, "iot_acoustic_stream_started", f"zone:{zone_id}",
+            {"zone_id": zone_id, "position": {"x": x, "y": y, "z": z}},
         )
 
         return {

@@ -8,8 +8,9 @@ from backend.routers import digital_twin
 
 
 class User:
-    def __init__(self, tenant_id):
+    def __init__(self, tenant_id, role="operator"):
         self.tenant_id = tenant_id
+        self.role = role
 
 
 def test_day81_device_crud_is_tenant_scoped(db, monkeypatch):

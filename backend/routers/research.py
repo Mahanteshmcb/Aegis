@@ -32,6 +32,7 @@ def get_vryndara_connector():
         _vryndara_connector = VryndaraConnector(
             kernel_address=f"{settings.vryndara_host}:{settings.vryndara_port}",
             fallback_mode=settings.vryndara_fallback_enabled,
+            timeout=settings.vryndara_timeout,
         )
     return _vryndara_connector
 
@@ -175,6 +176,7 @@ async def generate_audit_script(
 async def robotic_command(
     request: RobotCommandRequest,
     current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Dispatch a robotic command through Vryndara."""
     connector = get_vryndara_connector()
@@ -183,6 +185,26 @@ async def robotic_command(
         action=request.action,
         parameters=request.parameters,
         security_token=request.security_token,
+    )
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+    result_status = str(result.get("status", "completed")) if isinstance(result, dict) else "unknown"
+    failed = result_status.casefold() in {"failed", "failure", "error", "denied"}
+    record_actor_audit_event(
+        db,
+        current_user["tenant_id"],
+        current_user,
+        "robotic_command_dispatched",
+        "robot_command",
+        request.robot_type,
+        {
+            "robot_type": request.robot_type,
+            "command": request.action,
+            "parameter_names": sorted(request.parameters),
+            "result_status": result_status,
+        },
+        blockchain=get_blockchain_connector(),
+        outcome="failure" if failed else "success",
     )
     return {
         "status": result.get("status", "completed"),

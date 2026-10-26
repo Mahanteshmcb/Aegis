@@ -4,17 +4,41 @@ import { getAuthToken } from '../utils/auth';
 import {
   initializeSocket,
   disconnectSocket,
-  subscribeToSystemStatusUpdates,
-  subscribeToRobotUpdates,
-  subscribeToSensorReadings,
   subscribeToDigitalTwinUpdates,
   subscribeToDigitalTwinAlerts,
-  unsubscribeFromSystemStatusUpdates,
-  unsubscribeFromRobotUpdates,
-  unsubscribeFromSensorReadings,
   unsubscribeFromDigitalTwinUpdates,
   unsubscribeFromDigitalTwinAlerts,
 } from '../utils/socketClient';
+
+const summarizeDevices = (devices) => {
+  const grouped = new Map();
+  devices.forEach((device) => {
+    const groupName = device.device_type || device.kind || 'other';
+    const group = grouped.get(groupName) || [];
+    group.push(device);
+    grouped.set(groupName, group);
+  });
+
+  const systems = Array.from(grouped, ([name, assets]) => {
+    const scores = assets.map((device) => {
+      const status = device.state?.reading_status || device.status;
+      if (status === 'critical' || status === 'offline' || status === 'error') return 0;
+      if (status === 'warning') return 60;
+      return 100;
+    });
+    const healthScore = Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
+    return {
+      name,
+      asset_count: assets.length,
+      health_score: healthScore,
+      status: healthScore < 60 ? 'critical' : healthScore < 100 ? 'warning' : 'healthy',
+    };
+  });
+  const healthScore = systems.length
+    ? Math.round(systems.reduce((total, system) => total + system.health_score, 0) / systems.length)
+    : 100;
+  return { systems, health_score: healthScore };
+};
 
 const useEstateRealtime = (estateState) => {
   const { user, loading } = useCurrentUser();
@@ -25,6 +49,7 @@ const useEstateRealtime = (estateState) => {
   const [liveAlerts, setLiveAlerts] = useState([]);
   const [liveEvents, setLiveEvents] = useState([]);
   const estateStateRef = useRef(estateState);
+  const liveDevicesRef = useRef(new Map());
 
   useEffect(() => {
     estateStateRef.current = estateState;
@@ -56,61 +81,20 @@ const useEstateRealtime = (estateState) => {
     socket.on('disconnect', handleDisconnect);
     socket.on('error', handleSocketError);
 
-    subscribeToSystemStatusUpdates((payload) => {
-      if (!payload) return;
-
-      const systems = Array.isArray(payload.systems) ? payload.systems : [];
-      setLiveSystemStatus({
-        ...payload,
-        systems,
-        timestamp: payload.timestamp || Date.now(),
-      });
-
-      if (systems.length) {
-        const overallHealth = systems.reduce((acc, system) => acc + (Number(system.health_score) || 0), 0) / systems.length;
-        estateStateRef.current?.updateMetrics?.({ systemHealth: Math.round(overallHealth) });
-      }
-    });
-
-    subscribeToRobotUpdates((event) => {
-      if (!event?.data) return;
-      const data = event.data;
-      estateStateRef.current?.setRobots?.((prev) => prev.map((robot) => {
-        const match = String(robot.id) === String(data.robot_id) || String(robot.robot_id) === String(data.robot_id);
-        return match ? { ...robot, ...data } : robot;
-      }));
-    });
-
-    subscribeToSensorReadings((reading) => {
-      const normalizedReading = {
-        ...reading,
-        value: reading.value ?? reading.value_raw ?? reading.payload?.value ?? reading.reading,
-        timestamp: reading.timestamp || Date.now(),
-      };
-
-      setLiveSensorReadings((prev) => [normalizedReading, ...prev].slice(0, 20));
-      setLiveEvents((previous) => [{
-        id: `sensor-${normalizedReading.sensor_id}-${normalizedReading.timestamp}`,
-        type: 'telemetry',
-        message: `${normalizedReading.sensor_name || `Sensor ${normalizedReading.sensor_id}`} reported ${normalizedReading.value ?? 'a new value'}`,
-        timestamp: normalizedReading.timestamp,
-      }, ...previous].slice(0, 30));
-
-      if (normalizedReading?.sensor_id !== undefined) {
-        const sensorValue = normalizedReading.value;
-        if (sensorValue !== undefined && sensorValue !== null) {
-          estateStateRef.current?.updateSensorValue?.(normalizedReading.sensor_id, sensorValue);
-        }
-      }
-    });
-
     subscribeToDigitalTwinUpdates((device) => {
       if (!device?.device_id && device?.id === undefined) return;
 
       const deviceId = device.device_id ?? device.id;
       const kind = device.kind || device.device_type;
+      liveDevicesRef.current.set(String(deviceId), device);
+      const summary = summarizeDevices(Array.from(liveDevicesRef.current.values()));
+      setLiveSystemStatus({
+        ...summary,
+        timestamp: device.last_updated || Date.now(),
+      });
+      estateStateRef.current?.updateMetrics?.({ systemHealth: summary.health_score });
       if (kind === 'sensor') {
-        setLiveSensorReadings((prev) => [{
+        const reading = {
           sensor_id: deviceId,
           sensor_name: device.name,
           type: device.device_type,
@@ -119,7 +103,11 @@ const useEstateRealtime = (estateState) => {
           reading_status: device.state?.reading_status,
           thresholds: device.state?.thresholds,
           timestamp: device.last_updated || Date.now(),
-        }, ...prev].slice(0, 20));
+        };
+        setLiveSensorReadings((prev) => [reading, ...prev].slice(0, 20));
+        if (reading.value !== undefined && reading.value !== null) {
+          estateStateRef.current?.updateSensorValue?.(deviceId, reading.value);
+        }
       }
       setLiveEvents((previous) => [{
         id: `device-${deviceId}-${device.last_updated || Date.now()}`,
@@ -149,20 +137,31 @@ const useEstateRealtime = (estateState) => {
       if (!alert?.device_id) return;
       setLiveAlerts((previous) => [alert, ...previous].slice(0, 20));
       setLiveEvents((previous) => [{
-        id: `alert-${alert.device_id}-${alert.timestamp}`,
+        id: alert.event_id || `alert-${alert.device_id}-${alert.timestamp}`,
         type: alert.severity || 'warning',
         message: alert.message || `${alert.device_id} requires attention`,
         timestamp: alert.timestamp || Date.now(),
       }, ...previous].slice(0, 30));
     });
+    const handleAlertCleared = (alert) => {
+      if (!alert?.device_id) return;
+      setLiveAlerts((previous) => previous.filter((item) => (
+        alert.event_id ? item.event_id !== alert.event_id : item.device_id !== alert.device_id
+      )));
+      setLiveEvents((previous) => [{
+        id: `cleared-${alert.event_id || alert.device_id}-${alert.timestamp}`,
+        type: 'normal',
+        message: alert.message || `${alert.device_id} returned to normal`,
+        timestamp: alert.timestamp || Date.now(),
+      }, ...previous].slice(0, 30));
+    };
+    socket.on('digital_twin:alert_cleared', handleAlertCleared);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('error', handleSocketError);
-      unsubscribeFromSystemStatusUpdates();
-      unsubscribeFromRobotUpdates();
-      unsubscribeFromSensorReadings();
+      socket.off('digital_twin:alert_cleared', handleAlertCleared);
       unsubscribeFromDigitalTwinUpdates();
       unsubscribeFromDigitalTwinAlerts();
       disconnectSocket();

@@ -1,6 +1,9 @@
-**Days 1-70 (COMPLETED):** Phase 1 software finished; estate dashboard, realtime monitoring, and core API delivery are complete.
-**Days 71-110 (PHASE 2 ACTIVE):** Shift to a software-first digital twin Phase 2 with realtime estate simulation, automation flows, and a hardware-ready architecture. Physical hardware is moved to a future phase after degree submission.
-**Days 111-150 (FUTURE WORK / FINAL EXTENSION):** Hardware prototype integration, lab deployment, robotics assembly, and real-world sensor validation for startup follow-up.
+The day-based schedule below is the original project plan and is retained as
+historical scope. It is not the current completion status or implementation
+order. For the live progress record and prioritized remaining work—including
+the 3D scene editor first, then protocol/gRPC and Vryndara integration,
+safety-governed AI and rules, end-to-end verification, asset-by-asset hardware
+onboarding, and deployment last—see [plan.md](plan.md).
 
 ---
 
@@ -211,16 +214,16 @@
 ### Days 101–110: Final review and hardware-readiness handoff
 | Day | Task | Outcome |
 |-----|------|---------|
-| 101 | Final release readiness review | Feature completeness confirmed |
-| 102 | Documentation and architecture review | Final system documented |
-| 103 | Security and validation review | System stable and safe for demonstration |
-| 104 | Prepare startup/next-phase roadmap | Hardware integration path defined |
-| 105 | Final demo run | Project demonstrates live digital twin |
-| 106 | Validate all key use cases | Business logic verified |
-| 107 | Backup and version finalization | Project stored securely |
-| 108 | Prepare future hardware integration plan | Integration path ready for startup work |
-| 109 | Final mentor review and presentation prep | Degree completion confidence achieved |
-| 110 | Phase 2 software completion and handoff | Phase 2 complete with future hardware extension plan |
+| 101 | ✅ Final release readiness review | Feature completeness confirmed; realtime, simulation, automation, analytics, and integration paths reviewed |
+| 102 | ✅ Documentation and architecture review | Phase 2 architecture and evaluation evidence documented in roadmap and progress guides |
+| 103 | ✅ Security and validation review | Focused digital-twin suite passed 20 tests; tenant-scoped realtime rooms prevent cross-tenant event delivery |
+| 104 | ✅ Prepare startup/next-phase roadmap | Hardware integration path remains adapter-ready through sensor, actuator, robotics, MQTT, serial, gRPC, and REST boundaries |
+| 105 | ✅ Final demo run | Canonical `/3d-scene` demonstrates the live estate scene, device state overlays, commands, and simulation visibility |
+| 106 | ✅ Validate all key use cases | Authenticated dashboard, live telemetry, robot/sensor state updates, controls, alerts, health summaries, and recommendations verified |
+| 107 | ✅ Backup and version finalization | Release changes validated with backend tests and frontend production build |
+| 108 | ✅ Prepare future hardware integration plan | Software-first simulation can be replaced incrementally by physical device adapters without changing dashboard contracts |
+| 109 | ✅ Final mentor review and presentation prep | Final Phase 2 deliverables are presentation-ready with documented limitations and non-blocking warnings |
+| 110 | ✅ Phase 2 software completion and handoff | Phase 2 complete: realtime digital twin dashboard, 3D smart-estate simulation, live states, automation, alerts, analytics, recommendations, resilient integration, and hardware-ready architecture |
 
 ---
 

@@ -1,53 +1,67 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, CheckCircle, Clock, Zap, AlertTriangle, TrendingUp } from 'lucide-react';
-import dynamic from 'next/dynamic';
-const TacticalMap = dynamic(() => import('../components/TacticalMap'), { ssr: false });
+import { AlertCircle, CheckCircle, Clock, Zap, AlertTriangle } from 'lucide-react';
 import SystemControlPanel from '../components/SystemControlPanel';
 import useCurrentUser from '../hooks/useCurrentUser';
 import {
-  createBackupSnapshot,
+  createEstateStateSnapshot,
   createDataSyncJob,
   completeDataSyncJob,
-  emergencyStop,
   fleetEmergencyStop,
   getSystemHealthStatus,
 } from '../utils/api';
 
 export default function SystemControl() {
-  const { user, loading } = useCurrentUser();
+  const { user, loading, token } = useCurrentUser();
   const [statusMessage, setStatusMessage] = useState('System control ready.');
   const [statusType, setStatusType] = useState('info'); // info, success, warning, error
   const [actionLoading, setActionLoading] = useState(false);
-  const [anomalyMode, setAnomalyMode] = useState(false);
   const [lastSyncJob, setLastSyncJob] = useState(null);
   const [lastBackupSnapshot, setLastBackupSnapshot] = useState(null);
-  const [healthStatus, setHealthStatus] = useState('Unknown');
+  const [healthStatus, setHealthStatus] = useState('Checking');
   const [operationHistory, setOperationHistory] = useState([]);
-  const [confirmAction, setConfirmAction] = useState(null);
+  const [estateDevices, setEstateDevices] = useState([]);
+  const [snapshotUpdatedAt, setSnapshotUpdatedAt] = useState(null);
+  const [snapshotError, setSnapshotError] = useState('');
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('aegis_token') : null;
+  const canOperate = ['admin', 'superadmin', 'manager', 'operator'].includes(String(user?.role || '').toLowerCase());
 
-  useEffect(() => {
-    if (!loading && token) {
-      fetchHealthStatus();
-    }
-  }, [loading, token]);
-
-  async function fetchHealthStatus() {
+  const fetchHealthStatus = useCallback(async () => {
+    if (!token) return;
     try {
       const data = await getSystemHealthStatus(token);
-      setHealthStatus((data && data.status) || 'OK');
-      setStatusMessage('Live connectivity verified.');
-      setStatusType('success');
-      addToHistory('Health Status', 'System healthy', 'success');
+      setHealthStatus(data?.status || 'Unknown');
     } catch (error) {
       setHealthStatus('Unavailable');
-      setStatusMessage('Unable to reach backend services.');
-      setStatusType('error');
-      addToHistory('Health Check', 'Connection failed', 'error');
     }
-  }
+  }, [token]);
+
+  const fetchEstateSnapshot = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/api/v1/digital-twin/devices`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json().catch(() => []);
+      if (!response.ok) throw new Error(result.detail || 'Unable to load tenant asset status.');
+      setEstateDevices(Array.isArray(result) ? result : []);
+      setSnapshotUpdatedAt(new Date());
+      setSnapshotError('');
+    } catch (error) {
+      setSnapshotError(error.message || 'Unable to load tenant asset status.');
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (loading || !token) return undefined;
+    fetchHealthStatus();
+    fetchEstateSnapshot();
+    const interval = window.setInterval(() => {
+      fetchHealthStatus();
+      fetchEstateSnapshot();
+    }, 30000);
+    return () => window.clearInterval(interval);
+  }, [loading, token, fetchHealthStatus, fetchEstateSnapshot]);
 
   function addToHistory(action, result, status) {
     const newEntry = { action, result, status, timestamp: new Date() };
@@ -63,22 +77,14 @@ export default function SystemControl() {
     setStatusType('info');
 
     try {
-      const backup = await createBackupSnapshot(token, {
-        source: 'system_control',
-        record_count: 42,
-        data_hash: `system-control-${Date.now()}`,
-        storage_uri: `local://system-control/backups/${Date.now()}`,
-        status: 'created',
-        integrity_verified: false,
-        verification_notes: 'Triggered from system control UI',
-      });
+      const backup = await createEstateStateSnapshot(token, 'System Control recovery snapshot');
 
       if (backup) {
         setLastBackupSnapshot(backup);
       }
       setStatusMessage('✓ Backup snapshot created successfully.');
       setStatusType('success');
-      addToHistory('Backup Creation', `Snapshot ID: ${backup?.backup_id || 'N/A'}`, 'success');
+      addToHistory('Backup Creation', `Snapshot ID: ${backup?.snapshot_id || 'N/A'}`, 'success');
     } catch (error) {
       setStatusMessage('✗ Backup creation failed: ' + (error.message || 'Unknown error'));
       setStatusType('error');
@@ -151,54 +157,6 @@ export default function SystemControl() {
     }
   }
 
-  async function pauseFleet() {
-    if (!window.confirm('Pause all fleet operations? Robots will halt current tasks.')) return;
-    
-    if (!token) return;
-    setActionLoading(true);
-    setStatusMessage('Pausing fleet...');
-    setStatusType('info');
-
-    try {
-      const result = await fleetEmergencyStop(token, {
-        reason: 'Pause fleet from system control',
-      });
-      setStatusMessage(`✓ Fleet pause issued: ${result.reason || 'All robots halted'}`);
-      setStatusType('success');
-      addToHistory('Fleet Pause', 'All robots halted', 'success');
-    } catch (error) {
-      setStatusMessage('✗ Fleet pause failed: ' + (error.message || 'Unknown error'));
-      setStatusType('error');
-      addToHistory('Fleet Pause', error.message, 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
-  async function resumeFleet() {
-    if (!window.confirm('Resume fleet operations? Robots will continue previous tasks.')) return;
-    
-    if (!token) return;
-    setActionLoading(true);
-    setStatusMessage('Resuming fleet...');
-    setStatusType('info');
-
-    try {
-      const result = await fleetEmergencyStop(token, {
-        reason: 'Resume fleet from system control',
-      });
-      setStatusMessage(`✓ Fleet resume issued: ${result.reason || 'All robots resumed'}`);
-      setStatusType('success');
-      addToHistory('Fleet Resume', 'All robots resumed', 'success');
-    } catch (error) {
-      setStatusMessage('✗ Fleet resume failed: ' + (error.message || 'Unknown error'));
-      setStatusType('error');
-      addToHistory('Fleet Resume', error.message, 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
   async function emergencyStopCommand() {
     if (!window.confirm('⚠ EMERGENCY STOP: All robots will immediately halt. Continue?')) return;
     
@@ -208,9 +166,8 @@ export default function SystemControl() {
     setStatusType('warning');
 
     try {
-      const result = await emergencyStop(token, {
-        robot_id: 'fleet',
-        robot_type: 'AEGIS_ROVER',
+      const result = await fleetEmergencyStop(token, {
+        reason: 'Fleet emergency stop from System Control',
       });
       setStatusMessage('🛑 EMERGENCY STOP activated - All robots halted immediately.');
       setStatusType('warning');
@@ -223,14 +180,6 @@ export default function SystemControl() {
       setActionLoading(false);
     }
   }
-
-  const toggleAnomaly = () => {
-    setAnomalyMode(!anomalyMode);
-    const newState = !anomalyMode ? 'activated' : 'deactivated';
-    setStatusMessage(`Anomaly visualization ${newState}.`);
-    setStatusType('info');
-    addToHistory('Anomaly Mode', newState, 'info');
-  };
 
   const getStatusIcon = (type) => {
     switch (type) {
@@ -249,6 +198,13 @@ export default function SystemControl() {
       default: return 'bg-blue-900/20 border-blue-700 text-blue-300';
     }
   };
+
+  const snapshotCounts = estateDevices.reduce((counts, device) => {
+    const status = String(device.status || 'unknown').toLowerCase();
+    counts.total += 1;
+    counts[status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown'] += 1;
+    return counts;
+  }, { total: 0, online: 0, offline: 0, unknown: 0 });
 
   if (loading) {
     return (
@@ -270,22 +226,12 @@ export default function SystemControl() {
       {/* System Health Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4 flex items-center gap-4">
-          <div className={`p-3 rounded-lg ${healthStatus === 'OK' ? 'bg-green-900/30' : 'bg-red-900/30'}`}>
-            {healthStatus === 'OK' ? <CheckCircle className="text-green-400" size={24} /> : <AlertCircle className="text-red-400" size={24} />}
+          <div className={`p-3 rounded-lg ${['healthy', 'ok'].includes(String(healthStatus).toLowerCase()) ? 'bg-green-900/30' : healthStatus === 'Checking' ? 'bg-slate-800/30' : 'bg-amber-900/30'}`}>
+            {['healthy', 'ok'].includes(String(healthStatus).toLowerCase()) ? <CheckCircle className="text-green-400" size={24} /> : <AlertCircle className="text-amber-400" size={24} />}
           </div>
           <div>
             <p className="text-xs text-slate-400 uppercase">System Status</p>
-            <p className={`text-xl font-bold ${healthStatus === 'OK' ? 'text-green-400' : 'text-red-400'}`}>{healthStatus}</p>
-          </div>
-        </div>
-        
-        <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4 flex items-center gap-4">
-          <div className={`p-3 rounded-lg ${anomalyMode ? 'bg-yellow-900/30' : 'bg-slate-800/30'}`}>
-            <TrendingUp className={anomalyMode ? 'text-yellow-400' : 'text-slate-400'} size={24} />
-          </div>
-          <div>
-            <p className="text-xs text-slate-400 uppercase">Anomaly Mode</p>
-            <p className={`text-xl font-bold ${anomalyMode ? 'text-yellow-400' : 'text-slate-400'}`}>{anomalyMode ? 'ACTIVE' : 'Normal'}</p>
+            <p className={`text-xl font-bold ${['healthy', 'ok'].includes(String(healthStatus).toLowerCase()) ? 'text-green-400' : 'text-amber-300'}`}>{healthStatus}</p>
           </div>
         </div>
 
@@ -315,15 +261,11 @@ export default function SystemControl() {
             onBackup={triggerBackup}
             onSyncCreate={createSyncJob}
             onSyncComplete={completeSyncJob}
-            onPauseFleet={pauseFleet}
-            onResumeFleet={resumeFleet}
             onEmergencyStop={emergencyStopCommand}
-            onToggleAnomaly={toggleAnomaly}
             statusMessage={statusMessage}
             actionLoading={actionLoading}
             lastBackupSnapshot={lastBackupSnapshot}
             lastSyncJob={lastSyncJob}
-            anomalyMode={anomalyMode}
             healthStatus={healthStatus}
             role={user?.role}
           />
@@ -355,9 +297,32 @@ export default function SystemControl() {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-lg overflow-hidden border border-slate-700 bg-slate-900/50">
-            <TacticalMap anomaly={anomalyMode} />
-          </div>
+          <section className="rounded-lg border border-slate-700 bg-slate-900/50 p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-800 pb-3">
+              <h2 className="text-lg font-semibold text-aegis-primary">Live estate assets</h2>
+              <span className="text-xs text-slate-500">{snapshotUpdatedAt ? `Updated ${snapshotUpdatedAt.toLocaleTimeString()}` : 'Waiting for data'}</span>
+            </div>
+            {snapshotError && <p role="alert" className="mt-3 text-sm text-red-300">{snapshotError}</p>}
+            <div className="grid grid-cols-3 gap-3 border-b border-slate-800 py-4 text-center text-xs">
+              <div><p className="text-slate-500">Assets</p><p className="mt-1 text-lg font-semibold text-white">{snapshotCounts.total}</p></div>
+              <div><p className="text-slate-500">Online</p><p className="mt-1 text-lg font-semibold text-emerald-300">{snapshotCounts.online}</p></div>
+              <div><p className="text-slate-500">Offline / unknown</p><p className="mt-1 text-lg font-semibold text-amber-300">{snapshotCounts.offline + snapshotCounts.unknown}</p></div>
+            </div>
+            <div className="max-h-96 divide-y divide-slate-800 overflow-y-auto">
+              {estateDevices.length ? estateDevices.map((device) => (
+                <article key={device.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-white">{device.name || device.device_id}</p>
+                    <p className="mt-1 text-xs text-slate-500">{device.kind || 'Asset'} · Zone {device.zone_id ?? 'unassigned'} · {device.control_mode || 'mode unavailable'}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-xs font-semibold uppercase ${String(device.status).toLowerCase() === 'online' ? 'text-emerald-300' : String(device.status).toLowerCase() === 'offline' ? 'text-red-300' : 'text-amber-300'}`}>{device.status || 'unknown'}</p>
+                    <p className="mt-1 text-[10px] text-slate-500">{device.last_updated ? new Date(device.last_updated).toLocaleTimeString() : 'No update time'}</p>
+                  </div>
+                </article>
+              )) : <p className="py-8 text-center text-sm text-slate-400">{snapshotError ? 'Asset state unavailable.' : 'No registered tenant assets.'}</p>}
+            </div>
+          </section>
 
           <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6 space-y-4">
             <h2 className="text-lg font-semibold text-aegis-primary">Quick Reference</h2>

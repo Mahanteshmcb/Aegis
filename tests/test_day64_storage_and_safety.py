@@ -58,6 +58,23 @@ def test_storage_facilities_and_inventory_endpoints(client, test_db):
     items = items_resp.json()
     assert any(i["id"] == item["id"] for i in items)
 
+    update_resp = client.put(
+        f"/api/v1/storage/inventory/{item['id']}",
+        json={"quantity": 9.5, "lot_number": "SEED-2026-UPDATED"},
+        headers=headers,
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["quantity"] == 9.5
+    assert update_resp.json()["lot_number"] == "SEED-2026-UPDATED"
+
+    blocked_delete = client.delete(f"/api/v1/storage/facilities/{facility['id']}", headers=headers)
+    assert blocked_delete.status_code == 409
+
+    delete_item = client.delete(f"/api/v1/storage/inventory/{item['id']}", headers=headers)
+    assert delete_item.status_code == 200
+    delete_facility = client.delete(f"/api/v1/storage/facilities/{facility['id']}", headers=headers)
+    assert delete_facility.status_code == 200
+
 
 def test_check_safety_blocks_for_active_estop(test_db):
     db = test_db()
@@ -116,7 +133,7 @@ def test_execute_job_blocks_when_safety_rule_violates(test_db, monkeypatch):
     async def run_job():
         await _execute_job(db, job)
 
-    asyncio.get_event_loop().run_until_complete(run_job())
+    asyncio.run(run_job())
     db.refresh(job)
 
     assert job.status == "blocked"

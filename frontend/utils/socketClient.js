@@ -6,7 +6,11 @@ const SOCKET_PATH = process.env.NEXT_PUBLIC_SOCKET_PATH || '/socket.io';
 let socket = null;
 
 export const initializeSocket = (token, url) => {
-  if (socket && socket.connected) {
+  if (socket) {
+    socket.auth = { token };
+    if (!socket.connected && !socket.active) {
+      socket.connect();
+    }
     return socket;
   }
 

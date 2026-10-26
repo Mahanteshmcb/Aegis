@@ -11,10 +11,17 @@ export default function Header() {
   const { user } = useCurrentUser();
   const router = useRouter();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = getAuthToken();
+    if (token) {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => null);
+    }
     clearAuthToken();
     setIsLoggedIn(false);
-    router.push('/login');
+    router.replace('/login');
   };
 
   useEffect(() => {

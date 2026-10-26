@@ -5,6 +5,7 @@ Exposes backend endpoints for robotic fleet management and control.
 """
 
 import json
+import importlib.util
 import logging
 import os
 import sys
@@ -61,10 +62,7 @@ def get_task_scheduler() -> TaskScheduler:
 
 
 def _record_robot_audit(db: Session, blockchain, tenant_id: int, event_type: str, metadata: Dict[str, Any]) -> None:
-    try:
-        record_audit_event(db, blockchain, tenant_id, event_type, metadata)
-    except Exception as e:
-        logger.warning(f"Failed to record robotics audit event: {e}")
+    record_audit_event(db, blockchain, tenant_id, event_type, metadata)
 
 
 def _scheduled_task_to_dict(db_task: models_db.ScheduledRoboticTask) -> Dict[str, Any]:
@@ -148,6 +146,15 @@ class StandardResponse(BaseModel):
     data: Optional[Dict[str, Any]] = None
 
 
+class EstateStateSnapshotRequest(BaseModel):
+    label: Optional[str] = None
+    snapshot_id: Optional[str] = None
+
+
+class EstateStateRecoveryRequest(BaseModel):
+    snapshot_id: str
+
+
 # --- ENDPOINTS ---
 
 @router.get("/health", response_model=Dict[str, Any])
@@ -158,6 +165,37 @@ async def robotics_health(current_user=Depends(get_current_user)):
         "status": "connected" if healthy else "fallback",
         "connected": healthy,
         "service_address": connector.address,
+    }
+
+
+@router.get("/integrations", response_model=Dict[str, Any])
+def robotics_integrations(current_user=Depends(get_current_user)):
+    """Report configured software transports without implying physical readiness."""
+    connector = get_robotics_connector()
+    from backend.routers.research import get_vryndara_connector
+
+    vryndara_connector = get_vryndara_connector()
+    vryndara_connected = vryndara_connector.health_check()
+    ros2_available = importlib.util.find_spec("rclpy") is not None
+    return {
+        "execution_mode": "simulation",
+        "fleet_grpc": {
+            "address": connector.address,
+            "connected": connector.is_connected,
+            "description": "Aegis local simulated fleet contract; this is not a hardware connection.",
+        },
+        "vryndara_grpc": {
+            "address": f"{settings.vryndara_host}:{settings.vryndara_port}",
+            "connected": vryndara_connected,
+            "status": "connected" if vryndara_connected else "offline",
+            "description": "Kernel status is checked over the configured Vryndara gRPC connection.",
+        },
+        "ros2": {
+            "runtime_available": ros2_available,
+            "hardware_control_enabled": False,
+            "status": "awaiting_hardware_profile",
+            "reason": "ROS 2 hardware control remains disabled until a robot model, ROS 2 distribution, topics/actions, and safety limits are configured.",
+        },
     }
 
 @router.post("/register", response_model=StandardResponse)
@@ -820,6 +858,203 @@ async def list_data_sync_jobs(current_user=Depends(get_current_user), db: Sessio
     return crud.list_data_sync_jobs(db, current_user["tenant_id"], limit=limit)
 
 
+@router.post("/sync/state-snapshot", response_model=schemas.DataBackupSnapshotResponse)
+async def create_estate_state_snapshot(
+    request: EstateStateSnapshotRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = current_user["tenant_id"]
+    snapshot_id = request.snapshot_id or f"estate-{tenant_id}-{int(datetime.utcnow().timestamp() * 1000)}"
+
+    zones = []
+    for zone in db.query(models_db.Zone).filter(models_db.Zone.tenant_id == tenant_id).all():
+        zones.append({
+            "id": zone.id,
+            "name": zone.name,
+            "location": zone.location,
+            "description": zone.description,
+            "coordinates": json.loads(zone.coordinates) if zone.coordinates and isinstance(zone.coordinates, str) else (zone.coordinates or {}),
+            "tenant_id": zone.tenant_id,
+        })
+
+    sensors = []
+    for sensor in db.query(models_db.Sensor).filter(models_db.Sensor.tenant_id == tenant_id).all():
+        sensors.append({
+            "id": sensor.id,
+            "name": sensor.name,
+            "type": sensor.type,
+            "location": sensor.location,
+            "zone_id": sensor.zone_id,
+            "status": "active" if sensor.last_reading else "idle",
+            "tenant_id": sensor.tenant_id,
+            "last_reading": sensor.last_reading,
+        })
+
+    payload = {
+        "tenant_id": tenant_id,
+        "label": request.label,
+        "generated_at": datetime.utcnow().isoformat(),
+        "zones": zones,
+        "sensors": sensors,
+    }
+    payload_json = json.dumps(payload, sort_keys=True, default=str)
+    payload_hash = __import__("hashlib").sha256(payload_json.encode("utf-8")).hexdigest()
+
+    snapshot = crud.create_data_backup_snapshot(
+        db,
+        tenant_id,
+        schemas.DataBackupSnapshotCreate(
+            snapshot_id=snapshot_id,
+            source="estate_state_snapshot",
+            record_count=len(zones) + len(sensors),
+            data_hash=payload_hash,
+            storage_uri=f"snapshot://estate/{snapshot_id}.json",
+            status="verified",
+            integrity_verified=True,
+            verification_hash=payload_hash,
+            verification_notes=payload_json,
+            verified_at=datetime.utcnow(),
+        ),
+    )
+
+    _record_robot_audit(
+        db,
+        get_blockchain_connector(),
+        tenant_id,
+        "estate_state_snapshot_created",
+        {
+            "snapshot_id": snapshot.snapshot_id,
+            "source": snapshot.source,
+            "record_count": snapshot.record_count,
+            "data_hash": snapshot.data_hash,
+        },
+    )
+    return snapshot
+
+
+@router.get("/sync/state-snapshots", response_model=List[schemas.DataBackupSnapshotResponse])
+async def list_estate_state_snapshots(current_user=Depends(get_current_user), db: Session = Depends(get_db), limit: int = 100):
+    snapshots = crud.list_data_backup_snapshots(db, current_user["tenant_id"], limit=limit)
+    return [snapshot for snapshot in snapshots if snapshot.source == "estate_state_snapshot"]
+
+
+def _restore_snapshot_payload(db: Session, tenant_id: int, snapshot: models_db.DataBackupSnapshot) -> Dict[str, Any]:
+    payload = json.loads(snapshot.verification_notes or "{}") if snapshot.verification_notes and snapshot.verification_notes.startswith("{") else {"zones": [], "sensors": []}
+    zones_rebuilt = 0
+    devices_rebuilt = 0
+
+    for zone_data in payload.get("zones", []):
+        zone_name = zone_data.get("name")
+        if not zone_name:
+            continue
+        zone = db.query(models_db.Zone).filter(models_db.Zone.tenant_id == tenant_id, models_db.Zone.name == zone_name).first()
+        if zone is None:
+            zone = models_db.Zone(
+                tenant_id=tenant_id,
+                name=zone_name,
+                location=zone_data.get("location") or "Recovered",
+                description=zone_data.get("description") or "Recovered from snapshot",
+                coordinates=json.dumps(zone_data.get("coordinates") or {"x": 0.0, "y": 0.0, "z": 0.0}),
+            )
+            db.add(zone)
+            db.commit()
+            db.refresh(zone)
+        else:
+            zone.location = zone_data.get("location") or zone.location
+            zone.description = zone_data.get("description") or zone.description
+            if zone_data.get("coordinates") is not None:
+                zone.coordinates = json.dumps(zone_data["coordinates"])
+            db.add(zone)
+            db.commit()
+        zones_rebuilt += 1
+
+    for sensor_data in payload.get("sensors", []):
+        sensor_name = sensor_data.get("name")
+        if not sensor_name:
+            continue
+        sensor = db.query(models_db.Sensor).filter(models_db.Sensor.tenant_id == tenant_id, models_db.Sensor.name == sensor_name).first()
+        if sensor is None:
+            sensor = models_db.Sensor(
+                tenant_id=tenant_id,
+                zone_id=sensor_data.get("zone_id"),
+                name=sensor_name,
+                type=sensor_data.get("type") or "temperature",
+                location=sensor_data.get("location") or "Recovered",
+                last_reading=sensor_data.get("last_reading") or {"value": 0.0, "unit": "C", "timestamp": datetime.utcnow().isoformat()},
+            )
+            db.add(sensor)
+            db.commit()
+            db.refresh(sensor)
+        else:
+            sensor.zone_id = sensor_data.get("zone_id", sensor.zone_id)
+            sensor.type = sensor_data.get("type") or sensor.type
+            sensor.location = sensor_data.get("location") or sensor.location
+            sensor.last_reading = sensor_data.get("last_reading") or sensor.last_reading
+            db.add(sensor)
+            db.commit()
+        devices_rebuilt += 1
+
+    _record_robot_audit(
+        db,
+        get_blockchain_connector(),
+        tenant_id,
+        "estate_state_recovery_completed",
+        {
+            "snapshot_id": snapshot.snapshot_id,
+            "zones_rebuilt": zones_rebuilt,
+            "devices_rebuilt": devices_rebuilt,
+            "source": snapshot.source,
+        },
+    )
+
+    return {
+        "snapshot_id": snapshot.snapshot_id,
+        "recovered": True,
+        "status": "verified",
+        "zones_rebuilt": zones_rebuilt,
+        "devices_rebuilt": devices_rebuilt,
+        "source": snapshot.source,
+        "tenant_id": tenant_id,
+    }
+
+
+@router.post("/sync/recover", response_model=Dict[str, Any])
+async def recover_estate_state(
+    request: EstateStateRecoveryRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tenant_id = current_user["tenant_id"]
+    snapshot = (
+        db.query(models_db.DataBackupSnapshot)
+        .filter(models_db.DataBackupSnapshot.tenant_id == tenant_id)
+        .filter(models_db.DataBackupSnapshot.snapshot_id == request.snapshot_id)
+        .first()
+    )
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="Estate snapshot not found")
+
+    return _restore_snapshot_payload(db, tenant_id, snapshot)
+
+
+@router.post("/sync/recover/bootstrap", response_model=Dict[str, Any])
+async def bootstrap_estate_recovery(
+    request: EstateStateRecoveryRequest,
+    db: Session = Depends(get_db),
+):
+    snapshot = (
+        db.query(models_db.DataBackupSnapshot)
+        .filter(models_db.DataBackupSnapshot.snapshot_id == request.snapshot_id)
+        .first()
+    )
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="Estate snapshot not found")
+
+    tenant_id = snapshot.tenant_id
+    return _restore_snapshot_payload(db, tenant_id, snapshot)
+
+
 @router.post("/sync/jobs/{sync_id}/complete", response_model=schemas.DataSyncJobResponse)
 async def complete_data_sync_job(
     sync_id: str,
@@ -1100,6 +1335,16 @@ async def get_monitoring_dashboard(current_user=Depends(get_current_user), db: S
         historical_data={
             "alerts_last_7_days": len(historical_alerts),
             "metrics_last_7_days": len(historical_metrics),
+            "performance_metrics": [
+                {
+                    "category": metric.metric_category,
+                    "name": metric.metric_name,
+                    "value": metric.value,
+                    "unit": metric.unit,
+                    "timestamp": metric.timestamp.isoformat(),
+                }
+                for metric in historical_metrics
+            ],
         },
         alerts_summary=alerts_summary,
         recommendations=recommendations,

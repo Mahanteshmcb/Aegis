@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { Plus, Edit2, Trash2, X, Check, Mail, Key, Shield, AlertCircle } from 'lucide-react';
 import RoleBasedRoute from '../../components/RoleBasedRoute';
@@ -10,33 +10,30 @@ const ROLE_PERMISSIONS = {
   admin: {
     name: 'Administrator',
     color: 'red',
-    permissions: ['All Features', 'User Management', 'System Control', 'Audit Logs', 'Settings'],
-    description: 'Full administrative access to all system features',
+    description: 'Manages tenant users and protected configuration. Actions remain tenant-scoped.',
   },
   auditor: {
     name: 'Auditor',
     color: 'yellow',
-    permissions: ['View Audit Logs', 'View Reports', 'View Compliance', 'Export Data'],
-    description: 'Access to compliance and audit functionality',
+    description: 'Can access audit and compliance operations where endpoint policy permits.',
   },
   operator: {
     name: 'Operator',
     color: 'blue',
-    permissions: ['Zone Management', 'Sensor Management', 'Fleet Control', 'Dashboard'],
-    description: 'Manage zones, sensors, and robots',
+    description: 'Can issue supported operational and device-control commands; access depends on each endpoint policy.',
   },
   viewer: {
     name: 'Viewer',
     color: 'slate',
-    permissions: ['View Dashboard', 'View Reports', 'View Sensors', 'View Zones'],
-    description: 'Read-only access to monitoring dashboards',
+    description: 'Read-only access where permitted; command controls are restricted.',
   },
 };
 
 function UserManagementContent() {
   const router = useRouter();
-  const { user: currentUser, loading } = useCurrentUser();
+  const { user: currentUser, loading, token } = useCurrentUser();
   const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState(Object.entries(ROLE_PERMISSIONS).map(([key, value]) => ({ key, ...value })));
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -49,21 +46,18 @@ function UserManagementContent() {
   const [creatingUser, setCreatingUser] = useState(false);
   const [createError, setCreateError] = useState(null);
 
-  const ROLES = ['admin', 'auditor', 'operator', 'viewer'];
-
-  useEffect(() => {
-    if (!loading && currentUser) {
-      fetchUsers();
+  const fetchUsers = useCallback(async () => {
+    if (!token) {
+      router.push('/login');
+      return;
     }
-  }, [currentUser, loading]);
-
-  async function fetchUsers() {
     try {
       setLoadingUsers(true);
-      const token = localStorage.getItem('aegis_token');
-      const resp = await fetch(`${API_URL}/api/v1/auth/users`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const [resp, rolesResponse] = await Promise.all([
+        fetch(`${API_URL}/api/v1/auth/users`, { headers }),
+        fetch(`${API_URL}/api/v1/roles`, { headers }),
+      ]);
 
       if (resp.status === 401) {
         router.push('/login');
@@ -75,7 +69,9 @@ function UserManagementContent() {
       }
 
       const data = await resp.json();
-      setUsers(data);
+      setUsers(Array.isArray(data) ? data : []);
+      const rolesResult = await rolesResponse.json().catch(() => ({}));
+      if (rolesResponse.ok && Array.isArray(rolesResult.data)) setRoles(rolesResult.data);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -83,11 +79,18 @@ function UserManagementContent() {
     } finally {
       setLoadingUsers(false);
     }
-  }
+  }, [router, token]);
+
+  const roleDetails = (key) => roles.find((role) => role.key === key)
+    || ROLE_PERMISSIONS[key]
+    || { name: key, description: 'Role policy is defined by the backend.' };
+
+  useEffect(() => {
+    if (!loading && currentUser) fetchUsers();
+  }, [currentUser, loading, fetchUsers]);
 
   async function handleUpdateRole(userId, newRole) {
     try {
-      const token = localStorage.getItem('aegis_token');
       const resp = await fetch(`${API_URL}/api/v1/users/${userId}/role`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -102,7 +105,7 @@ function UserManagementContent() {
       setSuccess(`Role updated to ${newRole.toUpperCase()}`);
       setTimeout(() => setSuccess(null), 3000);
       setEditingUserId(null);
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       setError(err.message);
       console.error('Update role error:', err);
@@ -117,7 +120,6 @@ function UserManagementContent() {
 
     try {
       setDeleting(true);
-      const token = localStorage.getItem('aegis_token');
       const resp = await fetch(`${API_URL}/api/v1/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -130,7 +132,7 @@ function UserManagementContent() {
 
       setSuccess('User deleted successfully');
       setTimeout(() => setSuccess(null), 3000);
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       setError(err.message);
       console.error('Delete user error:', err);
@@ -176,8 +178,6 @@ function UserManagementContent() {
 
       setCreatingUser(true);
       setCreateError(null);
-      const token = localStorage.getItem('aegis_token');
-      
       if (!token) {
         setCreateError('Session expired. Please log in again.');
         setCreatingUser(false);
@@ -194,14 +194,10 @@ function UserManagementContent() {
         }),
       });
 
-      // Log the response for debugging
-      console.log('Create user response:', resp.status, resp.statusText);
-
       if (!resp.ok) {
         let errorMessage = 'Failed to create user';
         try {
           const errorData = await resp.json();
-          console.log('Error data:', errorData);
           errorMessage = errorData.detail || errorData.message || errorData.error || `Error: ${resp.status} ${resp.statusText}`;
         } catch (e) {
           errorMessage = `Error: ${resp.status} ${resp.statusText}. Please check that the backend API is running.`;
@@ -210,13 +206,13 @@ function UserManagementContent() {
       }
 
       // Success
-      const userData = await resp.json().catch(() => ({}));
+      await resp.json().catch(() => ({}));
       setSuccess(`✓ User ${newUserData.email} created successfully as ${newUserData.role.toUpperCase()}`);
       setTimeout(() => setSuccess(null), 4000);
       setNewUserData({ email: '', password: '', role: 'operator' });
       setShowCreateModal(false);
       setCreateError(null);
-      fetchUsers();
+      await fetchUsers();
     } catch (error) {
       console.error('Error creating user:', error);
       setCreateError(error.message || 'Failed to create user. Please check the connection.');
@@ -230,7 +226,7 @@ function UserManagementContent() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">User Management</h1>
-          <p className="text-aegis-muted">Manage tenant users, roles, and permissions.</p>
+          <p className="text-aegis-muted">Manage tenant accounts and assign backend-supported roles.</p>
         </div>
         <div className="flex gap-3 flex-wrap">
           <button 
@@ -241,9 +237,10 @@ function UserManagementContent() {
           </button>
           <button 
             onClick={fetchUsers} 
+            disabled={loadingUsers}
             className="px-5 py-3 rounded-2xl bg-aegis-primary text-white font-semibold hover:bg-sky-400 transition-all"
           >
-            Refresh
+            {loadingUsers ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -251,7 +248,7 @@ function UserManagementContent() {
       {/* User Creation Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 bg-black backdrop-blur-md flex items-center justify-center p-4" onClick={() => { setShowCreateModal(false); setCreateError(null); }}>
-          <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-slate-700 rounded-lg max-w-md w-full p-6 space-y-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="br-linear-to-br from-slate-950 to-slate-900 border border-slate-700 rounded-lg max-w-md w-full p-6 space-y-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold text-cyan-300 tracking-wide">Create New User</h2>
               <button 
@@ -264,18 +261,19 @@ function UserManagementContent() {
 
             {createError && (
               <div className="p-4 bg-red-950/40 border border-red-700/60 rounded-lg text-red-200 text-sm font-semibold flex items-start gap-3">
-                <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
+                <AlertCircle size={18} className="shrink-0 mt-0.5" />
                 <span>{createError}</span>
               </div>
             )}
 
             <div className="space-y-5">
               <div>
-                <label className="block text-sm font-semibold text-cyan-100 mb-2 flex items-center gap-2">
+                <label className="block text-sm font-semibold text-cyan-100 mb-2 items-center gap-2">
                   <Mail size={16} className="text-cyan-400" /> Email Address *
                 </label>
                 <input 
                   type="email" 
+                  required
                   placeholder="user@example.com"
                   value={newUserData.email}
                   onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
@@ -284,11 +282,13 @@ function UserManagementContent() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-cyan-100 mb-2 flex items-center gap-2">
+                <label className="block text-sm font-semibold text-cyan-100 mb-2 items-center gap-2">
                   <Key size={16} className="text-cyan-400" /> Password *
                 </label>
                 <input 
                   type="password" 
+                  required
+                  minLength={6}
                   placeholder="Minimum 6 characters"
                   value={newUserData.password}
                   onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
@@ -297,7 +297,7 @@ function UserManagementContent() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-cyan-100 mb-2 flex items-center gap-2">
+                <label className="block text-sm font-semibold text-cyan-100 mb-2 items-center gap-2">
                   <Shield size={16} className="text-cyan-400" /> Role *
                 </label>
                 <select 
@@ -305,15 +305,15 @@ function UserManagementContent() {
                   onChange={(e) => setNewUserData({ ...newUserData, role: e.target.value })}
                   className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-600 rounded-lg text-white font-semibold focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 focus:outline-none transition-all"
                 >
-                  {ROLES.map((role) => (
-                    <option key={role} value={role} className="bg-slate-900 text-white">
-                      {ROLE_PERMISSIONS[role].name}
+                  {roles.map((role) => (
+                    <option key={role.key} value={role.key} className="bg-slate-900 text-white">
+                      {role.name}
                     </option>
                   ))}
                 </select>
                 {newUserData.role && (
                   <p className="mt-2 text-xs text-slate-300 italic">
-                    ℹ️ {ROLE_PERMISSIONS[newUserData.role].description}
+                    ℹ️ {roleDetails(newUserData.role).description}
                   </p>
                 )}
               </div>
@@ -365,7 +365,7 @@ function UserManagementContent() {
                 <tr>
                   <th className="px-6 py-3 font-semibold text-aegis-primary">Email</th>
                   <th className="px-6 py-3 font-semibold text-aegis-primary">Role</th>
-                  <th className="px-6 py-3 font-semibold text-aegis-primary">Permissions</th>
+                  <th className="px-6 py-3 font-semibold text-aegis-primary">Access Summary</th>
                   <th className="px-6 py-3 font-semibold text-aegis-primary">Actions</th>
                 </tr>
               </thead>
@@ -380,29 +380,18 @@ function UserManagementContent() {
                           onChange={(e) => setEditingRole(e.target.value)} 
                           className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-white outline-none focus:border-aegis-primary"
                         >
-                          {ROLES.map((role) => (
-                            <option key={role} value={role}>{ROLE_PERMISSIONS[role].name}</option>
+                          {roles.map((role) => (
+                            <option key={role.key} value={role.key}>{role.name}</option>
                           ))}
                         </select>
                       ) : (
                         <span className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold ${getRoleColor(u.role)}`}>
-                          {ROLE_PERMISSIONS[u.role]?.name || u.role?.toUpperCase()}
+                          {roleDetails(u.role).name || u.role?.toUpperCase()}
                         </span>
                       )}
                     </td>
                     <td className="px-6 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {ROLE_PERMISSIONS[u.role]?.permissions.slice(0, 2).map((perm, idx) => (
-                          <span key={idx} className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded">
-                            {perm}
-                          </span>
-                        ))}
-                        {ROLE_PERMISSIONS[u.role]?.permissions.length > 2 && (
-                          <span className="text-xs bg-slate-800 text-slate-400 px-2 py-1 rounded">
-                            +{ROLE_PERMISSIONS[u.role].permissions.length - 2} more
-                          </span>
-                        )}
-                      </div>
+                      <p className="max-w-md text-xs text-slate-400">{roleDetails(u.role).description || 'Role policy is defined by the backend.'}</p>
                     </td>
                     <td className="px-6 py-3">
                       {editingUserId === u.id ? (
@@ -423,12 +412,14 @@ function UserManagementContent() {
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           <button 
-                            onClick={() => { setEditingUserId(u.id); setEditingRole(u.role); }} 
-                            className="rounded-lg bg-aegis-primary px-3 py-1 text-xs font-semibold text-white hover:bg-sky-400 transition-all flex items-center gap-1"
+                            onClick={() => { setEditingUserId(u.id); setEditingRole(u.role); }}
+                            disabled={String(currentUser?.id) === String(u.id)}
+                            title={String(currentUser?.id) === String(u.id) ? 'You cannot change your own administrator role here.' : 'Edit user role'}
+                            className="rounded-lg bg-aegis-primary px-3 py-1 text-xs font-semibold text-white hover:bg-sky-400 transition-all flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <Edit2 size={14} /> Edit
                           </button>
-                          {currentUser?.id !== u.id && (
+                          {String(currentUser?.id) !== String(u.id) && (
                             <button 
                               onClick={() => handleDeleteUser(u.id)} 
                               disabled={deleting} 
@@ -469,29 +460,13 @@ function UserManagementContent() {
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-700 bg-slate-900/80 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-aegis-primary">Role Permission Guide</h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          {Object.entries(ROLE_PERMISSIONS).map(([roleKey, roleData]) => (
-            <div key={roleKey} className={`rounded-lg border border-${roleData.color}-700/30 bg-${roleData.color}-900/10 p-4`}>
-              <h3 className={`font-semibold text-${roleData.color}-300 mb-2`}>{roleData.name}</h3>
-              <p className="text-xs text-slate-300 mb-3">{roleData.description}</p>
-              <ul className="text-xs text-slate-400 space-y-1">
-                {roleData.permissions.map((perm, idx) => (
-                  <li key={idx}>✓ {perm}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
 
 export default function UserManagementPage() {
   return (
-    <RoleBasedRoute requiredRole="admin">
+    <RoleBasedRoute requiredRole="admin" requiredPermission="users.manage">
       <UserManagementContent />
     </RoleBasedRoute>
   );

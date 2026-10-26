@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field
 
 
 class TenantBase(BaseModel):
@@ -25,19 +25,22 @@ class Tenant(TenantBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class SensorBase(BaseModel):
-    name: Optional[str] = None
-    type: Optional[str] = None
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    name: Optional[str] = Field(default=None, validation_alias=AliasChoices("name", "device_id"))
+    type: Optional[str] = Field(default=None, validation_alias=AliasChoices("type", "device_type"))
     location: Optional[str] = None
     zone_id: Optional[int] = None
 
 
 class SensorCreate(SensorBase):
-    # Require `type` for creation to ensure sensors are categorized
-    type: str
+    # Accept both legacy sensor payloads and digital-twin device payloads.
+    type: str = Field(default="sensor", validation_alias=AliasChoices("type", "device_type"))
+    name: Optional[str] = Field(default=None, validation_alias=AliasChoices("name", "device_id"))
 
 
 class SensorUpdate(SensorBase):
@@ -51,7 +54,7 @@ class Sensor(SensorBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -61,6 +64,13 @@ class AuditLogBase(BaseModel):
     event_type: str
     data_hash: str
     blockchain_tx: Optional[str] = None
+    actor_user_id: Optional[int] = None
+    actor_email: Optional[str] = None
+    action: Optional[str] = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+    outcome: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class AuditLogCreate(AuditLogBase):
@@ -72,7 +82,7 @@ class AuditLog(AuditLogBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ScheduledTaskBase(BaseModel):
@@ -102,7 +112,7 @@ class ScheduledTaskResponse(ScheduledTaskBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class AgriculturalSensorBase(BaseModel):
@@ -136,7 +146,7 @@ class AgriculturalSensorResponse(AgriculturalSensorBase):
     updated_at: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class AgriculturalSensorReadingBase(BaseModel):
@@ -158,7 +168,7 @@ class AgriculturalSensorReadingResponse(AgriculturalSensorReadingBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class CropLifecycleEventBase(BaseModel):
@@ -181,7 +191,7 @@ class CropLifecycleEventResponse(CropLifecycleEventBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class BiologicalMetricBase(BaseModel):
@@ -254,7 +264,7 @@ class TelemetryPlaybackResponse(TelemetryPlaybackBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class BiologicalMetricResponse(BiologicalMetricBase):
@@ -264,7 +274,7 @@ class BiologicalMetricResponse(BiologicalMetricBase):
     updated_at: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class CropInstanceBase(BaseModel):
@@ -327,7 +337,7 @@ class CropInstanceResponse(CropInstanceBase):
     updated_at: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # --- User schemas for authentication and RBAC ---
@@ -346,16 +356,16 @@ class UserRead(UserBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
-        from_attributes = True
+
         from_attributes = True
 
 class UserProfile(UserBase):
     id: int
     tenant_id: int
+    permissions: list[str] = []
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserInDB(UserRead):
     hashed_password: str
@@ -402,7 +412,7 @@ class SystemAlertResponse(SystemAlertBase):
     updated_at: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class RealTimeStatusResponse(BaseModel):
@@ -542,8 +552,8 @@ class EmergencyEventResponse(EmergencyEventBase):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, alias="event_metadata")
 
     class Config:
-        orm_mode = True
-        allow_population_by_field_name = True
+        from_attributes = True
+        validate_by_name = True
 
 
 class EmergencyResponseBase(BaseModel):
@@ -573,7 +583,7 @@ class EmergencyResponseResponse(EmergencyResponseBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class BackupPowerStateBase(BaseModel):
@@ -608,7 +618,7 @@ class BackupPowerStateResponse(BackupPowerStateBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class DataBackupSnapshotBase(BaseModel):
@@ -642,7 +652,7 @@ class DataBackupSnapshotResponse(DataBackupSnapshotBase):
     completed_at: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class DataSyncJobBase(BaseModel):
@@ -667,7 +677,7 @@ class DataSyncJobResponse(DataSyncJobBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class DataSyncJobCompleteRequest(BaseModel):
@@ -709,7 +719,7 @@ class RecoveryProcedureResponse(RecoveryProcedureBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class EmergencyStatusResponse(BaseModel):

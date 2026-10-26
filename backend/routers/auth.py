@@ -12,12 +12,36 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from backend.dependencies import get_db, get_current_user
+from backend.dependencies import (
+    BUILTIN_ROLE_PERMISSIONS,
+    get_db,
+    get_current_user,
+    get_role_permissions,
+    has_permission,
+    require_permission,
+    role_exists_for_tenant,
+)
 from backend.exceptions import AuthenticationError
 from backend import crud, schemas
 from backend.config import settings
+from backend.audit_utils import record_actor_audit_event, record_audit_event
+from backend.blockchain_connector import get_blockchain_connector
+from backend.models_db import AuditLog, Session as AuthSession
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
+
+
+def _record_user_action(db: Session, actor: dict, event_type: str, user, details: dict | None = None):
+    return record_actor_audit_event(
+        db,
+        actor["tenant_id"],
+        actor,
+        event_type,
+        "user",
+        user.id,
+        {"target_email": user.email, **(details or {})},
+        blockchain=get_blockchain_connector(),
+    )
 
 class TokenResponse(schemas.BaseModel):
     access_token: str
@@ -26,6 +50,11 @@ class TokenResponse(schemas.BaseModel):
 
 class RefreshTokenRequest(schemas.BaseModel):
     refresh_token: str
+
+
+class ChangePasswordRequest(schemas.BaseModel):
+    current_password: str
+    new_password: str
 
 class RegisterRequest(schemas.UserCreate):
     pass
@@ -47,32 +76,30 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
 @router.post("/auth/register", response_model=schemas.UserRead)
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user (tenant-scoped)."""
-    import hashlib
+    if settings.environment == "prod":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Self-registration is disabled. Contact your tenant administrator.",
+        )
     try:
         user = crud.create_user(db, request)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-        
-    user_data = f"email={user.email}|tenant_id={user.tenant_id}|role={user.role}"
-    data_hash = hashlib.sha256(user_data.encode()).hexdigest()
-    
-    audit = schemas.AuditLogCreate(
-        event_type="user_created",
-        data_hash=data_hash,
-        blockchain_tx=None,
+
+    _record_user_action(
+        db,
+        {"id": user.id, "email": user.email, "tenant_id": user.tenant_id},
+        "user_created",
+        user,
+        {"role": user.role, "registration": "self_service"},
     )
-    
-    try:
-        crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
-    except Exception:
-        logger.exception("Failed to write user_created audit log for tenant %s", user.tenant_id)
 
     return schemas.UserRead.from_orm(user)
 
 @router.post("/auth/signup", response_model=schemas.UserRead)
 def signup(request: RegisterRequest, db: Session = Depends(get_db)):
-    """Alias for register endpoint to support frontend signup."""
-    return register(request, db)
+    """Self-service registration always creates a least-privilege viewer."""
+    return register(request.model_copy(update={"role": "viewer"}), db)
 
 @router.post("/auth/reset-password")
 async def reset_password(request: Request, db: Session = Depends(get_db)):
@@ -89,19 +116,23 @@ async def reset_password(request: Request, db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, email)
     if user:
         # In Phase 1 we do not send real email, but log the intent for audit.
-        import hashlib
-        user_hash = hashlib.sha256(f"reset={email}".encode()).hexdigest()
-        audit = schemas.AuditLogCreate(
-            event_type="password_reset_requested",
-            data_hash=user_hash,
-            blockchain_tx=None,
-        )
         try:
-            crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
+            record_audit_event(db, None, user.tenant_id, "password_reset_requested", {
+                "action": "password_reset_requested",
+                "actor_user_id": None,
+                "actor_email": None,
+                "entity_type": "user",
+                "entity_id": str(user.id),
+                "outcome": "accepted",
+                "target_email": user.email,
+                "delivery_configured": False,
+                "user_agent": request.headers.get("user-agent"),
+                "client_ip": request.client.host if request.client else None,
+            })
         except Exception:
             logger.exception("Failed to write password_reset_requested audit log for tenant %s", user.tenant_id)
 
-    return {"message": "If the email exists, password reset instructions have been issued."}
+    return {"message": "If the account exists, the reset request was recorded. Contact your tenant administrator to complete the reset."}
 
 @router.post("/auth/login", response_model=TokenResponse)
 async def login(
@@ -167,36 +198,38 @@ async def login(
     access_token = create_access_token(payload)
     refresh_token = create_refresh_token(payload)
 
-    try:
-        import hashlib as _hashlib
-        login_time = datetime.now(timezone.utc)
-        login_data = f"email={user.email}|tenant_id={user.tenant_id}|role={user.role}|timestamp={login_time.isoformat()}"
-        data_hash = _hashlib.sha256(login_data.encode()).hexdigest()
-        audit = schemas.AuditLogCreate(
-            event_type="login_success",
-            data_hash=data_hash,
-            blockchain_tx=None,
-        )
-        crud.create_audit_log(db, audit, tenant_id=user.tenant_id)
-    except Exception:
-        logger.exception("Failed to write login_success audit log for tenant %s", user.tenant_id)
-
     # Record session for revocation support
+    session_row = None
     try:
         import hashlib as _hashlib
-        from backend import crud as _crud
         # Compute token hash and expiry
         token_hash = _hashlib.sha256(access_token.encode()).hexdigest()
         # decode to get exp
         payload_decoded = jwt.decode(access_token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         exp_ts = payload_decoded.get("exp")
         expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc) if exp_ts else None
-        try:
-            _crud.create_session(db, user.tenant_id, user.id, token_hash, token_type="access", expires_at=expires_at)
-        except Exception:
-            pass
-    except Exception:
-        pass
+        session_row = crud.create_session(db, user.tenant_id, user.id, token_hash, token_type="access", expires_at=expires_at)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Failed to persist login session for user %s", user.id)
+        raise HTTPException(status_code=500, detail="Failed to persist login session") from exc
+
+    try:
+        login_time = datetime.now(timezone.utc)
+        record_audit_event(db, get_blockchain_connector(), user.tenant_id, "login_success", {
+            "action": "login",
+            "actor_user_id": user.id,
+            "actor_email": user.email,
+            "entity_type": "session",
+            "entity_id": str(session_row.id) if session_row else None,
+            "outcome": "success",
+            "timestamp": login_time.isoformat(),
+            "user_agent": request.headers.get("user-agent"),
+            "client_ip": request.client.host if request.client else None,
+        })
+    except Exception as exc:
+        logger.exception("Failed to write login_success audit log for tenant %s", user.tenant_id)
+        raise HTTPException(status_code=500, detail="Failed to record login audit event") from exc
 
     return TokenResponse(
         access_token=access_token, 
@@ -212,7 +245,47 @@ def get_current_user_profile(current_user=Depends(get_current_user)):
         email=current_user["email"],
         role=current_user["role"],
         tenant_id=current_user["tenant_id"],
+        permissions=current_user.get("permissions", []),
     )
+
+
+@router.post("/auth/change-password")
+def change_password(
+    request: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    from passlib.hash import bcrypt
+    from backend.models_db import Session as UserSession
+
+    if len(request.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    user = crud.get_user_by_id(db, current_user["id"])
+    if not user or user.tenant_id != current_user["tenant_id"]:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not bcrypt.verify(request.current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if bcrypt.verify(request.new_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="New password must differ from current password")
+
+    user.hashed_password = bcrypt.hash(request.new_password)
+    db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.tenant_id == user.tenant_id,
+        UserSession.revoked.is_(False),
+    ).update({UserSession.revoked: True}, synchronize_session=False)
+    db.add(user)
+    db.commit()
+
+    _record_user_action(
+        db,
+        current_user,
+        "password_changed",
+        user,
+        {"revoked_sessions": True},
+    )
+
+    return {"message": "Password changed. Sign in again to refresh your sessions."}
 
 @router.post("/auth/refresh", response_model=TokenResponse)
 def refresh_token(request: RefreshTokenRequest):
@@ -232,20 +305,40 @@ def refresh_token(request: RefreshTokenRequest):
         raise AuthenticationError("Invalid refresh token")
 
 @router.post("/auth/logout")
-def logout():
-    """User logout endpoint."""
-    return {"message": "Logout successful (stateless JWT)"}
+def logout(request: Request, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """Revoke the current access token and record the session duration."""
+    import hashlib
+
+    authorization = request.headers.get("Authorization", "")
+    token = authorization.partition(" ")[2].strip()
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    session_row = db.query(AuthSession).filter(AuthSession.token_hash == token_hash).first()
+    duration_seconds = None
+    if session_row and session_row.tenant_id == current_user["tenant_id"]:
+        session_row.revoked = True
+        duration_seconds = max(0, int((datetime.utcnow() - session_row.created_at).total_seconds()))
+        db.commit()
+
+    record_audit_event(db, get_blockchain_connector(), current_user["tenant_id"], "user_logout", {
+        "action": "logout",
+        "actor_user_id": current_user["id"],
+        "actor_email": current_user["email"],
+        "entity_type": "session",
+        "entity_id": str(session_row.id) if session_row else None,
+        "outcome": "success",
+        "session_duration_seconds": duration_seconds,
+        "user_agent": request.headers.get("user-agent"),
+        "client_ip": request.client.host if request.client else None,
+    })
+    return {"message": "Logout successful", "session_duration_seconds": duration_seconds}
 
 # === Day 19: RBAC User Management ===
-from backend.dependencies import get_current_admin
-
 @router.get("/users")
-def list_users(current_user=Depends(get_current_admin), db: Session = Depends(get_db)):
+def list_users(current_user=Depends(require_permission("users.manage")), db: Session = Depends(get_db)):
     """
     List all users in the current tenant (admin only).
     Returns user list with roles for admin panel.
     """
-    from backend.dependencies import get_current_admin
     users = crud.list_users_by_tenant(db, current_user["tenant_id"])
     return [
         {
@@ -259,12 +352,11 @@ def list_users(current_user=Depends(get_current_admin), db: Session = Depends(ge
     ]
 
 @router.get("/auth/users")
-def list_users_auth(current_user=Depends(get_current_admin), db: Session = Depends(get_db)):
+def list_users_auth(current_user=Depends(require_permission("users.manage")), db: Session = Depends(get_db)):
     """
     List all users in the current tenant (admin only) - /auth path.
     Returns user list with roles for admin panel.
     """
-    from backend.dependencies import get_current_admin
     users = crud.list_users_by_tenant(db, current_user["tenant_id"])
     return [
         {
@@ -280,7 +372,7 @@ def list_users_auth(current_user=Depends(get_current_admin), db: Session = Depen
 @router.post("/auth/users")
 async def create_user_endpoint(
     request: Request,
-    current_user=Depends(get_current_admin),
+    current_user=Depends(require_permission("users.manage")),
     db: Session = Depends(get_db)
 ):
     """
@@ -306,8 +398,13 @@ async def create_user_endpoint(
         raise HTTPException(status_code=400, detail="Password is required")
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    if role not in ["admin", "auditor", "operator", "viewer"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be: admin, auditor, operator, or viewer")
+    if not role_exists_for_tenant(db, current_user["tenant_id"], role):
+        raise HTTPException(status_code=400, detail="Role is not defined for this tenant")
+    if role == "superadmin" and current_user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Only a superadmin can assign the superadmin role")
+    if role == "admin" and not has_permission(current_user, "admin.access"):
+        raise HTTPException(status_code=403, detail="Only an administrator can assign the admin role")
+    _ensure_assignable_role(db, current_user, role)
     
     # Check if user exists
     existing_user = crud.get_user_by_email(db, email)
@@ -328,21 +425,13 @@ async def create_user_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
     
-    # Audit log
-    import hashlib
-    user_data = f"email={new_user.email}|tenant_id={new_user.tenant_id}|role={new_user.role}"
-    data_hash = hashlib.sha256(user_data.encode()).hexdigest()
-    
-    audit = schemas.AuditLogCreate(
-        event_type="user_created_by_admin",
-        data_hash=data_hash,
-        blockchain_tx=None,
+    _record_user_action(
+        db,
+        current_user,
+        "user_created_by_admin",
+        new_user,
+        {"role": new_user.role},
     )
-    
-    try:
-        crud.create_audit_log(db, audit, tenant_id=current_user["tenant_id"])
-    except Exception:
-        pass
     
     return {
         "id": new_user.id,
@@ -355,11 +444,21 @@ async def create_user_endpoint(
 from fastapi import Body
 
 
+def _ensure_assignable_role(db: Session, current_user: dict, role_key: str):
+    current_permissions = set(
+        current_user.get("permissions")
+        or BUILTIN_ROLE_PERMISSIONS.get(current_user.get("role"), set())
+    )
+    role_permissions = get_role_permissions(db, current_user["tenant_id"], role_key)
+    if role_permissions is None or not role_permissions.issubset(current_permissions):
+        raise HTTPException(status_code=403, detail="Cannot assign a role with permissions you do not hold")
+
+
 @router.put("/users/{user_id}/role")
 def update_user_role(
     user_id: int,
     body: dict = Body(...),
-    current_user=Depends(get_current_admin),
+    current_user=Depends(require_permission("users.manage")),
     db: Session = Depends(get_db)
 ):
     """
@@ -368,8 +467,13 @@ def update_user_role(
     """
     new_role = body.get("role")
 
-    if not new_role or new_role not in ["admin", "viewer", "auditor", "operator"]:
-        raise HTTPException(status_code=400, detail="Invalid role")
+    if not new_role or not role_exists_for_tenant(db, current_user["tenant_id"], new_role):
+        raise HTTPException(status_code=400, detail="Role is not defined for this tenant")
+    if new_role == "superadmin" and current_user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Only a superadmin can assign the superadmin role")
+    if new_role == "admin" and not has_permission(current_user, "admin.access"):
+        raise HTTPException(status_code=403, detail="Only an administrator can assign the admin role")
+    _ensure_assignable_role(db, current_user, new_role)
 
     # Get target user
     user = crud.get_user_by_id(db, user_id)
@@ -385,7 +489,15 @@ def update_user_role(
         raise HTTPException(status_code=400, detail="Cannot remove your own admin privileges")
 
     # Update role
+    previous_role = user.role
     updated_user = crud.update_user_role(db, user_id, new_role)
+    _record_user_action(
+        db,
+        current_user,
+        "user_role_changed",
+        updated_user,
+        {"previous_role": previous_role, "new_role": new_role},
+    )
 
     return {
         "id": updated_user.id,
@@ -397,7 +509,7 @@ def update_user_role(
 @router.delete("/users/{user_id}")
 def delete_user_endpoint(
     user_id: int,
-    current_user=Depends(get_current_admin),
+    current_user=Depends(require_permission("users.manage")),
     db: Session = Depends(get_db)
 ):
     """
@@ -416,8 +528,33 @@ def delete_user_endpoint(
     if user_id == current_user.get("id"):
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     
-    success = crud.delete_user(db, user_id)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to delete user")
-    
-    return {"message": f"User {user.email} deleted successfully"}
+    deleted_user_email = user.email
+    deleted_user_role = user.role
+    deleted_sessions = db.query(AuthSession).filter(
+        AuthSession.user_id == user_id,
+        AuthSession.tenant_id == current_user["tenant_id"],
+    ).count()
+    db.query(AuthSession).filter(
+        AuthSession.user_id == user_id,
+        AuthSession.tenant_id == current_user["tenant_id"],
+    ).delete(synchronize_session=False)
+    db.query(AuditLog).filter(AuditLog.actor_user_id == user_id).update(
+        {AuditLog.actor_user_id: None},
+        synchronize_session=False,
+    )
+    db.delete(user)
+    record_actor_audit_event(
+        db,
+        current_user["tenant_id"],
+        current_user,
+        "user_deleted",
+        "user",
+        user_id,
+        {
+            "target_email": deleted_user_email,
+            "previous_role": deleted_user_role,
+            "revoked_sessions": deleted_sessions,
+        },
+        blockchain=get_blockchain_connector(),
+    )
+    return {"message": f"User {deleted_user_email} deleted successfully"}

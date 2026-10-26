@@ -22,6 +22,7 @@ Thumbs.db
 # Hardhat artifacts
 artifacts/
 cache/
+blockchain/.local-state/
 
 # Logs
 *.log

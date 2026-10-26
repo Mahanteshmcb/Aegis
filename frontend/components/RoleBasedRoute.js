@@ -5,7 +5,7 @@ import useCurrentUser from '../hooks/useCurrentUser';
  * RoleBasedRoute: Wrapper for pages that require a specific role.
  * Usage: <RoleBasedRoute requiredRole="admin"><AdminPage /></RoleBasedRoute>
  */
-export default function RoleBasedRoute({ children, requiredRole = 'admin' }) {
+export default function RoleBasedRoute({ children, requiredRole = 'admin', requiredPermission }) {
   const router = useRouter();
   const { user, loading } = useCurrentUser();
 
@@ -18,7 +18,10 @@ export default function RoleBasedRoute({ children, requiredRole = 'admin' }) {
   }
 
   // Check if user has required role (admin can access all)
-  const hasAccess = user?.role === requiredRole || user?.role === 'admin';
+  const role = String(user?.role || '').toLowerCase();
+  const hasAccess = role === String(requiredRole).toLowerCase()
+    || ['admin', 'superadmin'].includes(role)
+    || Boolean(requiredPermission && user?.permissions?.includes(requiredPermission));
 
   if (!hasAccess) {
     return (
@@ -26,9 +29,9 @@ export default function RoleBasedRoute({ children, requiredRole = 'admin' }) {
         <div className="text-center">
           <h1 className="text-4xl font-bold text-red-400 mb-4">ACCESS DENIED</h1>
           <p className="text-aegis-muted mb-6">You do not have permission to access this page.</p>
-          <p className="text-sm text-aegis-muted mb-8">Required role: <span className="font-bold text-aegis-primary">{requiredRole.toUpperCase()}</span></p>
+          <p className="text-sm text-aegis-muted mb-8">Required role or permission: <span className="font-bold text-aegis-primary">{requiredPermission || requiredRole}</span></p>
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push('/estate-dashboard')}
             className="px-6 py-2 bg-aegis-primary text-white rounded-lg hover:bg-aegis-primary/80"
           >
             Return to Dashboard

@@ -17,6 +17,7 @@ class DigitalTwinDevice(Base):
     kind = Column(String(32), nullable=False)
     device_type = Column(String(100), nullable=False)
     status = Column(String(32), nullable=False, default="online")
+    adapter_type = Column(String(24), nullable=False, default="simulation")
     position = Column(JSON, default=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
     state = Column(JSON, default=dict)
     simulation_enabled = Column(Boolean, nullable=False, default=True)

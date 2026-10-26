@@ -3,6 +3,7 @@ from contextlib import nullcontext
 import pytest
 from fastapi import HTTPException
 
+from backend.models_db import AuditLog
 from backend.routers import digital_twin
 from backend.services import digital_twin as digital_twin_service
 from backend.services.digital_twin import tick_once
@@ -10,8 +11,10 @@ from backend.services.digital_twin import tick_once
 
 class User:
     def __init__(self, tenant_id, role):
+        self.id = tenant_id
         self.tenant_id = tenant_id
         self.role = role
+        self.email = f"user-{tenant_id}@example.com"
 
 
 def test_day85_operator_workflow_is_tenant_scoped(db, monkeypatch):
@@ -29,6 +32,13 @@ def test_day85_operator_workflow_is_tenant_scoped(db, monkeypatch):
         ),
         operator,
     )
+    viewed = digital_twin.get_device(created["id"], operator)
+    assert viewed["device_id"] == "day85-pump"
+    assert db.query(AuditLog).filter_by(
+        tenant_id=operator.tenant_id,
+        event_type="device_viewed",
+        entity_id="day85-pump",
+    ).count() == 1
 
     health_before = digital_twin.twin_health(operator)
     assert health_before["devices"] == 1
@@ -39,7 +49,10 @@ def test_day85_operator_workflow_is_tenant_scoped(db, monkeypatch):
         digital_twin.DeviceControl(command="start", parameters={"flow": 18}),
         operator,
     )
-    assert controlled["state"] == {"output": "idle", "command": "start", "flow": 18}
+    assert controlled["state"]["output"] == "idle"
+    assert controlled["state"]["command"] == "start"
+    assert controlled["state"]["flow"] == 18
+    assert controlled["state"]["last_command_delivery"]["accepted"] is True
 
     with pytest.raises(HTTPException) as error:
         digital_twin.control_device(
@@ -51,6 +64,27 @@ def test_day85_operator_workflow_is_tenant_scoped(db, monkeypatch):
 
     snapshots = tick_once(db, tenant_id=operator.tenant_id)
     assert snapshots[0]["device_id"] == "day85-pump"
+
+    updated = digital_twin.update_device(
+        created["id"],
+        digital_twin.DeviceUpdate(name="Updated irrigation pump"),
+        operator,
+    )
+    assert updated["name"] == "Updated irrigation pump"
+    assert digital_twin.delete_device(created["id"], operator)["deleted"] is True
+    audited_actions = {
+        row.event_type for row in db.query(AuditLog).filter_by(
+            tenant_id=operator.tenant_id,
+            entity_id="day85-pump",
+        ).all()
+    }
+    assert {
+        "device_created",
+        "device_viewed",
+        "device_commanded",
+        "device_updated",
+        "device_deleted",
+    }.issubset(audited_actions)
 
 
 def test_day86_predictive_maintenance_recommendations(db, monkeypatch):

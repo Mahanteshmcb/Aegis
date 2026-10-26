@@ -1,110 +1,71 @@
-"""
-Realtime Socket.IO server for Day 62: emits 'systemStatus:update' and 'sensor:reading' events.
-"""
+"""Tenant-scoped Socket.IO transport for persisted digital-twin state."""
 import asyncio
-import random
 import logging
-from datetime import datetime
 
 import socketio
+from jose import JWTError, jwt
 
-from backend.routers.estate import get_mock_system_status
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Do not emit Socket.IO CORS headers here; FastAPI's CORSMiddleware handles CORS for the mounted route.
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=[])
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=["http://localhost:3000", "http://localhost:8001", "*"])
 # Mounting the Socket.IO ASGI app at /socket.io means the inner app receives the remaining
 # path after the mount point is stripped. Use '/' here so the mounted root path resolves correctly.
 sio_app = socketio.ASGIApp(sio, socketio_path='/')
 
 _emit_tasks = []
 
-async def sensor_emitter():
-    """Emit simulated sensor readings every 1-5 seconds."""
+
+def tenant_room(tenant_id: int) -> str:
+    return f"tenant:{tenant_id}"
+
+
+def _tenant_id_from_auth(auth) -> int | None:
+    token = auth.get("token") if isinstance(auth, dict) else None
+    if not token:
+        return None
     try:
-        # Attempt to load real sensors from the DB and rotate through them.
-        try:
-            from backend.database import SessionLocal
-            from backend import models_db as models
-            with SessionLocal() as db:
-                sensors = db.query(models.Sensor).all()
-        except Exception:
-            sensors = []
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        tenant_id = payload.get("tenant_id")
+        return int(tenant_id) if tenant_id is not None else None
+    except (JWTError, TypeError, ValueError):
+        return None
 
-        while True:
-            await asyncio.sleep(random.uniform(1, 5))
 
-            if sensors:
-                sensor = random.choice(sensors)
-                data = {
-                    "sensor_id": sensor.id,
-                    "sensor_name": sensor.name,
-                    "tenant_id": sensor.tenant_id,
-                    "type": sensor.type or "",
-                    "value": round(random.uniform(0, 100), 2),
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-            else:
-                # Fallback to legacy synthetic ids when DB sensors are unavailable
-                data = {
-                    "sensor_id": f"sensor_{random.randint(1,20):02}",
-                    "system": random.choice(["climate", "energy", "security", "water", "comms"]),
-                    "type": "",
-                    "value": round(random.uniform(0, 100), 2),
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-
-            # Run simple automation checks for generated readings
-            try:
-                from backend.services import automation
-                asyncio.create_task(automation.process_sensor_reading(data))
-            except Exception:
-                pass
-
-            await sio.emit("sensor:reading", data)
-    except asyncio.CancelledError:
-        logger.info("sensor_emitter cancelled")
-
-async def system_status_emitter():
-    """Emit aggregated system status periodically (every ~5 seconds)."""
-    try:
-        while True:
-            await asyncio.sleep(5)
-            payload = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "systems": [
-                    get_mock_system_status("climate", "Climate Control").dict(),
-                    get_mock_system_status("energy", "Energy Management").dict(),
-                    get_mock_system_status("security", "Security System").dict(),
-                    get_mock_system_status("water", "Water Management").dict(),
-                    get_mock_system_status("comms", "Communications").dict(),
-                ]
-            }
-            await sio.emit("systemStatus:update", payload)
-    except asyncio.CancelledError:
-        logger.info("system_status_emitter cancelled")
-
+async def emit_tenant_event(event: str, payload: dict, tenant_id: int | None = None) -> None:
+    """Keep tenant-owned realtime data inside its authenticated tenant room."""
+    if tenant_id is None:
+        await sio.emit(event, payload)
+    else:
+        await sio.emit(event, payload, room=tenant_room(tenant_id))
 
 async def digital_twin_emitter():
-    """Advance persisted virtual devices and publish tenant-scoped updates."""
+    """Advance the persisted twin and publish its tenant-scoped state transitions."""
     try:
         from backend.database import SessionLocal
         from backend.services.digital_twin import tick_once
 
         while True:
             await asyncio.sleep(1)
-            with SessionLocal() as db:
-                snapshots = tick_once(db)
-            for snapshot in snapshots:
-                await sio.emit("digital_twin:device_update", snapshot)
+            try:
+                with SessionLocal() as db:
+                    snapshots = tick_once(db)
+                for snapshot in snapshots:
+                    tenant_id = snapshot.get("tenant_id")
+                    await emit_tenant_event("digital_twin:device_update", snapshot, tenant_id)
+                    if snapshot.get("alert"):
+                        await emit_tenant_event("digital_twin:alert", snapshot["alert"], tenant_id)
+                    if snapshot.get("alert_cleared"):
+                        await emit_tenant_event("digital_twin:alert_cleared", snapshot["alert_cleared"], tenant_id)
+            except Exception:
+                logger.exception("Digital-twin simulation tick failed")
     except asyncio.CancelledError:
         logger.info("digital_twin_emitter cancelled")
 
 def start_background_emitters(loop: asyncio.AbstractEventLoop):
     """Start emitter tasks on the provided event loop."""
-    _emit_tasks.append(loop.create_task(sensor_emitter()))
-    _emit_tasks.append(loop.create_task(system_status_emitter()))
     _emit_tasks.append(loop.create_task(digital_twin_emitter()))
     # Start robot lifecycle worker (Day 72)
     try:
@@ -112,12 +73,6 @@ def start_background_emitters(loop: asyncio.AbstractEventLoop):
         _emit_tasks.append(loop.create_task(robot_task_worker()))
     except Exception:
         logger.exception("Failed to start robot_task_worker")
-    # Start simple scene entity mover (Day 73)
-    try:
-        from backend.services.scene_simulator import scene_entity_mover
-        _emit_tasks.append(loop.create_task(scene_entity_mover()))
-    except Exception:
-        logger.exception("Failed to start scene_entity_mover")
     logger.info("Realtime emitters started")
 
 async def stop_background_emitters():
@@ -130,22 +85,15 @@ async def stop_background_emitters():
 
 
 @sio.event
-async def connect(sid, environ):
-    logger.info(f"Realtime client connected: {sid}")
-    # Send immediate snapshot on connect
-    snapshot = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "systems": [
-            get_mock_system_status("climate", "Climate Control").dict(),
-            get_mock_system_status("energy", "Energy Management").dict(),
-            get_mock_system_status("security", "Security System").dict(),
-            get_mock_system_status("water", "Water Management").dict(),
-            get_mock_system_status("comms", "Communications").dict(),
-        ]
-    }
-    await sio.emit("systemStatus:update", snapshot, to=sid)
+async def connect(sid, environ, auth=None):
+    tenant_id = _tenant_id_from_auth(auth)
+    if isinstance(auth, dict) and auth.get("token") and tenant_id is None:
+        logger.warning("Rejected realtime client with invalid authentication: %s", sid)
+        return False
 
-
+    if tenant_id is not None:
+        await sio.enter_room(sid, tenant_room(tenant_id))
+    logger.info("Realtime client connected: %s (tenant=%s)", sid, tenant_id)
 @sio.event
 async def disconnect(sid):
     logger.info(f"Realtime client disconnected: {sid}")

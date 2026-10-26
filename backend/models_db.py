@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, JSON, Float, Text, Boolean
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, JSON, Float, Text, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 
-from backend.database import Base
+from backend.database import Base, Zone
 
 
 
@@ -20,7 +20,6 @@ class Tenant(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     sensors = relationship("Sensor", back_populates="tenant")
-    zones = relationship("Zone", back_populates="tenant")
     users = relationship("User", back_populates="tenant")
     audit_logs = relationship("AuditLog", back_populates="tenant")
     scheduled_tasks = relationship("ScheduledRoboticTask", back_populates="tenant")
@@ -49,6 +48,19 @@ class User(Base):
     tenant = relationship("Tenant", back_populates="users")
 
 
+class RoleDefinition(Base):
+    __tablename__ = "role_definitions"
+    __table_args__ = (UniqueConstraint("tenant_id", "key", name="uq_role_definitions_tenant_key"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    key = Column(String(64), nullable=False)
+    name = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=True)
+    permissions = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
 
 class Sensor(Base):
     __tablename__ = "sensors"
@@ -64,27 +76,13 @@ class Sensor(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="sensors")
-    zone = relationship("Zone", back_populates="sensors")
+    zone = relationship(Zone, foreign_keys=[zone_id])
     audit_logs = relationship("AuditLog", back_populates="sensor")
     data_points = relationship("SensorData", back_populates="sensor")
 
 
 
-class Zone(Base):
-    __tablename__ = "zones"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    description = Column(String(255))
-    location = Column(String(255))
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    tenant = relationship("Tenant", back_populates="zones")
-    sensors = relationship("Sensor", back_populates="zone")
-    # Environmental control one-to-one relationship (living quarters)
-    environmental_zone = relationship("EnvironmentalZone", back_populates="zone", uselist=False)
 
 
 
@@ -97,6 +95,13 @@ class AuditLog(Base):
     event_type = Column(String(100))
     data_hash = Column(String(255))
     blockchain_tx = Column(String(255))
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    actor_email = Column(String(255), nullable=True)
+    action = Column(String(100), nullable=True)
+    entity_type = Column(String(100), nullable=True)
+    entity_id = Column(String(255), nullable=True)
+    outcome = Column(String(50), nullable=True)
+    details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -155,6 +160,30 @@ class SensorData(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     sensor = relationship("Sensor", back_populates="data_points")
+
+
+class DigitalTwinTelemetry(Base):
+    __tablename__ = "digital_twin_telemetry"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey("digital_twin_devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    snapshot = Column(JSON, nullable=False)
+    recorded_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
+class DigitalTwinMedia(Base):
+    __tablename__ = "digital_twin_media"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey("digital_twin_devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    storage_key = Column(String(36), nullable=False, unique=True)
+    original_name = Column(String(255), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
 
 
 class TelemetryPlaybackSession(Base):
@@ -460,7 +489,7 @@ class AgriculturalSensor(Base):
     
     # Relationships
     tenant = relationship("Tenant", foreign_keys=[tenant_id])
-    zone = relationship("Zone", foreign_keys=[zone_id])
+    zone = relationship(Zone, foreign_keys=[zone_id])
     sensor_readings = relationship("AgriculturalSensorReading", back_populates="sensor")
 
 
@@ -532,7 +561,7 @@ class WeatherObservation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tenant = relationship("Tenant", foreign_keys=[tenant_id])
-    zone = relationship("Zone", foreign_keys=[zone_id])
+    zone = relationship(Zone, foreign_keys=[zone_id])
     sensor = relationship("Sensor", foreign_keys=[sensor_id])
 
 
@@ -548,8 +577,8 @@ class WeatherForecastCache(Base):
     forecast = Column(JSON, default=list)
 
     tenant = relationship("Tenant", foreign_keys=[tenant_id])
-    zone = relationship("Zone", foreign_keys=[zone_id])
-    
+    zone = relationship(Zone, foreign_keys=[zone_id])
+    zone = relationship(Zone, foreign_keys=[zone_id])
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1241,10 +1270,9 @@ class ZoneCommunicationChannel(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    zone = relationship(Zone, foreign_keys=[zone_id])
     tenant = relationship("Tenant", foreign_keys=[tenant_id])
-    zone = relationship("Zone", foreign_keys=[zone_id])
-
-
+    zone = relationship(Zone, foreign_keys=[zone_id])
 class ServerCommunicationChannel(Base):
     """
     Tracks inter-server and service mesh communication channels.

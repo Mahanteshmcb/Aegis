@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import useCurrentUser from '../hooks/useCurrentUser';
 import ConfirmModal from '../components/ConfirmModal';
@@ -8,8 +8,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export default function ZonesPage() {
   const router = useRouter();
-  const { user, loading } = useCurrentUser();
+  const { user, loading, token } = useCurrentUser();
   const [zones, setZones] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [resourcesAvailable, setResourcesAvailable] = useState(true);
   const [loadingZones, setLoadingZones] = useState(true);
   const [error, setError] = useState(null);
   const { addToast } = useToast();
@@ -22,20 +24,21 @@ export default function ZonesPage() {
   const [editFormData, setEditFormData] = useState({ name: '', description: '' });
   const [confirmDeleteZoneId, setConfirmDeleteZoneId] = useState(null);
   const [confirmDeleteZoneName, setConfirmDeleteZoneName] = useState('');
+  const canManageZones = ['admin', 'superadmin'].includes(String(user?.role || '').toLowerCase());
 
-  useEffect(() => {
-    if (!loading && user) {
-      fetchZones();
+  const fetchZones = useCallback(async () => {
+    if (!token) {
+      router.push('/login');
+      return;
     }
-  }, [user, loading]);
 
-  async function fetchZones() {
     try {
       setLoadingZones(true);
-      const token = localStorage.getItem('aegis_token');
-      const resp = await fetch(`${API_URL}/api/v1/zones`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const [resp, devicesResp] = await Promise.all([
+        fetch(`${API_URL}/api/v1/zones`, { headers }),
+        fetch(`${API_URL}/api/v1/digital-twin/devices`, { headers }).catch(() => null),
+      ]);
 
       if (resp.status === 401) {
         router.push('/login');
@@ -48,6 +51,8 @@ export default function ZonesPage() {
 
       const data = await resp.json();
       setZones(Array.isArray(data) ? data : []);
+      setResourcesAvailable(Boolean(devicesResp?.ok));
+      setDevices(devicesResp?.ok ? await devicesResp.json().then((items) => Array.isArray(items) ? items : []).catch(() => []) : []);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -55,7 +60,13 @@ export default function ZonesPage() {
     } finally {
       setLoadingZones(false);
     }
-  }
+  }, [router, token]);
+
+  useEffect(() => {
+    if (!loading && token) {
+      fetchZones();
+    }
+  }, [loading, token, fetchZones]);
 
   async function handleCreateZone(e) {
     e.preventDefault();
@@ -73,11 +84,15 @@ export default function ZonesPage() {
 
     try {
       setIsSubmitting(true);
-      const token = localStorage.getItem('aegis_token');
+      // Use the consistent token from useCurrentUser hook instead of localStorage
+      if (!token) {
+        router.push('/login');
+        return;
+      }
       const resp = await fetch(`${API_URL}/api/v1/zones`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, name: formData.name.trim(), tenant_id: user?.tenant_id }),
       });
 
       if (!resp.ok) {
@@ -109,7 +124,6 @@ export default function ZonesPage() {
     if (!editFormData.name.trim()) return setFormError('Zone name is required');
     try {
       setIsSubmitting(true);
-      const token = localStorage.getItem('aegis_token');
       const resp = await fetch(`${API_URL}/api/v1/zones/${zoneId}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -148,7 +162,6 @@ export default function ZonesPage() {
     if (!confirmDeleteZoneId) return;
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('aegis_token');
       const resp = await fetch(`${API_URL}/api/v1/zones/${confirmDeleteZoneId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -171,6 +184,9 @@ export default function ZonesPage() {
     }
   }
 
+  const populatedZoneCount = zones.filter((zone) => devices.some((device) => String(device.zone_id) === String(zone.id))).length;
+  const unassignedDeviceCount = devices.filter((device) => device.zone_id == null).length;
+
   return (
     <div className="min-h-[calc(100vh-4rem)] space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -178,9 +194,11 @@ export default function ZonesPage() {
           <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">Security Zones</h1>
           <p className="text-aegis-muted">Define and manage monitored areas.</p>
         </div>
-        <button onClick={() => setShowForm(!showForm)} className="px-6 py-2 bg-aegis-primary hover:bg-aegis-primary/80 text-white rounded-xl font-semibold transition-all">
-          {showForm ? 'Cancel' : '+ New Zone'}
-        </button>
+        {canManageZones && (
+          <button onClick={() => setShowForm(!showForm)} className="px-6 py-2 bg-aegis-primary hover:bg-aegis-primary/80 text-white rounded-xl font-semibold transition-all">
+            {showForm ? 'Cancel' : '+ New Zone'}
+          </button>
+        )}
       </div>
 
       {success && (
@@ -200,7 +218,7 @@ export default function ZonesPage() {
           <form onSubmit={handleCreateZone} className="space-y-4">
             <div>
               <label className="block text-sm text-aegis-muted font-semibold mb-2">Zone Name *</label>
-              <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g., Warehouse A" className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white focus:border-aegis-primary outline-none" />
+                <input type="text" required maxLength={100} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g., Warehouse A" className="w-full rounded-2xl border border-slate-700 bg-[#0f172a] px-4 py-3 text-white focus:border-aegis-primary outline-none" />
             </div>
             <div>
               <label className="block text-sm text-aegis-muted font-semibold mb-2">Description</label>
@@ -235,8 +253,10 @@ export default function ZonesPage() {
                   <p className="text-sm text-aegis-muted mt-2">{zone.description || 'No description provided.'}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => handleEditClick(zone)} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted hover:border-aegis-primary hover:text-aegis-primary">Edit</button>
-                  <button onClick={() => openDeleteZoneConfirm(zone)} className="rounded-xl border border-rose-700 px-3 py-1 text-xs text-rose-400 hover:bg-rose-900/20">Delete</button>
+                  {canManageZones && <>
+                    <button onClick={() => handleEditClick(zone)} className="rounded-xl border border-slate-700 px-3 py-1 text-xs text-aegis-muted hover:border-aegis-primary hover:text-aegis-primary">Edit</button>
+                    <button onClick={() => openDeleteZoneConfirm(zone)} className="rounded-xl border border-rose-700 px-3 py-1 text-xs text-rose-400 hover:bg-rose-900/20">Delete</button>
+                  </>}
                 </div>
               </div>
 
@@ -251,8 +271,21 @@ export default function ZonesPage() {
                 </div>
               ) : (
                 <div className="grid gap-2 text-xs text-slate-500">
-                  <p>ID: <span className="font-mono text-slate-400">{zone.id}</span></p>
+                  <p>Location: <span className="text-slate-300">{zone.location || 'Not specified'}</span></p>
                   <p>Created: {zone.created_at ? new Date(zone.created_at).toLocaleDateString() : 'Unknown'}</p>
+                  <div className="border-t border-slate-800 pt-2">
+                    <p className="mb-1 uppercase tracking-wider">Assigned resources</p>
+                    {!resourcesAvailable ? (
+                      <p className="text-amber-300">Resource inventory unavailable</p>
+                    ) : (
+                      <p className="text-slate-300">
+                        {devices.filter((device) => String(device.zone_id) === String(zone.id)).length} devices
+                        {' · '}{devices.filter((device) => String(device.zone_id) === String(zone.id) && device.kind === 'sensor').length} sensors
+                        {' · '}{devices.filter((device) => String(device.zone_id) === String(zone.id) && device.kind === 'robot').length} robots
+                        {' · '}{devices.filter((device) => String(device.zone_id) === String(zone.id) && device.kind === 'actuator').length} actuators
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -268,14 +301,18 @@ export default function ZonesPage() {
               <p className="mt-2 text-3xl font-semibold text-white">{zones.length}</p>
             </div>
             <div>
-              <p className="uppercase tracking-[0.2em] text-slate-500 text-xs">Active</p>
-              <p className="mt-2 text-3xl font-semibold text-green-400">{zones.length}</p>
+              <p className="uppercase tracking-[0.2em] text-slate-500 text-xs">Zones with resources</p>
+              <p className="mt-2 text-3xl font-semibold text-green-400">{resourcesAvailable ? populatedZoneCount : '—'}</p>
+            </div>
+            <div>
+              <p className="uppercase tracking-[0.2em] text-slate-500 text-xs">Unassigned devices</p>
+              <p className="mt-2 text-3xl font-semibold text-amber-300">{resourcesAvailable ? unassignedDeviceCount : '—'}</p>
             </div>
           </div>
         </div>
       )}
       <ConfirmModal
-        open={Boolean(confirmDeleteZoneId)}
+        open={canManageZones && Boolean(confirmDeleteZoneId)}
         title="Confirm delete"
         message={`Delete ${confirmDeleteZoneName} and its environmental configuration? This action cannot be undone.`}
         confirmLabel="Delete Zone"

@@ -47,6 +47,8 @@ The frontend normally runs at http://localhost:3000. Next.js selects the next av
 
 The local database is `aegis.db`. The database initializer creates the default tenant and demo account when required.
 
+On a clean database, startup also seeds a software-first live twin: a soil probe, an automation-mode irrigation pump, and a moving field rover. The backend starts the local robotics protobuf service on port `50053`; the sensor contract remains available on port `50052`.
+
 ## 3. Demonstration Route
 
 Recommended sequence:
@@ -61,6 +63,17 @@ Recommended sequence:
 8. Save the entity and confirm that the change is persisted.
 9. Open `/dashboard-3d` for the realtime digital-twin view.
 10. Open `/system-control` for health, backup, synchronization, and fleet controls.
+
+## 3.1 Five-Minute Impact Demonstration
+
+1. Sign in with `admin@aegis.com` and `admin1234`.
+2. Open `/estate-dashboard` and show the realtime connection indicator, live telemetry, health score, alerts, and recommendations.
+3. Open `/3d-scene` and point out the rover position, sensor state, and estate zones.
+4. Call `POST /api/v1/digital-twin/tick` from the API docs. The soil value changes, the irrigation actuator evaluates its threshold policy, and the rover position updates.
+5. Refresh the dashboard and show that the state is persisted and tenant-scoped.
+6. Demonstrate robotics communication with a registration/task call through the backend, or show the startup log confirming the local `RoboticFleetService` on port `50053`.
+
+For the report, describe this as a **software-first simulation MVP**. Physical sensors and robots remain future adapter integrations; the REST, Socket.IO, and gRPC contracts are already exercised by the simulated devices.
 
 ## 4. 3D Environment
 

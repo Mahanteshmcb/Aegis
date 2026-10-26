@@ -77,7 +77,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ),
-        sa.ForeignKeyConstraint(['zone_id'], ['zones.id'], ),
+        sa.ForeignKeyConstraint(['zone_id'], ['zones.zone_id'], ),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_irrigation_systems_id'), 'irrigation_systems', ['id'], unique=False)

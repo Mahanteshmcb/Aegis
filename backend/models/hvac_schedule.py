@@ -4,7 +4,7 @@ HVAC scheduling model for zone setpoint automation.
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from backend.database import Base
+from backend.database import Base, Zone
 
 
 class HVACSchedule(Base):
@@ -24,4 +24,4 @@ class HVACSchedule(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # relationships
-    zone = relationship("Zone")
+    zone = relationship(Zone, foreign_keys=[zone_id])

@@ -7,15 +7,19 @@ from datetime import datetime
 import time
 import sys
 import os
+import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 # Try to import web3, but make it optional for development
 try:
     from web3 import Web3
 except Exception as e:
-    print(f"Warning: Could not import web3: {e}")
+    logger.info("Web3 not installed; blockchain checks will be disabled: %s", e)
     Web3 = None
 
 from backend.config import settings
@@ -96,7 +100,7 @@ async def health_check(db: Session = Depends(get_db)):
 
     # Check database
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception:
         db_status = "disconnected"
@@ -145,7 +149,7 @@ async def health_check_detailed(
     # Database latency
     t0 = time.time()
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_latency = (time.time() - t0) * 1000
         db_status = "connected"
     except Exception:

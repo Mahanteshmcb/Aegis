@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 
-from backend.dependencies import get_db
+from backend.dependencies import get_current_user, get_db, require_permission
 from backend.models_db import Sensor, SensorData, EnergyPolicy, WeatherForecastCache
 from ai.energy_management import compute_energy_balance, naive_charge_schedule, smart_adaptive_schedule
 
@@ -325,10 +325,16 @@ async def get_energy_overview(db: Session = Depends(get_db), tenant_id: Optional
 
 
 @router.get('/policy')
-async def get_policy(db: Session = Depends(get_db), tenant_id: Optional[int] = None):
+async def get_policy(
+    db: Session = Depends(get_db),
+    tenant_id: Optional[int] = None,
+    current_user=Depends(get_current_user),
+):
+    if tenant_id is not None and tenant_id != current_user["tenant_id"] and current_user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    target_tenant = tenant_id if tenant_id is not None else current_user["tenant_id"]
     q = db.query(EnergyPolicy)
-    if tenant_id is not None:
-        q = q.filter(EnergyPolicy.tenant_id == tenant_id)
+    q = q.filter(EnergyPolicy.tenant_id == target_tenant)
     policy = q.order_by(EnergyPolicy.id.desc()).first()
     if not policy:
         return {}
@@ -340,15 +346,39 @@ async def get_policy(db: Session = Depends(get_db), tenant_id: Optional[int] = N
 
 
 @router.post('/policy')
-async def set_policy(payload: PolicyIn, db: Session = Depends(get_db), tenant_id: Optional[int] = None):
+async def set_policy(
+    payload: PolicyIn,
+    db: Session = Depends(get_db),
+    tenant_id: Optional[int] = None,
+    current_user=Depends(require_permission("devices.manage")),
+):
+    if tenant_id is not None and tenant_id != current_user["tenant_id"] and current_user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    target_tenant = tenant_id if tenant_id is not None else current_user["tenant_id"]
     policy = EnergyPolicy(
-        tenant_id=tenant_id,
+        tenant_id=target_tenant,
         charge_threshold=payload.charge_threshold,
         discharge_threshold=payload.discharge_threshold,
         max_charge_rate_kw=payload.max_charge_rate_kw,
     )
     db.add(policy)
-    db.commit()
+    db.flush()
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+    record_actor_audit_event(
+        db,
+        target_tenant,
+        current_user,
+        "energy_policy_updated",
+        "energy_policy",
+        policy.id,
+        {
+            "charge_threshold": policy.charge_threshold,
+            "discharge_threshold": policy.discharge_threshold,
+            "max_charge_rate_kw": policy.max_charge_rate_kw,
+        },
+        blockchain=get_blockchain_connector(),
+    )
     db.refresh(policy)
     return {"ok": True, "policy": {
         'charge_threshold': policy.charge_threshold,

@@ -50,5 +50,36 @@ def record_audit_event(
         event_type=event_type,
         data_hash=data_hash,
         blockchain_tx=blockchain_tx,
+        actor_user_id=metadata.get("actor_user_id"),
+        actor_email=metadata.get("actor_email"),
+        action=metadata.get("action") or event_type,
+        entity_type=metadata.get("entity_type"),
+        entity_id=str(metadata["entity_id"]) if metadata.get("entity_id") is not None else None,
+        outcome=metadata.get("outcome"),
+        details=metadata,
     )
     return crud.create_audit_log(db, audit, tenant_id=tenant_id)
+
+
+def record_actor_audit_event(
+    db: Session,
+    tenant_id: int,
+    actor: Dict[str, Any],
+    event_type: str,
+    entity_type: str,
+    entity_id: Any,
+    details: Optional[Dict[str, Any]] = None,
+    blockchain: Optional[BlockchainConnector] = None,
+    outcome: str = "success",
+) -> schemas.AuditLog:
+    """Record a structured event with a consistent actor and entity envelope."""
+    metadata = {
+        **(details or {}),
+        "action": event_type,
+        "actor_user_id": actor.get("id"),
+        "actor_email": actor.get("email"),
+        "entity_type": entity_type,
+        "entity_id": str(entity_id) if entity_id is not None else None,
+        "outcome": outcome,
+    }
+    return record_audit_event(db, blockchain, tenant_id, event_type, metadata)

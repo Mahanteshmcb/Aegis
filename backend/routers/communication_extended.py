@@ -25,6 +25,22 @@ router = APIRouter(prefix="/api/v1/communication", tags=["Communication"])
 logger = logging.getLogger(__name__)
 
 
+def _record_channel_audit(db: Session, current_user: dict, event_type: str, entity_type: str, entity_id, details: dict):
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+
+    record_actor_audit_event(
+        db,
+        current_user["tenant_id"],
+        current_user,
+        event_type,
+        entity_type,
+        entity_id,
+        details,
+        blockchain=get_blockchain_connector(),
+    )
+
+
 # ==================== RESPONSE MODELS ====================
 
 class RobotChannelResponse(BaseModel):
@@ -40,7 +56,7 @@ class RobotChannelResponse(BaseModel):
     last_heartbeat: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -58,7 +74,7 @@ class DeviceChannelResponse(BaseModel):
     last_sync: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -77,7 +93,7 @@ class ZoneChannelResponse(BaseModel):
     last_message: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -96,7 +112,7 @@ class ServerChannelResponse(BaseModel):
     last_health_check: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -116,7 +132,7 @@ class VryndaraChannelResponse(BaseModel):
     last_request: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -135,7 +151,7 @@ class CommunicationOrchestrationResponse(BaseModel):
     last_message_timestamp: Optional[datetime]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -220,7 +236,11 @@ async def create_robot_channel(
         last_heartbeat=datetime.utcnow(),
     )
     db.add(channel)
-    db.commit()
+    db.flush()
+    _record_channel_audit(
+        db, current_user, "robot_channel_created", "robot_communication_channel", channel.id,
+        {"channel_name": channel.channel_name, "protocol": channel.protocol, "robot_ids": channel.robot_ids},
+    )
     db.refresh(channel)
     logger.info(f"Created robot channel {request.channel_name} for tenant {tenant_id}")
     return channel
@@ -285,7 +305,11 @@ async def create_device_channel(
         last_sync=datetime.utcnow(),
     )
     db.add(channel)
-    db.commit()
+    db.flush()
+    _record_channel_audit(
+        db, current_user, "device_channel_created", "device_communication_channel", channel.id,
+        {"channel_name": channel.channel_name, "protocol": channel.protocol, "device_ids": channel.device_ids},
+    )
     db.refresh(channel)
     logger.info(f"Created device channel {request.channel_name} for tenant {tenant_id}")
     return channel
@@ -360,7 +384,11 @@ async def create_zone_channel(
         last_message=datetime.utcnow(),
     )
     db.add(channel)
-    db.commit()
+    db.flush()
+    _record_channel_audit(
+        db, current_user, "zone_channel_created", "zone_communication_channel", channel.id,
+        {"channel_name": channel.channel_name, "protocol": channel.protocol, "zone_id": channel.zone_id},
+    )
     db.refresh(channel)
     logger.info(f"Created zone channel for zone {request.zone_id} in tenant {tenant_id}")
     return channel
@@ -421,7 +449,11 @@ async def register_server_channel(
         last_health_check=datetime.utcnow(),
     )
     db.add(channel)
-    db.commit()
+    db.flush()
+    _record_channel_audit(
+        db, current_user, "server_channel_registered", "server_communication_channel", channel.id,
+        {"server_id": channel.server_id, "server_name": channel.server_name, "protocol": channel.protocol},
+    )
     db.refresh(channel)
     logger.info(f"Registered server {request.server_name} (ID: {request.server_id}) for tenant {tenant_id}")
     return channel
@@ -487,7 +519,15 @@ async def configure_vryndara_channel(
         existing.request_timeout_ms = request.request_timeout_ms
         existing.max_concurrent_requests = request.max_concurrent_requests
         existing.updated_at = datetime.utcnow()
-        db.commit()
+        _record_channel_audit(
+            db, current_user, "vryndara_channel_updated", "vryndara_communication_channel", existing.id,
+            {
+                "service_endpoint_configured": bool(existing.service_endpoint),
+                "protocol": existing.protocol,
+                "request_timeout_ms": existing.request_timeout_ms,
+                "max_concurrent_requests": existing.max_concurrent_requests,
+            },
+        )
         db.refresh(existing)
         logger.info(f"Updated Vryndara channel for tenant {tenant_id}")
         return existing
@@ -504,7 +544,16 @@ async def configure_vryndara_channel(
         ai_health_score=100.0,
     )
     db.add(channel)
-    db.commit()
+    db.flush()
+    _record_channel_audit(
+        db, current_user, "vryndara_channel_created", "vryndara_communication_channel", channel.id,
+        {
+            "service_endpoint_configured": bool(channel.service_endpoint),
+            "protocol": channel.protocol,
+            "request_timeout_ms": channel.request_timeout_ms,
+            "max_concurrent_requests": channel.max_concurrent_requests,
+        },
+    )
     db.refresh(channel)
     logger.info(f"Created Vryndara channel for tenant {tenant_id}")
     return channel
@@ -582,7 +631,17 @@ async def create_orchestration_route(
         routing_priority=request.routing_priority,
     )
     db.add(route)
-    db.commit()
+    _record_channel_audit(
+        db, current_user, "communication_route_created", "communication_orchestration",
+        route.orchestration_id,
+        {
+            "source_type": route.source_type,
+            "source_id": route.source_id,
+            "target_type": route.target_type,
+            "target_id": route.target_id,
+            "routing_priority": route.routing_priority,
+        },
+    )
     db.refresh(route)
     logger.info(f"Created orchestration route {orchestration_id} for tenant {tenant_id}")
     return route

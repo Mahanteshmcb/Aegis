@@ -465,3 +465,103 @@ def test_robotics_data_synchronization_and_backup(client):
     assert list_jobs_response.status_code == 200
     jobs = list_jobs_response.json()
     assert any(item["sync_id"] == sync_id for item in jobs)
+
+
+def test_robotics_estate_state_snapshot_and_recovery(client):
+    headers = auth_headers(client)
+
+    zone_payload = {
+        "tenant_id": 1,
+        "name": "Recovery Greenhouse",
+        "location": "North Wing",
+        "coordinates": {"x": 10, "y": 20, "z": 0},
+        "description": "restoration test zone",
+    }
+    zone_response = client.post("/api/v1/zones", json=zone_payload, headers=headers)
+    assert zone_response.status_code == 200
+    zone_data = zone_response.json()
+    assert zone_data["name"] == "Recovery Greenhouse"
+
+    device_payload = {
+        "device_type": "sensor",
+        "subtype": "temperature",
+        "device_id": "RECOVERY-TEMP-1",
+        "name": "Recovery Sensor",
+        "zone_id": zone_data["id"],
+        "status": "active",
+        "units": "C",
+        "position_x": 1,
+        "position_y": 2,
+        "position_z": 3,
+    }
+    device_response = client.post("/api/v1/sensors", json=device_payload, headers=headers)
+    assert device_response.status_code == 200
+
+    snapshot_response = client.post("/api/v1/robotics/sync/state-snapshot", json={"label": "estate-snapshot-test"}, headers=headers)
+    assert snapshot_response.status_code == 200
+    snapshot_data = snapshot_response.json()
+    assert snapshot_data["status"] == "verified"
+    assert snapshot_data["record_count"] >= 2
+    assert snapshot_data["source"] == "estate_state_snapshot"
+    snapshot_id = snapshot_data["snapshot_id"]
+
+    recovery_response = client.post("/api/v1/robotics/sync/recover", json={"snapshot_id": snapshot_id}, headers=headers)
+    assert recovery_response.status_code == 200
+    recovery_data = recovery_response.json()
+    assert recovery_data["recovered"] is True
+    assert recovery_data["snapshot_id"] == snapshot_id
+    assert recovery_data["zones_rebuilt"] >= 1
+    assert recovery_data["devices_rebuilt"] >= 1
+
+    list_snapshot_response = client.get("/api/v1/robotics/sync/state-snapshots", headers=headers)
+    assert list_snapshot_response.status_code == 200
+    list_data = list_snapshot_response.json()
+    assert any(item["snapshot_id"] == snapshot_id for item in list_data)
+
+
+def test_robotics_emergency_restore_without_login(client):
+    headers = auth_headers(client)
+
+    zone_response = client.post(
+        "/api/v1/zones",
+        json={
+            "tenant_id": 1,
+            "name": "Emergency Restore Zone",
+            "location": "South Wing",
+            "description": "customer restore test",
+        },
+        headers=headers,
+    )
+    assert zone_response.status_code == 200
+
+    device_response = client.post(
+        "/api/v1/sensors",
+        json={
+            "device_type": "sensor",
+            "device_id": "EMERGENCY-RESTORE-SENSOR",
+            "name": "Emergency Restore Sensor",
+            "zone_id": zone_response.json()["id"],
+            "type": "temperature",
+            "location": "South Wing",
+        },
+        headers=headers,
+    )
+    assert device_response.status_code == 200
+
+    snapshot_response = client.post(
+        "/api/v1/robotics/sync/state-snapshot",
+        json={"label": "emergency-restore"},
+        headers=headers,
+    )
+    assert snapshot_response.status_code == 200
+    snapshot_id = snapshot_response.json()["snapshot_id"]
+
+    restore_response = client.post(
+        "/api/v1/robotics/sync/recover/bootstrap",
+        json={"snapshot_id": snapshot_id},
+    )
+    assert restore_response.status_code == 200
+    restore_data = restore_response.json()
+    assert restore_data["recovered"] is True
+    assert restore_data["snapshot_id"] == snapshot_id
+    assert restore_data["tenant_id"] == 1

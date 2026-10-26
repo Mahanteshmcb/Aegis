@@ -2,7 +2,8 @@
 Aegis Backend - SQLAlchemy Model Unit Tests
 """
 import pytest
-from backend.models_db import Tenant, User, Zone, Sensor, SensorData, AuditLog, VryndaraRequest
+from backend.models_db import Tenant, User, Sensor, SensorData, AuditLog, VryndaraRequest
+from backend.models.zones import Zone
 from datetime import datetime
 
 def test_tenant_model():

@@ -14,12 +14,25 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_current_user, get_db
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models_db import BiologicalSpecies, SpatialZone, CropInstance, User
 from ai.spatial_mapping import spatial_engine, VerticalLayer, Coordinate3D, CropProfile, SpatialZone as SpatialZoneModel
 
 router = APIRouter(prefix="/api/v1/spatial", tags=["Spatial Mapping"])
 
 logger = logging.getLogger(__name__)
+
+
+def _spatial_tenant_id(actor) -> int:
+    return int(actor.tenant_id if hasattr(actor, "tenant_id") else actor["tenant_id"])
+
+
+def _record_spatial_action(db: Session, actor, event_type: str, entity_type: str, entity_id, details: dict):
+    return record_actor_audit_event(
+        db, _spatial_tenant_id(actor), actor, event_type, entity_type, entity_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 # ============================================================================
@@ -161,7 +174,12 @@ async def create_biological_species(
 
     db_species = BiologicalSpecies(**species.dict())
     db.add(db_species)
-    db.commit()
+    db.flush()
+    _record_spatial_action(
+        db, current_user, "biological_species_created", "biological_species", db_species.id,
+        {"scientific_name": db_species.scientific_name, "common_name": db_species.common_name,
+         "vertical_layer": db_species.vertical_layer},
+    )
     db.refresh(db_species)
 
     # Register with spatial engine
@@ -227,11 +245,18 @@ async def create_spatial_zone(
 ):
     """Create a new spatial zone."""
     db_zone = SpatialZone(
-        tenant_id=current_user.tenant_id,
+        tenant_id=_spatial_tenant_id(current_user),
         **zone.dict()
     )
     db.add(db_zone)
-    db.commit()
+    db.flush()
+    _record_spatial_action(
+        db, current_user, "spatial_zone_created", "spatial_zone", db_zone.id,
+        {"name": db_zone.name, "bounds": {
+            "min_x": db_zone.min_x, "max_x": db_zone.max_x, "min_y": db_zone.min_y,
+            "max_y": db_zone.max_y, "min_z": db_zone.min_z, "max_z": db_zone.max_z,
+        }},
+    )
     db.refresh(db_zone)
 
     # Register with spatial engine
@@ -262,7 +287,7 @@ async def list_spatial_zones(
     current_user: User = Depends(get_current_user)
 ):
     """List spatial zones for the current tenant."""
-    query = db.query(SpatialZone).filter(SpatialZone.tenant_id == current_user.tenant_id)
+    query = db.query(SpatialZone).filter(SpatialZone.tenant_id == _spatial_tenant_id(current_user))
 
     if zone_type:
         query = query.filter(SpatialZone.zone_type == zone_type)
@@ -281,7 +306,7 @@ async def get_spatial_zone(
     """Get a specific spatial zone."""
     zone = db.query(SpatialZone).filter(
         SpatialZone.id == zone_id,
-        SpatialZone.tenant_id == current_user.tenant_id
+        SpatialZone.tenant_id == _spatial_tenant_id(current_user)
     ).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found")
@@ -302,7 +327,7 @@ async def create_crop_instance(
     # Validate zone belongs to tenant
     zone = db.query(SpatialZone).filter(
         SpatialZone.id == crop.spatial_zone_id,
-        SpatialZone.tenant_id == current_user.tenant_id
+        SpatialZone.tenant_id == _spatial_tenant_id(current_user)
     ).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found or access denied")
@@ -326,12 +351,17 @@ async def create_crop_instance(
 
     db_crop = CropInstance(**crop.dict())
     db.add(db_crop)
-    db.commit()
-    db.refresh(db_crop)
+    db.flush()
 
     # Update zone occupancy
     zone.current_occupancy += 1
-    db.commit()
+    _record_spatial_action(
+        db, current_user, "spatial_crop_created", "crop_instance", db_crop.id,
+        {"species_id": db_crop.species_id, "spatial_zone_id": db_crop.spatial_zone_id,
+         "position": {"x": db_crop.position_x, "y": db_crop.position_y, "z": db_crop.position_z},
+         "vertical_layer": db_crop.vertical_layer, "batch_id": db_crop.batch_id},
+    )
+    db.refresh(db_crop)
 
     return db_crop
 
@@ -346,7 +376,7 @@ async def list_crop_instances(
 ):
     """List crop instances with spatial filtering."""
     query_db = db.query(CropInstance).join(SpatialZone).filter(
-        SpatialZone.tenant_id == current_user.tenant_id
+        SpatialZone.tenant_id == _spatial_tenant_id(current_user)
     )
 
     if query.zone_id:
@@ -385,7 +415,7 @@ async def optimize_zone_layout(
     # Validate zone belongs to tenant
     zone = db.query(SpatialZone).filter(
         SpatialZone.id == request.zone_id,
-        SpatialZone.tenant_id == current_user.tenant_id
+        SpatialZone.tenant_id == _spatial_tenant_id(current_user)
     ).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found or access denied")
@@ -406,7 +436,7 @@ async def get_vertical_layers(
     # Validate zone access
     zone = db.query(SpatialZone).filter(
         SpatialZone.id == zone_id,
-        SpatialZone.tenant_id == current_user.tenant_id
+        SpatialZone.tenant_id == _spatial_tenant_id(current_user)
     ).first()
     if not zone:
         raise HTTPException(status_code=404, detail="Zone not found or access denied")

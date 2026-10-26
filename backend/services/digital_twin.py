@@ -1,12 +1,127 @@
 """Deterministic, database-backed simulation primitives for virtual devices."""
 from datetime import datetime
+import hashlib
+import json
+import math
 import random
+from uuid import uuid4
 
 from backend.models.digital_twin import DigitalTwinDevice
+from backend.models_db import AuditLog, DigitalTwinTelemetry
 
 
 DEVICE_KINDS = {"sensor", "robot", "actuator"}
 _LIVE_UPDATE_COUNTER = 0
+
+
+def _stage_system_audit(
+    db,
+    tenant_id: int,
+    event_type: str,
+    entity_type: str,
+    entity_id: str,
+    details: dict,
+) -> None:
+    metadata = {
+        **details,
+        "action": event_type,
+        "actor_user_id": None,
+        "actor_email": "system@aegis.local",
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "outcome": "success",
+    }
+    serialized = json.dumps(metadata, sort_keys=True, default=str)
+    db.add(AuditLog(
+        tenant_id=tenant_id,
+        event_type=event_type,
+        data_hash=hashlib.sha256(serialized.encode()).hexdigest(),
+        actor_email="system@aegis.local",
+        action=event_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        outcome="success",
+        details=metadata,
+    ))
+
+
+def _stage_alert_transition_audit(db, snapshot: dict, previous_alert: dict | None) -> None:
+    alert = snapshot.get("alert")
+    cleared = snapshot.get("alert_cleared")
+    if alert and not previous_alert:
+        event_type = "digital_twin.alert_started"
+        details = {
+            "severity": alert.get("severity"),
+            "message": alert.get("message"),
+            "event_id": alert.get("event_id"),
+            "device_id": snapshot["device_id"],
+        }
+    elif alert and previous_alert and alert.get("severity") != previous_alert.get("severity"):
+        event_type = "digital_twin.alert_escalated"
+        details = {
+            "previous_severity": previous_alert.get("severity"),
+            "severity": alert.get("severity"),
+            "message": alert.get("message"),
+            "event_id": alert.get("event_id"),
+            "device_id": snapshot["device_id"],
+        }
+    elif cleared:
+        event_type = "digital_twin.alert_recovered"
+        details = {
+            "severity": cleared.get("severity"),
+            "message": cleared.get("message"),
+            "event_id": cleared.get("event_id"),
+            "device_id": snapshot["device_id"],
+        }
+    else:
+        return
+
+    _stage_system_audit(
+        db,
+        snapshot["tenant_id"],
+        event_type,
+        "digital_twin_device",
+        str(snapshot["id"]),
+        details,
+    )
+
+
+def _stage_automation_transition_audit(
+    db,
+    snapshot: dict,
+    previous_state: dict | None,
+) -> None:
+    state = snapshot["state"]
+    if (
+        snapshot["kind"] != "actuator"
+        or snapshot["control_mode"] != "automation"
+        or previous_state is None
+        or (
+            state.get("command") == previous_state.get("command")
+            and state.get("output") == previous_state.get("output")
+        )
+    ):
+        return
+    automation = state.get("automation") or {}
+    _stage_system_audit(
+        db,
+        snapshot["tenant_id"],
+        "digital_twin.automation_actuated",
+        "digital_twin_device",
+        str(snapshot["id"]),
+        {
+            "device_id": snapshot["device_id"],
+            "previous_command": previous_state.get("command"),
+            "command": state.get("command"),
+            "previous_output": previous_state.get("output"),
+            "output": state.get("output"),
+            "source_device_id": automation.get("source_device_id"),
+            "source_value": automation.get("source_value"),
+            "direction": automation.get("direction"),
+            "threshold": automation.get("threshold"),
+            "matched": automation.get("matched"),
+        },
+    )
 
 
 def build_predictive_recommendations(devices: list[DigitalTwinDevice]) -> list[dict]:
@@ -395,6 +510,22 @@ SENSOR_PROFILES = {
         "unit": "hPa", "minimum": 900.0, "maximum": 1100.0,
         "warning": (950.0, 1050.0), "critical": (920.0, 1080.0), "step": 4.0,
     },
+    "structural_displacement": {
+        "unit": "mm", "minimum": -100.0, "maximum": 100.0,
+        "warning": (-20.0, 20.0), "critical": (-50.0, 50.0), "step": 0.0,
+    },
+    "solar_generation": {
+        "unit": "kW", "minimum": 0.0, "maximum": 8.0,
+        "warning": (0.0, 7.0), "critical": (0.0, 8.0), "step": 0.4,
+    },
+    "energy_consumption": {
+        "unit": "kW", "minimum": 0.0, "maximum": 10.0,
+        "warning": (0.0, 8.0), "critical": (0.0, 10.0), "step": 0.35,
+    },
+    "battery_soc": {
+        "unit": "%", "minimum": 0.0, "maximum": 100.0,
+        "warning": (15.0, 90.0), "critical": (5.0, 98.0), "step": 1.5,
+    },
 }
 
 DEFAULT_SENSOR_PROFILE = {
@@ -415,6 +546,378 @@ def _sensor_value(device: DigitalTwinDevice, rng: random.Random) -> float:
     profile = _sensor_profile(device.device_type)
     current = float((device.state or {}).get("value", (profile["minimum"] + profile["maximum"]) / 2))
     return _bounded(current + rng.uniform(-profile["step"], profile["step"]), profile["minimum"], profile["maximum"])
+
+
+def _soil_moisture_step(
+    device: DigitalTwinDevice,
+    devices: list[DigitalTwinDevice],
+    step_seconds: float,
+) -> tuple[float, dict]:
+    state = device.state or {}
+    model = state.get("simulation_model") or {}
+    if not isinstance(model, dict):
+        raise ValueError(f"Invalid soil-moisture simulation model for {device.device_id}")
+
+    current = float(state.get("value", 50.0))
+    drainage_rate = float(model.get("drainage_rate_per_minute", 0.2))
+    infiltration_rate = float(model.get("infiltration_rate_per_minute", 0.03))
+    if not all(math.isfinite(value) and value >= 0 for value in (current, drainage_rate, infiltration_rate)):
+        raise ValueError(f"Invalid soil-moisture simulation parameters for {device.device_id}")
+
+    irrigation_flow = 0.0
+    contributing_actuators = []
+    if device.zone_id is not None:
+        for actuator in devices:
+            if (
+                actuator.tenant_id != device.tenant_id
+                or actuator.zone_id != device.zone_id
+                or actuator.kind != "actuator"
+                or actuator.status.lower() != "online"
+                or (actuator.device_type or "").lower() not in {
+                    "pump", "irrigation_pump", "irrigation_valve", "valve",
+                }
+            ):
+                continue
+            actuator_state = actuator.state or {}
+            output = str(actuator_state.get("output", "")).lower()
+            command = str(actuator_state.get("command", "")).lower()
+            if output != "active" and command not in {"on", "open", "start", "enable"}:
+                continue
+            flow = float(
+                actuator_state.get(
+                    "flow",
+                    actuator_state.get("flow_rate", actuator_state.get("flow_lpm", 1.0)),
+                )
+            )
+            if not math.isfinite(flow) or flow < 0:
+                raise ValueError(f"Invalid irrigation flow for {actuator.device_id}")
+            irrigation_flow += flow
+            contributing_actuators.append(actuator.device_id)
+
+    delta_minutes = step_seconds / 60.0
+    next_value = current + (
+        infiltration_rate * irrigation_flow - drainage_rate
+    ) * delta_minutes
+    profile = _sensor_profile(device.device_type)
+    details = {
+        "model": "soil_moisture_water_balance",
+        "assumption": "generic_uncalibrated_demo_parameters",
+        "step_seconds": step_seconds,
+        "drainage_rate_per_minute": drainage_rate,
+        "infiltration_rate_per_minute": infiltration_rate,
+        "irrigation_flow": irrigation_flow,
+        "contributing_actuators": contributing_actuators,
+    }
+    next_value = max(profile["minimum"], min(profile["maximum"], next_value))
+    return round(next_value, 4), details
+
+
+def _environment_step(
+    device: DigitalTwinDevice,
+    devices: list[DigitalTwinDevice],
+    step_seconds: float,
+) -> tuple[float, dict] | None:
+    state = device.state or {}
+    device_type = str(device.device_type or "").lower()
+    if device_type not in {"temperature", "humidity"}:
+        return None
+    model = state.get("simulation_model")
+    if model is None:
+        model = {}
+    if not isinstance(model, dict):
+        raise ValueError(f"Invalid environmental simulation model for {device.device_id}")
+    if model.get("kind") not in {None, "thermal_rc"}:
+        raise ValueError(f"Unsupported environmental simulation model for {device.device_id}")
+
+    temperature = device_type == "temperature"
+    ambient_key = "ambient_temperature_c" if temperature else "ambient_humidity_percent"
+    effect_key = "thermal_effect_c_per_minute" if temperature else "humidity_effect_percent_per_minute"
+    ambient_default = 20.0 if temperature else 55.0
+    minimum, maximum = _sensor_profile(device.device_type)["minimum"], _sensor_profile(device.device_type)["maximum"]
+    current = float(state.get("value", ambient_default))
+    ambient = float(model.get(ambient_key, ambient_default))
+    time_constant = float(model.get("time_constant_seconds", 900.0 if temperature else 1800.0))
+    if not all(math.isfinite(value) for value in (current, ambient, time_constant)) or time_constant <= 0:
+        raise ValueError(f"Invalid environmental simulation parameters for {device.device_id}")
+
+    exchange_per_second = 1.0 / time_constant
+    effect_per_minute = 0.0
+    contributing_actuators = []
+    if device.zone_id is not None:
+        for actuator in devices:
+            if (
+                actuator.tenant_id != device.tenant_id
+                or actuator.zone_id != device.zone_id
+                or actuator.kind != "actuator"
+                or actuator.status.lower() != "online"
+            ):
+                continue
+            actuator_state = actuator.state or {}
+            output = str(actuator_state.get("output", "")).lower()
+            command = str(actuator_state.get("command", "")).lower()
+            if output != "active" and command not in {"on", "open", "start", "enable"}:
+                continue
+            actuator_model = actuator_state.get("simulation_model") or {}
+            if not isinstance(actuator_model, dict):
+                raise ValueError(f"Invalid actuator simulation model for {actuator.device_id}")
+            effect = float(actuator_model.get(effect_key, actuator_state.get(effect_key, 0.0)))
+            exchange = float(actuator_model.get("air_exchange_per_second", 0.0))
+            if not math.isfinite(effect) or not math.isfinite(exchange) or exchange < 0:
+                raise ValueError(f"Invalid environmental actuator parameters for {actuator.device_id}")
+            effect_per_minute += effect
+            exchange_per_second += exchange
+            if effect or exchange:
+                contributing_actuators.append(actuator.device_id)
+
+    exchange_fraction = 1.0 - math.exp(-exchange_per_second * step_seconds)
+    next_value = current + (ambient - current) * exchange_fraction
+    next_value += effect_per_minute * step_seconds / 60.0
+    details = {
+        "model": "first_order_environment_demo",
+        "assumption": "generic_uncalibrated_demo_parameters",
+        "step_seconds": step_seconds,
+        "ambient_value": ambient,
+        "time_constant_seconds": time_constant,
+        "actuator_effect_per_minute": effect_per_minute,
+        "contributing_actuators": contributing_actuators,
+    }
+    return _bounded(next_value, minimum, maximum), details
+
+
+def _water_level_step(
+    device: DigitalTwinDevice,
+    devices: list[DigitalTwinDevice],
+    step_seconds: float,
+) -> tuple[float, dict] | None:
+    state = device.state or {}
+    if str(device.device_type or "").lower() not in {"water_level", "tank_level", "water_tank"}:
+        return None
+    model = state.get("simulation_model")
+    if model is None:
+        return None
+    if not isinstance(model, dict):
+        raise ValueError(f"Invalid water-tank simulation model for {device.device_id}")
+    if model.get("kind") != "water_tank":
+        raise ValueError(f"Unsupported water-tank simulation model for {device.device_id}")
+
+    capacity_liters = float(model.get("capacity_liters", 1000.0))
+    current_percent = float(state.get("value", 50.0))
+    inflow_lpm = float(model.get("inflow_lpm", 0.0))
+    outflow_lpm = float(model.get("outflow_lpm", 0.0))
+    if (
+        not all(math.isfinite(value) for value in (capacity_liters, current_percent, inflow_lpm, outflow_lpm))
+        or capacity_liters <= 0
+        or not 0 <= current_percent <= 100
+        or inflow_lpm < 0
+        or outflow_lpm < 0
+    ):
+        raise ValueError(f"Invalid water-tank simulation parameters for {device.device_id}")
+
+    contributors = []
+    if device.zone_id is not None:
+        for actuator in devices:
+            if (
+                actuator.tenant_id != device.tenant_id
+                or actuator.zone_id != device.zone_id
+                or actuator.kind != "actuator"
+                or actuator.status.lower() != "online"
+            ):
+                continue
+            actuator_state = actuator.state or {}
+            output = str(actuator_state.get("output", "")).lower()
+            command = str(actuator_state.get("command", "")).lower()
+            if output != "active" and command not in {"on", "open", "start", "enable"}:
+                continue
+            actuator_model = actuator_state.get("simulation_model") or {}
+            if not isinstance(actuator_model, dict):
+                raise ValueError(f"Invalid actuator simulation model for {actuator.device_id}")
+            direction = str(actuator_model.get("flow_direction", "")).lower()
+            if direction not in {"inflow", "outflow"}:
+                continue
+            flow = float(actuator_model.get("flow_lpm", actuator_state.get("flow_lpm", 0.0)))
+            if not math.isfinite(flow) or flow < 0:
+                raise ValueError(f"Invalid water flow for {actuator.device_id}")
+            if direction == "inflow":
+                inflow_lpm += flow
+            else:
+                outflow_lpm += flow
+            contributors.append(actuator.device_id)
+
+    current_liters = capacity_liters * current_percent / 100.0
+    next_liters = current_liters + (inflow_lpm - outflow_lpm) * step_seconds / 60.0
+    next_percent = _bounded(next_liters * 100.0 / capacity_liters, 0.0, 100.0)
+    return next_percent, {
+        "model": "water_tank_mass_balance_demo",
+        "assumption": "generic_uncalibrated_demo_parameters",
+        "step_seconds": step_seconds,
+        "capacity_liters": capacity_liters,
+        "inflow_lpm": inflow_lpm,
+        "outflow_lpm": outflow_lpm,
+        "contributing_actuators": contributors,
+    }
+
+
+def _structural_step(
+    device: DigitalTwinDevice,
+    state: dict,
+    step_seconds: float,
+) -> tuple[float, dict, dict] | None:
+    if str(device.device_type or "").lower() != "structural_displacement":
+        return None
+    model = state.get("simulation_model") or {}
+    if not isinstance(model, dict):
+        raise ValueError(f"Invalid structural simulation model for {device.device_id}")
+    if model.get("kind") != "single_degree_of_freedom":
+        raise ValueError(f"Unsupported structural simulation model for {device.device_id}")
+
+    mass_kg = float(model.get("mass_kg", 100.0))
+    natural_frequency_hz = float(model.get("natural_frequency_hz", 1.0))
+    damping_ratio = float(model.get("damping_ratio", 0.05))
+    force_newtons = float(model.get("force_newtons", 0.0))
+    simulation_state = state.get("simulation_state") or {}
+    if not isinstance(simulation_state, dict):
+        raise ValueError(f"Invalid structural simulation state for {device.device_id}")
+    displacement_m = float(simulation_state.get("displacement_m", 0.0))
+    velocity_m_per_second = float(simulation_state.get("velocity_m_per_second", 0.0))
+    parameters = (
+        mass_kg,
+        natural_frequency_hz,
+        damping_ratio,
+        force_newtons,
+        displacement_m,
+        velocity_m_per_second,
+    )
+    if (
+        not all(math.isfinite(value) for value in parameters)
+        or mass_kg <= 0
+        or natural_frequency_hz <= 0
+        or damping_ratio < 0
+    ):
+        raise ValueError(f"Invalid structural simulation parameters for {device.device_id}")
+
+    angular_frequency = 2.0 * math.pi * natural_frequency_hz
+    stiffness = mass_kg * angular_frequency * angular_frequency
+    damping = 2.0 * damping_ratio * mass_kg * angular_frequency
+    substep_count = max(1, math.ceil(step_seconds * angular_frequency))
+    if substep_count > 10000:
+        raise ValueError(f"Structural simulation step is too large for {device.device_id}")
+    substep_seconds = step_seconds / substep_count
+    for _ in range(substep_count):
+        acceleration = (
+            force_newtons - damping * velocity_m_per_second - stiffness * displacement_m
+        ) / mass_kg
+        velocity_m_per_second += acceleration * substep_seconds
+        displacement_m += velocity_m_per_second * substep_seconds
+
+    return round(displacement_m * 1000.0, 4), {
+        "model": "single_degree_of_freedom_structure_demo",
+        "assumption": "generic_uncalibrated_demo_parameters",
+        "mass_kg": mass_kg,
+        "natural_frequency_hz": natural_frequency_hz,
+        "damping_ratio": damping_ratio,
+        "force_newtons": force_newtons,
+        "step_seconds": step_seconds,
+        "integration_substeps": substep_count,
+    }, {
+            "displacement_m": displacement_m,
+            "velocity_m_per_second": velocity_m_per_second,
+    }
+
+
+def _robot_step(
+    device: DigitalTwinDevice,
+    devices: list[DigitalTwinDevice],
+    position: dict,
+    state: dict,
+    step_seconds: float,
+) -> tuple[dict, dict]:
+    model = state.get("simulation_model")
+    if model is None:
+        model = {}
+    if not isinstance(model, dict):
+        raise ValueError(f"Invalid robot simulation model for {device.device_id}")
+    if model.get("kind") not in {None, "robot_kinematics"}:
+        raise ValueError(f"Unsupported robot simulation model for {device.device_id}")
+
+    next_position = dict(position)
+    target = state.get("navigation_target")
+    command = str(state.get("command", "")).lower()
+    speed = float(model.get("max_speed_units_per_second", 1.0))
+    if not math.isfinite(speed) or speed < 0:
+        raise ValueError(f"Invalid robot speed for {device.device_id}")
+    if isinstance(target, dict) and command not in {"stop", "off"} and state.get("activity") != "stopped":
+        axes = ("x", "y", "z")
+        current = [float(position.get(axis, 0.0)) for axis in axes]
+        destination = [float(target.get(axis, current[index])) for index, axis in enumerate(axes)]
+        if not all(math.isfinite(value) for value in (*current, *destination)):
+            raise ValueError(f"Invalid robot position or target for {device.device_id}")
+        distances = [destination[index] - current[index] for index in range(3)]
+        distance = math.sqrt(sum(delta * delta for delta in distances))
+        travel = min(distance, speed * step_seconds)
+        if distance > 0:
+            next_position = {
+                axis: round(current[index] + distances[index] * travel / distance, 4)
+                for index, axis in enumerate(axes)
+            }
+        if distance <= speed * step_seconds:
+            state.pop("navigation_target", None)
+            state["activity"] = "stationary"
+        else:
+            state["activity"] = "moving"
+
+    battery_key = "battery_percent" if "battery_percent" in state else "battery" if "battery" in state else None
+    if battery_key is not None:
+        capacity_wh = float(model.get("battery_capacity_wh", 600.0))
+        load_key = "moving_load_w" if state.get("activity") == "moving" else "idle_load_w"
+        load_w = float(model.get(load_key, 90.0 if load_key == "moving_load_w" else 12.0))
+        charging_w = 0.0
+        for actuator in devices:
+            if (
+                actuator.tenant_id != device.tenant_id
+                or actuator.zone_id != device.zone_id
+                or actuator.kind != "actuator"
+                or actuator.status.lower() != "online"
+            ):
+                continue
+            actuator_state = actuator.state or {}
+            active = str(actuator_state.get("output", "")).lower() == "active"
+            active = active or str(actuator_state.get("command", "")).lower() in {"on", "start", "enable"}
+            if not active:
+                continue
+            actuator_model = actuator_state.get("simulation_model") or {}
+            if isinstance(actuator_model, dict) and actuator_model.get("kind") == "robot_charger":
+                charging_w += float(actuator_model.get("charging_power_w", 0.0))
+        battery = float(state[battery_key])
+        if (
+            not all(math.isfinite(value) for value in (capacity_wh, load_w, charging_w, battery))
+            or capacity_wh <= 0
+            or load_w < 0
+            or charging_w < 0
+            or not 0 <= battery <= 100
+        ):
+            raise ValueError(f"Invalid robot energy simulation parameters for {device.device_id}")
+        state[battery_key] = round(
+            max(
+                0.0,
+                min(100.0, battery + (charging_w - load_w) * step_seconds / (capacity_wh * 36.0)),
+            ),
+            6,
+        )
+        state["energy_simulation"] = {
+            "model": "robot_energy_balance_demo",
+            "assumption": "generic_uncalibrated_demo_parameters",
+            "capacity_wh": capacity_wh,
+            "load_w": load_w,
+            "charging_power_w": charging_w,
+            "step_seconds": step_seconds,
+        }
+    state["simulation"] = {
+        "model": "robot_point_kinematics_demo",
+        "assumption": "scene_units_are_not_surveyed_meters",
+        "max_speed_units_per_second": speed,
+        "step_seconds": step_seconds,
+    }
+    return next_position, state
 
 
 def _reading_assessment(value: float, profile: dict) -> str:
@@ -441,28 +944,33 @@ def _condition_matches(value: float, policy: dict) -> bool:
 
 def _apply_automation(devices: list[DigitalTwinDevice], snapshots: list[dict]) -> None:
     """Apply source-sensor policies to automation-mode actuators."""
-    by_device_id = {device.device_id: (device, snapshot) for device, snapshot in zip(devices, snapshots)}
-    for device, snapshot in zip(devices, snapshots):
-        if device.kind != "sensor":
-            continue
-        reading_status = snapshot["state"].get("reading_status")
-        if reading_status in {"warning", "critical"}:
-            snapshot["state"]["alert"] = {
-                "severity": reading_status,
-                "message": f"{device.name} reading is {reading_status}",
-                "source_device_id": device.device_id,
-            }
-
+    by_device_id = {
+        (device.tenant_id, device.device_id): (device, snapshot)
+        for device, snapshot in zip(devices, snapshots)
+    }
     for device, snapshot in zip(devices, snapshots):
         policy = dict(device.automation_policy or {})
-        if device.kind != "actuator" or device.control_mode != "automation" or not policy:
+        if (
+            device.kind != "actuator"
+            or device.control_mode != "automation"
+            or not policy
+            or device.status.lower() != "online"
+        ):
             continue
 
         source_id = policy.get("source_device_id") or policy.get("source_device")
-        source = by_device_id.get(str(source_id)) if source_id is not None else None
+        source = by_device_id.get((device.tenant_id, str(source_id))) if source_id is not None else None
         if source is None:
             continue
         source_device, source_snapshot = source
+        if source_device.status.lower() != "online":
+            snapshot["state"]["automation"] = {
+                "matched": False,
+                "source_device_id": source_device.device_id,
+                "blocked_reason": "source_device_unavailable",
+                "command": snapshot["state"].get("command"),
+            }
+            continue
         value = source_snapshot["state"].get("value")
         if value is None:
             continue
@@ -486,22 +994,198 @@ def _apply_automation(devices: list[DigitalTwinDevice], snapshots: list[dict]) -
             state["automation_parameters"] = parameters
 
 
-def tick_once(db, tenant_id: int | None = None, rng: random.Random | None = None) -> list[dict]:
+def _apply_alert_transition(snapshot: dict, previous_alert: dict | None) -> None:
+    if snapshot["kind"] != "sensor" or snapshot["status"].lower() != "online":
+        return
+    state = snapshot["state"]
+    reading_status = state.get("reading_status")
+    if reading_status in {"warning", "critical"}:
+        severity_rank = {"warning": 1, "critical": 2}
+        if previous_alert:
+            alert_event = dict(previous_alert)
+            if severity_rank.get(reading_status, 0) > severity_rank.get(alert_event.get("severity"), 0):
+                alert_event["severity"] = reading_status
+                alert_event["message"] = f"{snapshot['name']} reading is {reading_status}"
+                state["alert"] = alert_event
+                snapshot["alert"] = {
+                    **alert_event,
+                    "device_id": snapshot["device_id"],
+                    "tenant_id": snapshot["tenant_id"],
+                    "timestamp": snapshot["last_updated"],
+                }
+        else:
+            alert_event = {
+                "event_id": str(uuid4()),
+                "severity": reading_status,
+                "message": f"{snapshot['name']} reading is {reading_status}",
+                "source_device_id": snapshot["device_id"],
+                "started_at": snapshot["last_updated"],
+            }
+            state["alert"] = alert_event
+            snapshot["alert"] = {
+                **alert_event,
+                "device_id": snapshot["device_id"],
+                "tenant_id": snapshot["tenant_id"],
+                "timestamp": snapshot["last_updated"],
+            }
+    elif previous_alert:
+        state.pop("alert", None)
+        snapshot["alert_cleared"] = {
+            "event_id": previous_alert.get("event_id"),
+            "device_id": snapshot["device_id"],
+            "tenant_id": snapshot["tenant_id"],
+            "severity": previous_alert.get("severity"),
+            "message": f"{snapshot['name']} returned to normal",
+            "timestamp": snapshot["last_updated"],
+        }
+
+
+def ingest_sensor_sample(
+    db,
+    device: DigitalTwinDevice,
+    value: float,
+    unit: str,
+    sampled_at: datetime,
+) -> list[dict]:
+    """Persist a physical sensor sample through the canonical twin and telemetry model."""
+    if device.kind != "sensor":
+        raise ValueError("Physical telemetry can only be ingested for sensor devices")
+    profile = _sensor_profile(device.device_type)
+    state = dict(device.state or {})
+    previous_alert = dict(state.get("alert") or {})
+    state.update({
+        "value": float(value),
+        "unit": unit or profile["unit"],
+        "sampled_at": sampled_at.isoformat(),
+        "reading_status": _reading_assessment(float(value), profile),
+        "thresholds": {
+            "warning": {"min": profile["warning"][0], "max": profile["warning"][1]},
+            "critical": {"min": profile["critical"][0], "max": profile["critical"][1]},
+        },
+    })
+    device.state = state
+    device.status = "online"
+    device.simulation_enabled = False
+    device.last_updated = sampled_at
+    snapshot = {
+        "id": device.id,
+        "device_id": device.device_id,
+        "tenant_id": device.tenant_id,
+        "zone_id": device.zone_id,
+        "name": device.name,
+        "kind": device.kind,
+        "device_type": device.device_type,
+        "adapter_type": device.adapter_type,
+        "status": device.status,
+        "control_mode": device.control_mode,
+        "automation_policy": device.automation_policy or {},
+        "position": device.position or {"x": 0.0, "y": 0.0, "z": 0.0},
+        "state": state,
+        "last_updated": sampled_at.isoformat(),
+    }
+    _apply_alert_transition(snapshot, previous_alert)
+    _stage_alert_transition_audit(db, snapshot, previous_alert)
+    db.add(device)
+    devices = db.query(DigitalTwinDevice).filter(
+        DigitalTwinDevice.tenant_id == device.tenant_id,
+    ).order_by(DigitalTwinDevice.id).all()
+    snapshots = []
+    previous_actuator_states = {}
+    for twin_device in devices:
+        if twin_device.id == device.id:
+            snapshots.append(snapshot)
+            continue
+        twin_state = dict(twin_device.state or {})
+        if twin_device.kind == "actuator":
+            previous_actuator_states[twin_device.id] = dict(twin_state)
+        snapshots.append({
+            "id": twin_device.id,
+            "device_id": twin_device.device_id,
+            "tenant_id": twin_device.tenant_id,
+            "zone_id": twin_device.zone_id,
+            "name": twin_device.name,
+            "kind": twin_device.kind,
+            "device_type": twin_device.device_type,
+            "adapter_type": twin_device.adapter_type,
+            "status": twin_device.status,
+            "control_mode": twin_device.control_mode,
+            "automation_policy": twin_device.automation_policy or {},
+            "position": twin_device.position or {"x": 0.0, "y": 0.0, "z": 0.0},
+            "state": twin_state,
+            "last_updated": twin_device.last_updated.isoformat() if twin_device.last_updated else sampled_at.isoformat(),
+        })
+    _apply_automation(devices, snapshots)
+    for actuator_snapshot in snapshots:
+        _stage_automation_transition_audit(
+            db,
+            actuator_snapshot,
+            previous_actuator_states.get(actuator_snapshot["id"]),
+        )
+    changed_snapshots = [snapshot]
+    devices_by_id = {twin_device.id: twin_device for twin_device in devices}
+    for actuator_snapshot in snapshots:
+        if actuator_snapshot["kind"] != "actuator":
+            continue
+        actuator = devices_by_id[actuator_snapshot["id"]]
+        if actuator_snapshot["state"] == previous_actuator_states.get(actuator.id):
+            continue
+        actuator.state = actuator_snapshot["state"]
+        actuator.last_updated = sampled_at
+        actuator_snapshot["last_updated"] = sampled_at.isoformat()
+        changed_snapshots.append(actuator_snapshot)
+        db.add(DigitalTwinTelemetry(
+            tenant_id=actuator.tenant_id,
+            device_id=actuator.id,
+            snapshot=actuator_snapshot,
+            recorded_at=sampled_at,
+        ))
+    db.add(DigitalTwinTelemetry(
+        tenant_id=device.tenant_id,
+        device_id=device.id,
+        snapshot=snapshot,
+        recorded_at=sampled_at,
+    ))
+    db.commit()
+    return changed_snapshots
+
+
+def tick_once(
+    db,
+    tenant_id: int | None = None,
+    rng: random.Random | None = None,
+    step_seconds: float = 1.0,
+) -> list[dict]:
     """Advance enabled devices once and return websocket-ready snapshots."""
     global _LIVE_UPDATE_COUNTER
+    if not math.isfinite(step_seconds) or step_seconds <= 0:
+        raise ValueError("Simulation step_seconds must be a finite positive number")
     generator = rng or random
-    query = db.query(DigitalTwinDevice).filter(DigitalTwinDevice.simulation_enabled.is_(True))
+    query = db.query(DigitalTwinDevice).filter(
+        DigitalTwinDevice.simulation_enabled.is_(True),
+        DigitalTwinDevice.adapter_type == "simulation",
+    )
     if tenant_id is not None:
         query = query.filter(DigitalTwinDevice.tenant_id == tenant_id)
 
     now = datetime.utcnow()
     devices = query.order_by(DigitalTwinDevice.id).all()
     snapshots = []
+    previous_alerts = {
+        device.id: dict((device.state or {}).get("alert") or {})
+        for device in devices
+        if device.kind == "sensor"
+    }
+    previous_actuator_states = {
+        device.id: dict(device.state or {})
+        for device in devices
+        if device.kind == "actuator"
+    }
     _LIVE_UPDATE_COUNTER += 1
 
     for device in devices:
         state = dict(device.state or {})
         position = dict(device.position or {"x": 0.0, "y": 0.0, "z": 0.0})
+        available = device.status.lower() == "online"
         if device.control_mode == "manual":
             state["control_source"] = "manual"
         elif device.control_mode == "ai":
@@ -509,9 +1193,22 @@ def tick_once(db, tenant_id: int | None = None, rng: random.Random | None = None
         else:
             state["control_source"] = "automation"
 
-        if device.kind == "sensor" and device.control_mode != "manual":
+        if available and device.kind == "sensor" and device.control_mode != "manual":
             profile = _sensor_profile(device.device_type)
-            state["value"] = _sensor_value(device, generator)
+            if (device.device_type or "").lower() == "soil_moisture":
+                state["value"], state["simulation"] = _soil_moisture_step(device, devices, step_seconds)
+            else:
+                structural_result = _structural_step(device, state, step_seconds)
+                environment_result = _environment_step(device, devices, step_seconds)
+                water_result = _water_level_step(device, devices, step_seconds)
+                if structural_result is not None:
+                    state["value"], state["simulation"], state["simulation_state"] = structural_result
+                elif environment_result is not None:
+                    state["value"], state["simulation"] = environment_result
+                elif water_result is not None:
+                    state["value"], state["simulation"] = water_result
+                else:
+                    state["value"] = _sensor_value(device, generator)
             state["unit"] = profile["unit"]
             state["reading_status"] = _reading_assessment(state["value"], profile)
             state["thresholds"] = {
@@ -519,36 +1216,58 @@ def tick_once(db, tenant_id: int | None = None, rng: random.Random | None = None
                 "critical": {"min": profile["critical"][0], "max": profile["critical"][1]},
             }
             state["sampled_at"] = now.isoformat()
-        elif device.kind == "robot":
-            if device.control_mode == "manual":
+        elif available and device.kind == "robot":
+            command = str(state.get("command", "")).lower()
+            if command in {"stop", "off"}:
+                state["activity"] = "stopped"
+                state["command"] = "stop"
+                state.pop("active_task_id", None)
+            elif device.control_mode == "manual":
                 state["activity"] = state.get("activity", "stationary")
+            elif state.get("active_task_id"):
+                state["activity"] = state.get("activity", "working")
             else:
-                position["x"] = _bounded(float(position.get("x", 0.0)) + generator.uniform(-0.5, 0.5), -1000, 1000)
-                position["y"] = _bounded(float(position.get("y", 0.0)) + generator.uniform(-0.5, 0.5), -1000, 1000)
-                state["activity"] = state.get("activity", "patrolling")
-        else:
-            state["output"] = "active" if state.get("command") == "on" else state.get("output", "idle")
+                state["activity"] = "patrolling" if command in {"start", "on", "reset"} else "stationary"
+            position, state = _robot_step(device, devices, position, state, step_seconds)
+        elif available and device.kind == "actuator":
+            command = str(state.get("command", "")).lower()
+            if command in {"on", "open", "start", "enable"}:
+                state["output"] = "active"
+            elif command in {"off", "close", "stop", "disable"}:
+                state["output"] = "idle"
+            else:
+                state["output"] = state.get("output", "idle")
         device.state = state
         device.position = position
-        device.status = "online"
         device.last_updated = now
         snapshots.append({
             "id": device.id, "device_id": device.device_id, "tenant_id": device.tenant_id,
             "zone_id": device.zone_id, "name": device.name, "kind": device.kind,
             "device_type": device.device_type, "status": device.status,
+            "adapter_type": device.adapter_type,
             "control_mode": device.control_mode,
             "automation_policy": device.automation_policy or {},
             "position": position, "state": state, "last_updated": now.isoformat(),
         })
     _apply_automation(devices, snapshots)
     for snapshot in snapshots:
-        alert = snapshot["state"].get("alert")
-        if alert:
-            snapshot["alert"] = {
-                **alert,
-                "device_id": snapshot["device_id"],
-                "tenant_id": snapshot["tenant_id"],
-                "timestamp": snapshot["last_updated"],
-            }
+        previous_alert = previous_alerts.get(snapshot["id"]) or None
+        _apply_alert_transition(snapshot, previous_alert)
+        _stage_alert_transition_audit(db, snapshot, previous_alert)
+        _stage_automation_transition_audit(
+            db,
+            snapshot,
+            previous_actuator_states.get(snapshot["id"]),
+        )
+    devices_by_id = {device.id: device for device in devices}
+    db.add_all(
+        DigitalTwinTelemetry(
+            tenant_id=snapshot["tenant_id"],
+            device_id=devices_by_id[snapshot["id"]].id,
+            snapshot=snapshot,
+            recorded_at=now,
+        )
+        for snapshot in snapshots
+    )
     db.commit()
     return snapshots

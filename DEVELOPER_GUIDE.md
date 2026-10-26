@@ -1,42 +1,93 @@
 # Aegis Developer Guide
 
+## Project Roadmaps
+
+- [Current prioritized execution plan](plan.md) — current progress and remaining work; deployment is the final phase.
+- [Original project roadmap](Roadmap.md) — historical day-based scope and completed-phase context.
+
 ## Quick Start (5 Minutes)
 
 ### 1. Prerequisites
+
 - **Conda environment:** Must have `aegis` environment with Python 3.10
 - **Backend port:** 8001 (FastAPI)
 - **Frontend port:** 3000+ (Next.js, auto-increments if in use)
 
 ### 2. Terminal 1: Start Backend
+
 ```powershell
 cd c:\Users\Mahantesh\DevelopmentProjects\Aegis
 conda activate aegis
 python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
-✅ **Expected output:** `Application startup complete.`  
+✅ **Expected output:** `Application startup complete.`
 📚 **API Docs:** http://localhost:8001/docs
 
 ### 3. Terminal 2: Start Frontend
+
 ```powershell
 cd frontend
 npm run dev
 ```
 
-✅ **Frontend runs on:** http://localhost:3000 (or 3001, 3002, etc.)  
+✅ **Frontend runs on:** http://localhost:3000 (or 3001, 3002, etc.)
 📝 **`.env.local` already configured** to point to backend at port 8001
 
 ### 4. Login
+
 - **URL:** http://localhost:3000 (or the port shown in terminal)
 - **Email:** `admin@aegis.com`
 - **Password:** `admin1234`
 
 ### 5. Access Points
-| Component | URL |
-|-----------|-----|
-| **Dashboard** | http://localhost:3000 |
-| **API Docs** | http://localhost:8001/docs |
+
+| Component              | URL                                 |
+| ---------------------- | ----------------------------------- |
+| **Dashboard**    | http://localhost:3000               |
+| **API Docs**     | http://localhost:8001/docs          |
 | **Health Check** | http://localhost:8001/api/v1/health |
+
+### One-command Windows startup
+
+For a local demo, run `start_aegis.bat` from the repository root. It starts or
+reuses the local blockchain and backend, launches the frontend in its own
+terminal, and starts the USB Arduino gateway when its token is configured.
+Keep the service terminals open. The gateway also needs the Mega connected on
+the configured serial port (COM9 by default); close Arduino IDE Serial Monitor
+first. Services already listening on their expected ports are reused rather
+than restarted.
+
+For an individual service or troubleshooting, run `start_blockchain.bat`
+(blockchain plus backend), `start_backend.bat`, `start_frontend.bat`, or
+`start_arduino_gateway.bat`. The backend launchers use the active Conda
+environment, then the standard `%USERPROFILE%\.conda\envs\aegis` environment,
+or `python` on PATH. To select another interpreter, set `AEGIS_PYTHON` to its
+full `python.exe` path before running a launcher.
+
+See [the local demo startup and hardware onboarding guide](docs/guides/LOCAL_DEMO_STARTUP.md)
+for prerequisites, gateway setup, and device-by-device safety notes.
+
+---
+
+## Digital Twin Data, Spatial Mapping, and Migrations
+
+Apply database migrations from the repository root before starting the backend:
+
+```powershell
+python -m pip install -r backend\requirements.txt
+python -m alembic -c backend\alembic.ini upgrade head
+```
+
+This installs Alembic (required by the migration command) and applies the structured-audit and tenant-role/spatial/history revisions, including the legacy zone-default backfill. The digital-twin simulator persists one snapshot per tick and includes a discrete soil-moisture water-balance model. The model defaults to 0.2 percentage points of drainage and 3.0 percentage points of infiltration per minute per unit flow; it advances in one-second simulation steps, couples only online irrigation actuators in the same tenant and zone, and clamps readings to the sensor profile. Override these assumptions in a sensor's `state.simulation_model` (`drainage_rate_per_minute`, `infiltration_rate_per_minute`) and an actuator's `state.flow` or `state.flow_rate`. These are demo defaults, not calibrated site parameters. The runtime is not a general-purpose physics solver and does not yet model thermal, rigid-body, or structural dynamics.
+
+Hardware-style samples submitted through `/api/v1/sensors/data` are mapped to a tenant-owned digital-twin sensor, stored as canonical digital-twin telemetry, and published as `digital_twin:device_update` events. The first sample disables synthetic simulation for that device; legacy `sensor_data` rows remain for existing analytics consumers. This is a software ingestion path, not proof of protocol-adapter or physical-hardware readiness.
+
+Zones can be marked as surveyed by supplying `spatial_position`, `dimensions`, and a `coordinate_system`. Position and dimensions must already use the estate's local 3D scene coordinate frame; the backend does not convert geodetic coordinates or convert between length units. The 3D scene uses inferred placement when surveyed geometry is unavailable.
+
+Digital-twin telemetry is retained for 90 days by default. Uploaded camera media is stored locally under `storage\digital-twin-media` by default, limited to 25 MiB per upload, and retained for 30 days. Configure `DIGITAL_TWIN_TELEMETRY_RETENTION_DAYS`, `DIGITAL_TWIN_MEDIA_DIR`, `DIGITAL_TWIN_MEDIA_MAX_BYTES`, and `DIGITAL_TWIN_MEDIA_RETENTION_DAYS` in the backend environment as needed. For production deployments, provision persistent storage for the media directory and protect provider credentials with a secret manager or encryption at rest.
+
+For file-backed SQLite development databases, backend startup creates a consistent snapshot under the database's sibling `backups` folder and automatically retains only the two most recent snapshots. Older timestamped snapshots for that database are pruned on the next successful backup.
 
 ---
 
@@ -45,13 +96,14 @@ npm run dev
 - Energy charging policies are persisted in the database via the `energy_policies` table.
 - Backend model: `backend.models_db.EnergyPolicy` — fields: `tenant_id`, `charge_threshold`, `discharge_threshold`, `max_charge_rate_kw`.
 - API endpoints:
+
   - `GET /api/v1/energy/policy` — returns latest policy for `tenant_id` (optional query param).
   - `POST /api/v1/energy/policy` — saves a new policy row for the tenant.
 - If Alembic isn't available or fails in dev, create tables with SQLAlchemy at runtime:
+
   ```powershell
   $env:PYTHONPATH='.'; python -c "from backend.database import init_db; init_db(); print('DB initialized')"
   ```
-
 - Biodiversity optimizer helper: `ai/biodiversity_optimization.py` with `optimize_diversity()`.
 - API endpoint: `GET /api/v1/biodiversity/optimize?slots=10` — returns suggested species mix (demo logic).
 
@@ -60,11 +112,13 @@ npm run dev
 Goal: integrate weather forecasts to inform scheduling, energy management, and crop decisions.
 
 Scaffold added (Day 55):
+
 - AI helper: `ai/weather_integration.py` — `get_forecast(lat, lon)` returns demo forecast if no `OPENWEATHER_API_KEY` is set.
 - Router: `backend/routers/weather.py` — `GET /api/v1/weather/forecast?lat=&lon=` returns forecast JSON.
 - Test: `tests/test_weather.py` — simple unit check for forecast structure.
 
 How to run quick local checks:
+
 ```powershell
 cd C:\Users\Mahantesh\DevelopmentProjects\Aegis
 $env:PYTHONPATH='.'; python -c "from ai.weather_integration import get_forecast; print(get_forecast(51.5, -0.12)[:2])"
@@ -73,23 +127,29 @@ $env:PYTHONPATH='.'; python -c "from ai.weather_integration import get_forecast;
 To enable a real provider, set `OPENWEATHER_API_KEY` in your environment (the helper will attempt a fetch).
 
 Next steps I can take for Day 55 on request:
+
 - Wire weather signals into the energy scheduler to account for expected cloud/rain.
 - Add frontend dashboard widgets (forecast card, rain warnings, adaptive scheduling toggles).
 - Add historical weather caching and DB model for forecasts.
 
 ## Day 56 — Compliance and regulatory reporting
+
 This milestone implements tenant-aware compliance tracking and certification reporting for agricultural and organic production.
+
 - Added `POST /api/v1/audit/compliance/organic-certification/request` to record certification requests on blockchain and in DB audit logs.
 - Added `GET /api/v1/audit/compliance/organic-certification/{tenant_id}` to retrieve certification request counts and compliance summary.
 - Extended frontend API utilities with `requestOrganicCertification()` and `getOrganicCertificationStatus()`.
 
 ### Day 56 validation
+
 - Submit a certification request through `/api/v1/audit/compliance/organic-certification/request`.
 - Query `/api/v1/audit/compliance/organic-certification/{tenant_id}` to confirm request counts and compliance summary.
 - Verify audit log records exist for `organic_certification_request` events.
 
 ## Day 57 — Live telemetry and local adaptation
+
 This milestone connects live on-site sensor telemetry directly into the weather and energy planning pipeline.
+
 - Sensor readings are ingested through `/api/v1/sensors/data` and environmental sensors automatically create local `WeatherObservation` entries.
 - The dashboard now includes a `Live Sensor Telemetry` card with the latest device readings and a direct button to ingest environmental telemetry into the local weather model.
 - Weather forecast cache and energy status calculations now reflect local observations, closing the loop between sensor feed, forecast, and charge scheduling.
@@ -97,6 +157,7 @@ This milestone connects live on-site sensor telemetry directly into the weather 
 - Frontend uses `useCurrentUser()` hook for tenant-aware queries across all weather/energy endpoints.
 
 ### Day 57 validation
+
 - Verify sensor telemetry ingestion with `/api/v1/sensors` and `/api/v1/sensors/data`.
 - Query `/api/v1/weather/observations` for recent local weather data.
 - Confirm `/api/v1/weather/local_forecast` and `/api/v1/energy/status` respond with forecast-driven values.
@@ -104,7 +165,9 @@ This milestone connects live on-site sensor telemetry directly into the weather 
 - Verify SensorTelemetryCard shows live sensor readings with ingest buttons.
 
 ## Day 58 — Adaptive energy scheduling
+
 This milestone implements an intelligent charge/discharge scheduler that uses weather forecasts to optimize battery management and recommend load-shifting strategies.
+
 - Smart scheduler evaluates solar confidence based on precipitation, cloud cover, and temperature.
 - Analyzes 24-hour forecast to prioritize charging during high-solar windows.
 - Defers non-critical loads when battery is low; recommends manual load shifting.
@@ -113,6 +176,7 @@ This milestone implements an intelligent charge/discharge scheduler that uses we
 - Returns detailed metrics: peak load, min/max SOC, generation/consumption balance, and actionable recommendations.
 
 ### Day 58 validation
+
 - Call `/api/v1/energy/smart_schedule` to see adaptive schedule with weather signals.
 - Click "Smart Schedule" button in EnergyCard to view hourly plan and recommendations.
 - Verify schedule adjusts solar confidence based on forecast (rain → reduced confidence).
@@ -120,13 +184,16 @@ This milestone implements an intelligent charge/discharge scheduler that uses we
 - Run `pytest tests/test_day58_adaptive_energy.py -q` to validate all 6 scheduling scenarios.
 
 ### References
+
 - **Adaptive Scheduler:** `ai/energy_management.py::smart_adaptive_schedule()`
 - **API Endpoint:** `/api/v1/energy/smart_schedule`
 - **Frontend Component:** `frontend/components/EnergyCard.js` with getSmartEnergySchedule()
 - **Tests:** `tests/test_day58_adaptive_energy.py`
 
 ## Day 59 — Software completion milestone
+
 This milestone conducts final integration testing, performance benchmarking, and security audits to validate all components work together and meet quality standards before Phase 2 hardware development.
+
 - **E2E Integration Tests:** Complete pipeline validation (tenant → sensor → telemetry → weather → energy → schedule)
 - **Performance Benchmarking:** Establishes baseline metrics for key endpoints (health <5ms, queries <100ms, adaptive schedule <150ms)
 - **Security Audit:** Validates JWT authentication, multi-tenant isolation, SQL injection prevention, audit immutability
@@ -134,7 +201,9 @@ This milestone conducts final integration testing, performance benchmarking, and
 - Comprehensive milestone report: `DAY59_MILESTONE_REPORT.md`
 
 ### Day 59 validation
+
 Run full quality assurance suite:
+
 ```bash
 # E2E Integration Tests (6 tests)
 pytest tests/test_day59_e2e_integration.py -v
@@ -152,20 +221,22 @@ pytest tests/test_day59_*.py -v
 **Expected Results:** 32/32 PASS ✅
 
 ### Quality Gates
-✅ Full pipeline integration verified  
-✅ Performance within acceptable baselines  
-✅ Multi-tenant isolation enforced  
-✅ Security vulnerabilities prevented  
-✅ Audit trails immutable  
+
+✅ Full pipeline integration verified
+✅ Performance within acceptable baselines
+✅ Multi-tenant isolation enforced
+✅ Security vulnerabilities prevented
+✅ Audit trails immutable
 
 ### References
+
 - **E2E Tests:** `tests/test_day59_e2e_integration.py` (6 scenarios)
 - **Performance Tests:** `tests/test_day59_performance.py` (12 benchmarks)
 - **Security Tests:** `tests/test_day59_security.py` (14 validations)
 - **Milestone Report:** `DAY59_MILESTONE_REPORT.md`
 
-
 ## Overview
+
 Aegis is a decentralized digital twin framework for sovereign asset management, anti-forensic security, and enterprise infrastructure orchestration. The system is modular, with components for backend (FastAPI), AI orchestration, frontend (Next.js), blockchain (Hardhat), IoT (ESP32), and database (SQLite/PostgreSQL).
 
 ---
@@ -264,29 +335,53 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 
 ---
 
-## 5. Blockchain (Hardhat - Optional)
+## 5. Blockchain (Local Development)
 
 - **Location:** `blockchain/`
 - **Entry Point:** `contracts/AegisAudit.sol`
 - **Dependencies:** `blockchain/package.json`
-- **Run Local Network:**
-  ```sh
-  cd blockchain
-  npm install
-  npx hardhat node --config hardhat.config.js
+- **Blockchain and backend startup (Windows):**
+  ```powershell
+  .\start_blockchain.bat
+  ```
+
+  This starts Anvil with a persisted local state file when Anvil is installed,
+  deploys the contract only if it is missing, runs contract setup, and starts
+  the backend if it is not already running. The state file is stored under
+  `blockchain\.local-state\` and is excluded from Git. Without Anvil, the script
+  falls back to Hardhat's in-memory development chain, which loses its history
+  when the node exits.
+- **Start the complete local demo:** run `.\start_aegis.bat` from the
+  repository root. See the one-command startup notes above.
+- **Manual development node:**
+  ```powershell
+  Set-Location .\blockchain
+  npm run node
   ```
 - **Expected Output:**
-  ```
+  ```text
   Started HTTP and WebSocket JSON-RPC server at http://127.0.0.1:8545/
   ```
 - **Run Tests:**
   ```sh
   npx hardhat test
   ```
+
+```
+
 - **Notes:**
   - Write/test contracts in `contracts/`
   - Hardhat network runs at http://localhost:8545
   - Use Hardhat scripts for deployment
+
+---
+
+## 6. Restore
+
+```sh
+cd c:\Users\Mahantesh\DevelopmentProjects\Aegis
+python -m pytest tests/test_robotics.py::test_robotics_active_endpoint_reports_active_robot_status tests/test_robotics.py::test_robotics_emergency_restore_without_login -q
+```
 
 ---
 
@@ -303,10 +398,12 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 ## 7. Database
 
 ### SQLite (Development - Default)
+
 - **File:** `aegis.db` (auto-created)
 - **No setup required** - database initializes on first backend startup
 
 ### PostgreSQL (Production)
+
 - **Location:** `database/schema.sql`
 - **Setup:**
   ```sql
@@ -323,28 +420,33 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 
 - **Location:** `tests/`
 - **Run All Tests:**
+
   ```sh
   conda activate aegis
   python -m pytest tests/ -q
   ```
 - **Run Specific Test:**
+
   ```sh
   conda activate aegis
   python -m pytest tests/test_basic.py -v
   ```
 - **Run with Coverage:**
+
   ```sh
   conda activate aegis
   pytest --cov=backend --cov=ai --cov-report=term-missing
   ```
 - **Generate HTML Coverage Report:**
+
   ```sh
   conda activate aegis
   pytest --cov=backend --cov=ai --cov-report=html
   ```
-  Open `htmlcov/index.html` to view
 
+  Open `htmlcov/index.html` to view
 - **Notes:**
+
   - 20 tests currently passing
   - Uses pytest-asyncio==0.21.1 for async support
   - No `__init__.py` in `tests/` directory (important)
@@ -355,6 +457,7 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 ## 9. Common Issues & Troubleshooting
 
 ### Frontend Shows "Failed to Fetch"
+
 - **Cause:** Backend not running or API URL mismatch
 - **Solution:**
   ```
@@ -365,25 +468,28 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
   ```
 
 ### Backend Won't Start on Port 8001
+
 - **Cause:** Port already in use or permission denied
 - **Solution:**
   ```powershell
   # Try different port
   $env:SERVER_PORT=8002
   python -m backend.main
-  
+
   # Or kill the process using the port
   netstat -ano | findstr :8001
   taskkill /PID <PID> /F
   ```
 
 ### CORS Errors on Login
+
 - **Cause:** Frontend running on port not in CORS whitelist
 - **Solution:** Backend CORS allows ports: 3000, 3001, 3002, 8080
   - If using different port, update `backend/middleware.py`
   - Add new port to `allow_origins` list
 
 ### Tests Fail with Import Errors
+
 - **Cause:** Missing dependencies or wrong Python environment
 - **Solution:**
   ```powershell
@@ -393,6 +499,7 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
   ```
 
 ### Vryndara Connector Warnings
+
 - **Cause:** Protobuf version incompatibility (expected in offline mode)
 - **Solution:** This is normal! System runs in offline fallback mode
   - No OpenAI API key needed
@@ -400,6 +507,7 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
   - All features work locally
 
 ### Port 3000 Already in Use
+
 - **Solution:** Next.js auto-increments to 3001, 3002, etc.
   - Check the terminal output for actual port
   - Update `NEXT_PUBLIC_API_URL` if needed
@@ -409,6 +517,7 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 ## 10. Development Workflow
 
 ### Adding a New Endpoint
+
 ```python
 # In backend/routers/example.py
 from fastapi import APIRouter
@@ -424,12 +533,14 @@ app.include_router(example.router)
 ```
 
 ### Adding a New Frontend Page
+
 ```bash
 # Create new file: frontend/pages/newpage.js
 # Access at: http://localhost:3000/newpage
 ```
 
 ### Running Backend in Production
+
 ```powershell
 $env:ENVIRONMENT=prod
 $env:DEBUG=false
@@ -455,12 +566,13 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
 Aegis provides interactive API documentation using FastAPI's built-in Swagger UI.
 
 - **Access the docs:**
+
   - Backend running: http://localhost:8001/docs
   - Try endpoints directly from the UI
   - See request/response schemas
   - Authorize with JWT tokens
-
 - **Features:**
+
   - Browse all endpoints grouped by tags
   - View request/response schemas
   - Test endpoints interactively
@@ -471,6 +583,7 @@ Aegis provides interactive API documentation using FastAPI's built-in Swagger UI
 ## 13. Environment Variables
 
 ### Backend (`.env` or CLI)
+
 ```bash
 ENVIRONMENT=dev              # dev, test, prod
 DEBUG=true                  # Enable debug mode
@@ -483,6 +596,7 @@ VRYNDARA_PORT=50051         # Vryndara kernel port
 ```
 
 ### Frontend (`.env.local`)
+
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
@@ -491,23 +605,23 @@ NEXT_PUBLIC_API_URL=http://localhost:8001
 
 ## 14. Quick Reference
 
-| Task | Command |
-|------|---------|
-| Start Backend | `conda activate aegis && $env:SERVER_PORT=8001 && python -m backend.main` |
-| Start Frontend | `cd frontend && npm run dev` |
-| Start Blockchain | `cd blockchain && npx hardhat node` |
-| Run Tests | `conda activate aegis && pytest tests/ -q` |
-| View API Docs | http://localhost:8001/docs |
-| Login Credentials | Email: `admin@aegis.com` / Password: `aegis2026` |
-| Dashboard | http://localhost:3000 (or auto-incremented port) |
-| Database File | `aegis.db` (auto-created in project root) |
+| Task              | Command                                                                     |
+| ----------------- | --------------------------------------------------------------------------- |
+| Start Backend     | `conda activate aegis && $env:SERVER_PORT=8001 && python -m backend.main` |
+| Start Frontend    | `cd frontend && npm run dev`                                              |
+| Start Blockchain  | `cd blockchain && npx hardhat node`                                       |
+| Run Tests         | `conda activate aegis && pytest tests/ -q`                                |
+| View API Docs     | http://localhost:8001/docs                                                  |
+| Login Credentials | Email: `admin@aegis.com` / Password: `admin1234`                        |
+| Dashboard         | http://localhost:3000 (or auto-incremented port)                            |
+| Database File     | `aegis.db` (auto-created in project root)                                 |
 
 ---
 
-**Last Updated:** April 21, 2026  
-**Status:** ✅ Production Ready (Offline Mode)
-  - View request/response models, descriptions, and example payloads.
-  - Try out endpoints interactively (requires authentication for protected endpoints).
+**Last Updated:** April 21, 2026**Status:** ✅ Production Ready (Offline Mode)
+
+- View request/response models, descriptions, and example payloads.
+- Try out endpoints interactively (requires authentication for protected endpoints).
 
 ### API Usage Examples
 
@@ -527,6 +641,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8001
 - Add example payloads using `Body(..., example={...})` for clear API usage.
 
 **Note:**
+
 - If you add new endpoints, always check the docs at `/docs` to ensure they are discoverable and well-described.
 - For OpenAPI JSON, visit `/openapi.json`.
 
@@ -535,6 +650,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8001
 ## API Security Hardening (Day 14)
 
 ### Security Middleware
+
 - **CORS:** Configured via `CORSMiddleware` using trusted origins from settings. In production, restrict `cors_origins` to trusted domains only.
 - **Security Headers:** Automatically added to all responses:
   - `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `X-XSS-Protection`
@@ -544,9 +660,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8001
   - Adjust `allowed_hosts` in `setup_production_security_middleware` as needed for your deployment.
 
 ### Rate Limiting
+
 - Not enabled by default. For production, consider adding a rate limiting middleware (e.g., `slowapi` or `starlette-limiter`).
 
 ### Best Practices
+
 - Always run with `debug=False` in production for full security.
 - Review and restrict CORS origins and allowed hosts.
 - Use HTTPS in production (with a valid certificate).

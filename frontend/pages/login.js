@@ -12,9 +12,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(''); // NEW: To show bad passwords
-  const [showEmergencyOverride, setShowEmergencyOverride] = useState(false);
-  const [overrideCode, setOverrideCode] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -22,7 +20,7 @@ export default function Login() {
     if (!token) return;
 
     getCurrentUser(token)
-      .then(() => router.replace('/'))
+      .then(() => router.replace('/estate-dashboard'))
       .catch(() => {
         clearAuthToken();
       });
@@ -37,48 +35,15 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    setErrorMsg(''); // Clear previous errors
+    setErrorMsg('');
     
     try {
-      // 1. Call the FastAPI backend
       const data = await loginAPI(email, password);
-      
-      // 2. Save the JWT token securely
-      // (For Phase 1, localStorage is fine. We can upgrade to httpOnly cookies later)
       setAuthToken(data.access_token);
       setRefreshToken(data.refresh_token);
-      console.log('Session Initialized. Token secured.');
-
-      // 3. Redirect to the main dashboard
-      router.push('/'); 
-      
+      router.replace('/estate-dashboard');
     } catch (error) {
-      // 4. Handle incorrect passwords
-      setErrorMsg(error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleEmergencyOverride = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setErrorMsg('');
-
-    try {
-      if (overrideCode !== 'AEGIS_OVERRIDE_2026') {
-        setErrorMsg('Invalid emergency override code');
-        setIsLoading(false);
-        return;
-      }
-
-      // Grant temporary access without credentials
-      const tempToken = `EMERGENCY_OVERRIDE_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      setAuthToken(tempToken);
-      console.log('Emergency override activated. Temporary access granted.');
-      router.push('/estate-dashboard');
-    } catch (error) {
-      setErrorMsg('Emergency override failed');
+      setErrorMsg(error.message || 'Sign-in failed. Check your credentials and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -89,8 +54,6 @@ export default function Login() {
       <Head>
         <title>Aegis OS | Zero-Trust Authentication</title>
       </Head>
-
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-aegis-primary/20 blur-[100px] rounded-full pointer-events-none"></div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="rounded-3xl border border-slate-700 bg-[#08101d] p-8 shadow-aet text-center">
@@ -107,11 +70,10 @@ export default function Login() {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-        <div className="glass-card glow-border py-8 px-6 sm:px-10 sm:rounded-[32px]">
+        <div className="glass-card glow-border py-8 px-6 sm:px-10 sm:rounded-4xl">
           
-          {/* NEW: Error Message Display */}
           {errorMsg && (
-            <div className="mb-4 bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded text-sm text-center">
+            <div role="alert" className="mb-4 bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded text-sm text-center">
               {errorMsg}
             </div>
           )}
@@ -121,6 +83,7 @@ export default function Login() {
               label="Operator ID (Email)" 
               type="email" 
               id="email" 
+              autoComplete="username"
               placeholder="admin@aegis.com" 
               required={true}
               value={email}
@@ -131,60 +94,18 @@ export default function Login() {
               label="Passphrase" 
               type="password" 
               id="password" 
+              autoComplete="current-password"
+              minLength={6}
               placeholder="••••••••••••" 
               required={true}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
 
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 bg-[#0f172a] border-slate-700 rounded text-aegis-primary focus:ring-aegis-primary focus:ring-offset-aegis-dark"
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-aegis-muted">
-                  Remember device
-                </label>
-              </div>
-
-              <button 
-                type="button"
-                onClick={() => setShowEmergencyOverride(!showEmergencyOverride)}
-                className="text-sm font-medium text-aegis-primary hover:text-blue-400 transition-colors"
-              >
-                Emergency Override?
-              </button>
-            </div>
-
-            {showEmergencyOverride && (
-              <div className="border border-red-500/30 rounded-lg p-4 bg-red-900/10 space-y-3">
-                <p className="text-xs text-red-300">Emergency override requires security code</p>
-                <Input 
-                  label="Override Code" 
-                  type="password" 
-                  id="override-code" 
-                  placeholder="••••••••••••" 
-                  value={overrideCode}
-                  onChange={(e) => setOverrideCode(e.target.value)}
-                />
-                <Button 
-                  type="button"
-                  variant="primary" 
-                  className="w-full flex justify-center py-3 text-lg bg-red-600 hover:bg-red-700"
-                  onClick={handleEmergencyOverride}
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Activating...' : 'Activate Emergency Access'}
-                </Button>
-              </div>
-            )}
-
             <Button 
               type="submit" 
               variant="primary" 
+              disabled={isLoading}
               className="w-full flex justify-center py-3 text-lg"
             >
               {isLoading ? 'Authenticating...' : 'Initialize Session'}
@@ -198,6 +119,9 @@ export default function Login() {
             <Link href="/signup" className="font-semibold text-aegis-primary hover:text-blue-400 transition-colors">
               Create an account
             </Link>
+          </div>
+          <div className="mt-3 text-center text-sm">
+            <Link href="/reset-password" className="font-semibold text-aegis-primary hover:text-blue-400 transition-colors">Reset password</Link>
           </div>
         </div>
       </div>

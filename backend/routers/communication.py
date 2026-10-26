@@ -44,7 +44,7 @@ class CommNetworkResponse(BaseModel):
     last_checked: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -68,7 +68,7 @@ class EmergencyBroadcastResponse(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -90,7 +90,7 @@ class OfflineQueueItemResponse(BaseModel):
     message_metadata: Dict[str, Any]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -106,7 +106,7 @@ class CommunicationStatusResponse(BaseModel):
     networks: List[CommNetworkResponse]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         from_attributes = True
 
 
@@ -167,6 +167,14 @@ async def register_communication_network(request: CommNetworkCreateRequest, curr
     db.add(network)
     db.commit()
     db.refresh(network)
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+    record_actor_audit_event(
+        db, tenant_id, current_user, "communication_network_registered",
+        "communication_network", network.id,
+        {"name": network.name, "protocol": network.protocol, "secure": network.secure},
+        blockchain=get_blockchain_connector(),
+    )
     return network
 
 
@@ -197,6 +205,19 @@ async def emergency_broadcast(request: EmergencyBroadcastRequest, current_user=D
     db.add(broadcast)
     db.commit()
     db.refresh(broadcast)
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+    record_actor_audit_event(
+        db, tenant_id, current_user, "emergency_broadcast_sent",
+        "emergency_broadcast", broadcast.id,
+        {
+            "priority": broadcast.priority,
+            "broadcast_type": broadcast.broadcast_type,
+            "target_zones": broadcast.target_zones,
+            "status": broadcast.status,
+        },
+        blockchain=get_blockchain_connector(),
+    )
     return broadcast
 
 
@@ -214,6 +235,14 @@ async def queue_offline_message(request: OfflineMessageRequest, current_user=Dep
     db.add(message)
     db.commit()
     db.refresh(message)
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+    record_actor_audit_event(
+        db, tenant_id, current_user, "offline_message_queued",
+        "offline_message", message.id,
+        {"destination": message.destination, "priority": message.priority, "status": message.status},
+        blockchain=get_blockchain_connector(),
+    )
     return message
 
 

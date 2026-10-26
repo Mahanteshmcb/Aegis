@@ -8,19 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from backend.dependencies import get_db, get_current_user, get_current_admin
 from backend import schemas
+from backend.audit_utils import record_actor_audit_event
 from backend.blockchain_connector import get_blockchain_connector
-from backend.audit_utils import record_audit_event
 from backend.models_db import BiologicalMetric, CropInstance, SpatialZone
 
 router = APIRouter(prefix="/api/v1", tags=["Biological Metrics"])
 
 
-def _record_biological_metric_audit(db: Session, tenant_id: int, event_type: str, metadata: Dict[str, Any]) -> None:
-    blockchain = get_blockchain_connector()
-    try:
-        record_audit_event(db, blockchain, tenant_id, event_type, metadata)
-    except Exception:
-        pass
+def _record_biological_metric_audit(db: Session, actor: dict, event_type: str, entity_id, details: Dict[str, Any]) -> None:
+    record_actor_audit_event(
+        db, actor["tenant_id"], actor, event_type, "biological_metric", entity_id,
+        details, blockchain=get_blockchain_connector(),
+    )
 
 
 @router.post("/crops/{crop_id}/metrics", response_model=schemas.BiologicalMetricResponse)
@@ -44,13 +43,13 @@ async def create_biological_metric(
 
     db_metric = BiologicalMetric(crop_instance_id=crop_id, **metric.dict())
     db.add(db_metric)
-    db.commit()
-    db.refresh(db_metric)
+    db.flush()
 
     _record_biological_metric_audit(
         db,
-        current_admin["tenant_id"],
+        current_admin,
         "biological_metric_recorded",
+        db_metric.id,
         {
             "crop_id": crop_id,
             "measurement_date": str(metric.measurement_date),
@@ -60,6 +59,7 @@ async def create_biological_metric(
             "recommendations": metric.recommendations,
         },
     )
+    db.refresh(db_metric)
 
     return db_metric
 

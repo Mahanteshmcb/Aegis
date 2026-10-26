@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import useCurrentUser from '../hooks/useCurrentUser';
+import { clearAuthToken, getAuthToken } from '../utils/auth';
 import {
   Home,
   Layers,
@@ -22,39 +23,52 @@ import {
 export default function Sidebar() {
   const router = useRouter();
   const { user, loading } = useCurrentUser();
+  const handleLogout = async () => {
+    const token = getAuthToken();
+    if (token) {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => null);
+    }
+    clearAuthToken();
+    router.replace('/login');
+  };
   const navItems = [
     { name: 'Estate Dashboard', path: '/estate-dashboard', icon: Home },
+    { name: '3D Scene', path: '/3d-scene', icon: Square },
     { name: 'Zones', path: '/zones', icon: Layers },
     { name: 'Sensors', path: '/sensors', icon: Thermometer },
+    { name: 'Robots', path: '/robots-management', icon: Cpu },
+    { name: 'Devices', path: '/devices', icon: Square },
+    { name: 'Actuators', path: '/actuators', icon: Settings2 },
     { name: 'Climate', path: '/environmental', icon: Shield },
     { name: 'Safety', path: '/safety-dashboard', icon: ShieldCheck },
     { name: 'Water', path: '/water-dashboard', icon: Droplet },
     { name: 'Waste', path: '/waste-dashboard', icon: Trash2 },
     { name: 'System', path: '/system-control', icon: Cpu },
     { name: 'Vryndara AI', path: '/ai', icon: Sparkles },
-    { name: '3D Scene', path: '/3d-scene', icon: Square },
     { name: 'Profile', path: '/profile', icon: User },
   ];
 
   const controlItems = [
     { name: 'Task Scheduler', path: '/task-scheduler', icon: Sparkles },
-    { name: 'Lab Automation', path: '/lab-automation', icon: Cpu },
-    { name: 'Schedules', path: '/schedules', icon: Layers },
-    { name: 'System Analytics', path: '/system-analytics', icon: Cpu },
     { name: 'Communication', path: '/communication-channels', icon: ShieldCheck },
+    { name: 'System Analytics', path: '/system-analytics', icon: Cpu },
     { name: 'Alerts Config', path: '/alerts-configuration', icon: FileText },
     { name: 'Storage', path: '/storage', icon: Droplet },
   ];
 
+
   const adminItems = [
     { name: 'User Management', path: '/admin/users' },
     { name: 'Role Management', path: '/admin/roles' },
-    { name: 'Tenant Settings', path: '/admin/settings' },
   ];
 
   const auditorItems = [
-    { name: 'Compliance Reports', path: '/auditor/reports' },
-    { name: 'Evidence Review', path: '/auditor/evidence' },
+    { name: 'Audit Logs', path: '/audit-logs', icon: FileText },
+    { name: 'Compliance Reports', path: '/auditor/reports', icon: FileText },
+    { name: 'Evidence Review', path: '/auditor/evidence', icon: FileText },
   ];
 
   const getRoleColor = (role) => {
@@ -180,7 +194,7 @@ export default function Sidebar() {
                       ref={(el) => (itemRefs.current[item.path] = el)}
                       data-active={isActive}
                     >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      <Icon className="h-4 w-4 shrink-0" />
                       {item.name}
                     </a>
                   </Link>
@@ -201,7 +215,7 @@ export default function Sidebar() {
                       }`}
                       onClick={() => setMobileOpen(false)}
                     >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      <Icon className="h-4 w-4 shrink-0" />
                       {item.name}
                     </Link>
                   );
@@ -246,37 +260,42 @@ export default function Sidebar() {
                 </div>
               )}
 
-            {/* Auth Links */}
-            {!loading && !user && (
-              <div className="pt-4 border-t border-slate-800 space-y-2">
+            {/* Account Links */}
+            <div className="pt-4 border-t border-slate-800 space-y-2">
+              <p className="text-xs uppercase tracking-[0.3em] text-aegis-muted px-2">Account</p>
+              <Link
+                href="/login"
+                className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
+                onClick={() => setMobileOpen(false)}
+              >
+                <User className="h-4 w-4" />
+                Login
+              </Link>
+              <Link
+                href="/signup"
+                className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
+                onClick={() => setMobileOpen(false)}
+              >
+                <Sparkles className="h-4 w-4" />
+                Sign Up
+              </Link>
+              {!loading && !user && (
                 <Link
-                  href="/login"
+                  href="/reset-password"
                   className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
                   onClick={() => setMobileOpen(false)}
                 >
-                  <User className="h-4 w-4" />
-                  Login
+                  <Settings2 className="h-4 w-4" />
+                  Reset Password
                 </Link>
-                <Link
-                  href="/signup"
-                  className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Sign Up
-                </Link>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Logout */}
             {!loading && user && (
               <div className="pt-4 border-t border-slate-800">
                 <button
-                  onClick={() => {
-                    localStorage.removeItem('aegis_token');
-                    setMobileOpen(false);
-                    router.push('/login');
-                  }}
+                  onClick={() => { setMobileOpen(false); handleLogout(); }}
                   className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-all duration-200"
                 >
                   <LogOut className="h-4 w-4" />
@@ -292,7 +311,7 @@ export default function Sidebar() {
 
       {/* Desktop sidebar */}
       {desktopOpen && <aside className="aegis-desktop-sidebar w-64 bg-[#07111f] border-r border-slate-800 flex flex-col h-screen overflow-visible relative">
-        <div className="p-6 border-b border-slate-800 flex-shrink-0">
+        <div className="p-6 border-b border-slate-800 shrink-0">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-aegis-primary tracking-widest">AEGIS</h1>
             <button
@@ -332,7 +351,7 @@ export default function Sidebar() {
                   }`}
                   ref={(el) => (itemRefs.current[item.path] = el)}
                 >
-                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   {item.name}
                 </a>
               </Link>
@@ -352,7 +371,7 @@ export default function Sidebar() {
                     isActive ? 'bg-slate-900 text-white ring-1 ring-aegis-primary' : 'text-aegis-text hover:bg-slate-800 hover:text-aegis-primary'
                   }`}
                 >
-                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   {item.name}
                 </Link>
               );
@@ -369,7 +388,7 @@ export default function Sidebar() {
                   href={item.path}
                   className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-text hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200 whitespace-nowrap"
                 >
-                  <FileText className="h-4 w-4 flex-shrink-0" />
+                  <FileText className="h-4 w-4 shrink-0" />
                   {item.name}
                 </Link>
               ))}
@@ -386,41 +405,46 @@ export default function Sidebar() {
                   href={item.path}
                   className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-text hover:bg-slate-800 hover:text-red-300 transition-all duration-200 whitespace-nowrap"
                 >
-                  <Settings2 className="h-4 w-4 flex-shrink-0" />
+                  <Settings2 className="h-4 w-4 shrink-0" />
                   {item.name}
                 </Link>
               ))}
             </div>
           )}
 
-          {/* Auth Links */}
-          {!loading && !user && (
-            <div className="pt-4 border-t border-slate-800 space-y-2">
+          {/* Account Links */}
+          <div className="pt-4 border-t border-slate-800 space-y-2">
+            <p className="text-xs uppercase tracking-[0.3em] text-aegis-muted px-2">Account</p>
+            <Link
+              href="/login"
+              className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
+            >
+              <User className="h-4 w-4" />
+              Login
+            </Link>
+            <Link
+              href="/signup"
+              className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
+            >
+              <Sparkles className="h-4 w-4" />
+              Sign Up
+            </Link>
+            {!loading && !user && (
               <Link
-                href="/login"
+                href="/reset-password"
                 className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
               >
-                <User className="h-4 w-4" />
-                Login
+                <Settings2 className="h-4 w-4" />
+                Reset Password
               </Link>
-              <Link
-                href="/signup"
-                className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-aegis-muted hover:bg-slate-800 hover:text-aegis-primary transition-all duration-200"
-              >
-                <Sparkles className="h-4 w-4" />
-                Sign Up
-              </Link>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Logout */}
           {!loading && user && (
             <div className="pt-4 border-t border-slate-800">
               <button
-                onClick={() => {
-                  localStorage.removeItem('aegis_token');
-                  router.push('/login');
-                }}
+                onClick={handleLogout}
                 className="w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-all duration-200"
               >
                 <LogOut className="h-4 w-4" />

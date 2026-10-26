@@ -1,9 +1,7 @@
-import asyncio
-import types
-
 import pytest
 
-
+from backend import models_db
+from backend.models.digital_twin import DigitalTwinDevice
 from backend.services import automation, robot_worker
 
 
@@ -15,93 +13,137 @@ async def test_process_sensor_reading_creates_alert(monkeypatch):
         def __init__(self, id):
             self.id = id
 
-    async def dummy_create_system_alert(db, alert_payload):
-        calls['created'] = True
-        return DummyAlert(1)
-    # create_system_alert is synchronous in the codepath, so provide a regular function
-    def dummy_create_system_alert_sync(db, alert_payload):
-        calls['created'] = True
+    def dummy_create_system_alert(db, alert_payload):
+        calls["created"] = True
         return DummyAlert(1)
 
-    def dummy_get_sensor(db, sid):
-        class S:
-            id = sid
+    def dummy_get_sensor(db, sensor_id):
+        class Sensor:
+            id = sensor_id
             tenant_id = 1
-            type = 'soil_moisture'
-        return S()
+            type = "soil_moisture"
+        return Sensor()
 
     def dummy_get_tenant(db, tenant_id):
-        class T:
+        class Tenant:
             settings = {}
-        return T()
+        return Tenant()
 
-    monkeypatch.setattr('backend.crud.create_system_alert', dummy_create_system_alert_sync)
-    monkeypatch.setattr('backend.crud.get_sensor', dummy_get_sensor)
-    monkeypatch.setattr('backend.crud.get_tenant', dummy_get_tenant)
+    monkeypatch.setattr("backend.crud.create_system_alert", dummy_create_system_alert)
+    monkeypatch.setattr("backend.crud.get_sensor", dummy_get_sensor)
+    monkeypatch.setattr("backend.crud.get_tenant", dummy_get_tenant)
 
-    reading = {'sensor_id': 123, 'value': 10.5, 'type': 'soil_moisture'}
-    await automation.process_sensor_reading(reading)
-    assert calls.get('created') is True
+    await automation.process_sensor_reading({
+        "sensor_id": 123,
+        "value": 10.5,
+        "type": "soil_moisture",
+    })
+
+    assert calls.get("created") is True
 
 
-@pytest.mark.asyncio
-async def test_robot_task_worker_transitions(monkeypatch):
-    updates = []
+def test_robot_task_updates_persisted_tenant_robot(test_db):
+    session = test_db()
+    try:
+        robot = DigitalTwinDevice(
+            tenant_id=1,
+            device_id="rover-main",
+            name="Estate rover",
+            kind="robot",
+            device_type="rover",
+            state={"activity": "stationary"},
+        )
+        task = models_db.ScheduledRoboticTask(
+            tenant_id=1,
+            task_id="inspect-north-zone",
+            operation_type="inspect",
+            requested_robot_id="rover-main",
+            status="pending",
+        )
+        session.add_all([robot, task])
+        session.commit()
+        task_id = task.id
 
-    # Fake task object
-    class FakeTask:
-        def __init__(self):
-            self.id = 1
-            self.task_id = 't1'
-            self.tenant_id = 1
-            self.operation_type = 'inspect'
+        assigned, assigned_robot = robot_worker._transition_task(session, task_id, "pending", "assigned")
+        assert assigned.status == "assigned"
+        assert assigned.assigned_robot_id == "rover-main"
+        assert assigned_robot.state["active_task_id"] == "inspect-north-zone"
 
-    # Stub SessionLocal to return a context manager with query(...) chain
-    class QueryStub:
-        def __init__(self, tasks):
-            self._tasks = tasks
+        running, running_robot = robot_worker._transition_task(session, task_id, "assigned", "in_progress")
+        assert running.status == "in_progress"
+        assert running_robot.state["activity"] == "working"
 
-        def filter_by(self, **kwargs):
-            return self
+        completed, completed_robot = robot_worker._transition_task(session, task_id, "in_progress", "completed")
+        assert completed.status == "completed"
+        assert completed_robot.state["activity"] == "stationary"
+        assert "active_task_id" not in completed_robot.state
+        assert completed_robot.state["last_task"]["task_id"] == "inspect-north-zone"
+    finally:
+        session.close()
 
-        def order_by(self, *args, **kwargs):
-            return self
 
-        def all(self):
-            return self._tasks
-        def first(self):
-            return self._tasks[0] if self._tasks else None
+def test_robot_task_does_not_fall_back_to_another_tenant(test_db):
+    session = test_db()
+    try:
+        session.add(DigitalTwinDevice(
+            tenant_id=2,
+            device_id="other-tenant-rover",
+            name="Other tenant rover",
+            kind="robot",
+            device_type="rover",
+        ))
+        task = models_db.ScheduledRoboticTask(
+            tenant_id=1,
+            task_id="isolated-task",
+            operation_type="inspect",
+            status="pending",
+        )
+        session.add(task)
+        session.commit()
 
-    class FakeCM:
-        def __enter__(self):
-            return types.SimpleNamespace(query=lambda model: QueryStub([FakeTask()]))
+        result = robot_worker._transition_task(session, task.id, "pending", "assigned")
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        assert result[0].status == "conflicted"
+        assert result[0].assigned_robot_id is None
+        assert "No available tenant-owned" in result[0].conflict_reason
+    finally:
+        session.close()
 
-    monkeypatch.setattr(robot_worker, 'SessionLocal', lambda: FakeCM())
 
-    # speed up sleeps inside the worker so the worker progresses quickly,
-    # but keep the test's own asyncio.sleep intact by patching the module's asyncio
-    async def fast_sleep(delay, result=None):
-        return None
+def test_robot_stop_prevents_task_from_reporting_success(test_db):
+    session = test_db()
+    try:
+        robot = DigitalTwinDevice(
+            tenant_id=1,
+            device_id="stoppable-rover",
+            name="Stoppable rover",
+            kind="robot",
+            device_type="rover",
+            state={"activity": "stationary"},
+        )
+        task = models_db.ScheduledRoboticTask(
+            tenant_id=1,
+            task_id="stop-during-task",
+            operation_type="inspect",
+            requested_robot_id="stoppable-rover",
+            status="pending",
+        )
+        session.add_all([robot, task])
+        session.commit()
 
-    monkeypatch.setattr(robot_worker.asyncio, 'sleep', fast_sleep)
+        assigned, assigned_robot = robot_worker._transition_task(session, task.id, "pending", "assigned")
+        assigned_robot.state = {"command": "stop", "activity": "stopped"}
+        session.commit()
 
-    def fake_update(db, t, status, assigned_robot_id=None):
-        print('FAKE_UPDATE_CALLED', status)
-        updates.append(status)
+        conflicted, updated_robot = robot_worker._transition_task(
+            session,
+            task.id,
+            "assigned",
+            "in_progress",
+        )
 
-    # Patch the crud function used inside the robot_worker module directly
-    monkeypatch.setattr(robot_worker.crud, 'update_scheduled_task_status', fake_update)
-
-    # Instead of relying on timing with the background worker, simulate
-    # the transition sequence directly to make the test deterministic.
-    fake_task = FakeTask()
-    assigned_robot = 'sim-robot-1'
-    robot_worker.crud.update_scheduled_task_status(None, fake_task, 'assigned', assigned_robot_id=assigned_robot)
-    robot_worker.crud.update_scheduled_task_status(None, fake_task, 'in_progress', assigned_robot_id=assigned_robot)
-    robot_worker.crud.update_scheduled_task_status(None, fake_task, 'completed', assigned_robot_id=assigned_robot)
-
-    # Expect the three transitions to have been recorded
-    assert updates == ['assigned', 'in_progress', 'completed']
+        assert conflicted.status == "conflicted"
+        assert "no longer owns" in conflicted.conflict_reason
+        assert updated_robot is None
+    finally:
+        session.close()

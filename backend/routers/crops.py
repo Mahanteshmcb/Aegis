@@ -8,19 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from backend.dependencies import get_db, get_current_user, get_current_admin
 from backend import schemas
+from backend.audit_utils import record_actor_audit_event
 from backend.blockchain_connector import get_blockchain_connector
-from backend.audit_utils import record_audit_event
 from backend.models_db import CropInstance, SpatialZone
 
 router = APIRouter(prefix="/api/v1", tags=["Crop Management"])
 
 
-def _record_crop_audit(db: Session, tenant_id: int, event_type: str, metadata: Dict[str, Any]) -> None:
-    blockchain = get_blockchain_connector()
-    try:
-        record_audit_event(db, blockchain, tenant_id, event_type, metadata)
-    except Exception:
-        pass
+def _record_crop_audit(db: Session, actor: dict, event_type: str, entity_type: str, entity_id, details: Dict[str, Any]) -> None:
+    record_actor_audit_event(
+        db, actor["tenant_id"], actor, event_type, entity_type, entity_id, details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 @router.post("/crops", response_model=schemas.CropInstanceResponse)
@@ -39,15 +38,15 @@ async def create_crop_instance(
 
     db_crop = CropInstance(**crop.dict())
     db.add(db_crop)
-    db.commit()
-    db.refresh(db_crop)
+    db.flush()
 
     _record_crop_audit(
         db,
-        current_admin["tenant_id"],
+        current_admin,
         "crop_instance_created",
+        "crop_instance",
+        db_crop.id,
         {
-            "crop_id": db_crop.id,
             "species_id": db_crop.species_id,
             "spatial_zone_id": db_crop.spatial_zone_id,
             "position": {
@@ -59,6 +58,7 @@ async def create_crop_instance(
             "batch_id": db_crop.batch_id,
         },
     )
+    db.refresh(db_crop)
 
     return db_crop
 
@@ -129,18 +129,17 @@ async def update_crop_instance(
     for field, value in update_data.items():
         setattr(crop, field, value)
 
-    db.commit()
-    db.refresh(crop)
-
     _record_crop_audit(
         db,
-        current_admin["tenant_id"],
+        current_admin,
         "crop_instance_updated",
+        "crop_instance",
+        crop.id,
         {
-            "crop_id": crop.id,
             "updated_fields": update_data,
         },
     )
+    db.refresh(crop)
 
     return crop
 
@@ -164,6 +163,13 @@ async def delete_crop_instance(
     if not crop:
         raise HTTPException(status_code=404, detail="Crop instance not found or tenant mismatch")
 
+    crop_details = {
+        "species_id": crop.species_id,
+        "spatial_zone_id": crop.spatial_zone_id,
+        "batch_id": crop.batch_id,
+    }
     db.delete(crop)
-    db.commit()
+    _record_crop_audit(
+        db, current_admin, "crop_instance_deleted", "crop_instance", crop_id, crop_details
+    )
     return {"detail": "Crop instance deleted"}

@@ -37,19 +37,20 @@ def test_weather_observation_forecast_recommendations(client):
 
 
 def test_energy_policy_persistence(client):
+    headers = {"Authorization": "Bearer test-token"}
     policy_payload = {
         "charge_threshold": 0.7,
         "discharge_threshold": 0.25,
         "max_charge_rate_kw": 2.5,
     }
 
-    post_response = client.post("/api/v1/energy/policy", json=policy_payload)
+    post_response = client.post("/api/v1/energy/policy", json=policy_payload, headers=headers)
     assert post_response.status_code == 200
     post_data = post_response.json()
     assert post_data["ok"] is True
     assert post_data["policy"]["charge_threshold"] == pytest.approx(0.7)
 
-    get_response = client.get("/api/v1/energy/policy")
+    get_response = client.get("/api/v1/energy/policy", headers=headers)
     assert get_response.status_code == 200
     get_data = get_response.json()
     assert get_data["charge_threshold"] == pytest.approx(0.7)

@@ -1,355 +1,212 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import useCurrentUser from '../hooks/useCurrentUser';
-import useEstateState from '../hooks/useEstateState';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 export default function TaskScheduler() {
-  const { user, loading } = useCurrentUser();
-  const estateState = useEstateState();
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    robot_id: '',
-    description: '',
-    priority: 'medium',
-    status: 'pending',
-    scheduled_time: '',
-  });
+  const { user, token, loading } = useCurrentUser();
+  const [robots, setRobots] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [search, setSearch] = useState('');
+  const [operation, setOperation] = useState('INSPECT');
+  const [robotId, setRobotId] = useState('');
+  const [zoneId, setZoneId] = useState('');
+  const [priority, setPriority] = useState('5');
+  const [description, setDescription] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [cancellingId, setCancellingId] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const fetchQueue = useCallback(async () => {
+    if (!token) return;
+    setIsLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [queueResponse, deviceResponse] = await Promise.all([
+        fetch(`${API_URL}/api/v1/robotics/schedule/queue`, { headers }),
+        fetch(`${API_URL}/api/v1/digital-twin/devices`, { headers }),
+      ]);
+      const [queuePayload, devicePayload] = await Promise.all([
+        queueResponse.json().catch(() => ({})),
+        deviceResponse.json().catch(() => []),
+      ]);
+      if (!queueResponse.ok) throw new Error(queuePayload.detail || 'Unable to load robot task queue.');
+      if (!deviceResponse.ok) throw new Error(devicePayload.detail || 'Unable to load tenant robots.');
+      setTasks(Array.isArray(queuePayload?.data?.tasks) ? queuePayload.data.tasks : []);
+      setRobots(Array.isArray(devicePayload) ? devicePayload.filter((device) => device.kind === 'robot') : []);
+      setError('');
+    } catch (loadError) {
+      setError(loadError.message || 'Unable to load robot task queue.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
-    if (!loading && user) {
-      fetchTasks();
-    }
-  }, [user, loading]);
+    if (!loading && user) fetchQueue();
+  }, [loading, user, fetchQueue]);
 
-  const fetchTasks = async () => {
+  const filteredTasks = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return tasks.filter((task) => [
+      task.task_id,
+      task.operation_type,
+      task.requested_robot_id,
+      task.assigned_robot_id,
+      task.zone_id,
+      task.status,
+      task.task_detail?.description,
+    ].some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [search, tasks]);
+
+  async function enqueueTask(event) {
+    event.preventDefault();
+    if (!token) return setError('Session expired. Please sign in again.');
+    setIsSubmitting(true);
+    setError('');
+    setNotice('');
     try {
-      estateState.setLoading(true);
-      const token = localStorage.getItem('aegis_token');
-      const res = await fetch(`${API_URL}/api/v1/tasks`, {
+      const response = await fetch(`${API_URL}/api/v1/robotics/schedule/enqueue`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_id: `task-${Date.now()}`,
+          operation_type: operation,
+          robot_id: robotId || null,
+          zone_id: zoneId || null,
+          priority: Number(priority),
+          task_detail: { description: description.trim() },
+          timeout_seconds: 120,
+          metadata: { source: 'task_scheduler' },
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || 'Unable to enqueue task.');
+      setDescription('');
+      setNotice(`Task ${result.data?.task_id || ''} added to the queue.`);
+      await fetchQueue();
+    } catch (submitError) {
+      setError(submitError.message || 'Unable to enqueue task.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function assignPending() {
+    if (!token) return setError('Session expired. Please sign in again.');
+    setAssigning(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(`${API_URL}/api/v1/robotics/schedule/assign`, {
+        method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
-      const tasks = res.ok ? await res.json() : [];
-      estateState.setTasks(Array.isArray(tasks) ? tasks : []);
-      estateState.setLoading(false);
-    } catch (err) {
-      console.error('Error fetching tasks:', err);
-      estateState.setLoading(false);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || 'Unable to assign queued tasks.');
+      setNotice(`${result.data?.assigned_count ?? 0} pending tasks assigned.`);
+      await fetchQueue();
+    } catch (assignError) {
+      setError(assignError.message || 'Unable to assign queued tasks.');
+    } finally {
+      setAssigning(false);
     }
-  };
+  }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  async function cancelTask(task) {
+    if (task.status !== 'pending') return;
+    if (!window.confirm(`Cancel task ${task.task_id}?`)) return;
+    setCancellingId(task.task_id);
+    setError('');
     try {
-      const token = localStorage.getItem('aegis_token');
-      const method = editingId ? 'PUT' : 'POST';
-      const endpoint = editingId ? `/api/v1/tasks/${editingId}` : '/api/v1/tasks';
-
-      const res = await fetch(`${API_URL}${endpoint}`, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (res.ok) {
-        const task = await res.json();
-        if (editingId) {
-          estateState.updateTask(editingId, task);
-        } else {
-          estateState.addTask(task);
-        }
-        setFormData({
-          name: '',
-          robot_id: '',
-          description: '',
-          priority: 'medium',
-          status: 'pending',
-          scheduled_time: '',
-        });
-        setEditingId(null);
-        setShowForm(false);
-      }
-    } catch (err) {
-      console.error('Error saving task:', err);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this task?')) return;
-
-    try {
-      const token = localStorage.getItem('aegis_token');
-      const res = await fetch(`${API_URL}/api/v1/tasks/${id}`, {
+      const response = await fetch(`${API_URL}/api/v1/robotics/schedule/cancel/${encodeURIComponent(task.task_id)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      if (res.ok) {
-        estateState.deleteTask(id);
-      }
-    } catch (err) {
-      console.error('Error deleting task:', err);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || 'Unable to cancel task.');
+      setNotice(`Task ${task.task_id} canceled.`);
+      await fetchQueue();
+    } catch (cancelError) {
+      setError(cancelError.message || 'Unable to cancel task.');
+    } finally {
+      setCancellingId(null);
     }
-  };
-
-  const handleEdit = (task) => {
-    setFormData({
-      name: task.name || '',
-      robot_id: task.robot_id || '',
-      description: task.description || '',
-      priority: task.priority || 'medium',
-      status: task.status || 'pending',
-      scheduled_time: task.scheduled_time || '',
-    });
-    setEditingId(task.id);
-    setShowForm(true);
-  };
-
-  const filteredTasks = estateState.tasks.filter((t) =>
-    t.name?.toLowerCase().includes(search.toLowerCase()) ||
-    t.description?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const priorityColors = {
-    low: 'text-green-400',
-    medium: 'text-yellow-400',
-    high: 'text-orange-400',
-    critical: 'text-red-400',
-  };
-
-  const statusColors = {
-    pending: 'text-gray-400',
-    scheduled: 'text-blue-400',
-    running: 'text-cyan-400',
-    completed: 'text-green-400',
-    failed: 'text-red-400',
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
-        <div className="text-aegis-muted animate-pulse">Loading...</div>
-      </div>
-    );
   }
 
+  if (loading) return <div className="p-6 text-slate-400">Checking session...</div>;
+  if (!user) return <div className="p-6 text-slate-300">Sign in to manage robot tasks. <Link href="/login" className="text-cyan-300">Sign in</Link></div>;
+
+  const pendingCount = tasks.filter((task) => task.status === 'pending').length;
+  const assignedCount = tasks.filter((task) => task.status === 'assigned').length;
+  const conflictedCount = tasks.filter((task) => task.status === 'conflicted').length;
+
   return (
-    <div className="w-full">
-      {/* Header */}
-      <div className="mb-8 flex items-start justify-between">
+    <main className="mx-auto max-w-6xl space-y-7 p-6 text-slate-100">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <h1 className="text-4xl font-bold text-aegis-primary tracking-[0.2em] mb-2">
-            📅 TASK SCHEDULER
-          </h1>
-          <p className="text-aegis-muted">Schedule and manage robot tasks</p>
+          <h1 className="text-3xl font-semibold">Robot Task Scheduler</h1>
+          <p className="mt-2 text-sm text-slate-400">Queue robot work, assign available robots, and cancel pending tasks.</p>
         </div>
-        <button
-          onClick={() => {
-            setShowForm(!showForm);
-            setEditingId(null);
-            setFormData({
-              name: '',
-              robot_id: '',
-              description: '',
-              priority: 'medium',
-              status: 'pending',
-              scheduled_time: '',
-            });
-          }}
-          className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-500 hover:to-purple-500 transition-all font-mono text-sm font-bold"
-        >
-          {showForm ? '✕ Cancel' : '+ Schedule Task'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={fetchQueue} disabled={isLoading} className="rounded border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:opacity-50">{isLoading ? 'Refreshing...' : 'Refresh'}</button>
+          <button onClick={assignPending} disabled={assigning || pendingCount === 0} className="rounded bg-cyan-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{assigning ? 'Assigning...' : 'Assign pending'}</button>
+        </div>
+      </header>
+
+      {error && <div role="alert" className="rounded border border-red-700 bg-red-900/20 p-3 text-sm text-red-200">{error}</div>}
+      {notice && <div role="status" className="rounded border border-emerald-700 bg-emerald-900/20 p-3 text-sm text-emerald-200">{notice}</div>}
+
+      <div className="grid grid-cols-3 gap-4 border-b border-slate-800 pb-5">
+        {[['Pending', pendingCount], ['Assigned', assignedCount], ['Conflicted', conflictedCount]].map(([label, count]) => <div key={label}><p className="text-xs uppercase tracking-wider text-slate-500">{label}</p><p className="mt-1 text-2xl font-semibold">{count}</p></div>)}
       </div>
 
-      {/* Add/Edit Form */}
-      {showForm && (
-        <div className="bg-gradient-to-br from-black/40 to-black/60 border border-aegis-primary/30 rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-bold text-aegis-primary mb-4">
-            {editingId ? 'Edit Task' : 'Schedule New Task'}
-          </h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-bold text-aegis-muted uppercase tracking-wider">Task Name</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Greenhouse Inspection"
-                className="w-full mt-2 px-3 py-2 bg-black/50 border border-aegis-primary/30 rounded text-aegis-primary text-sm focus:border-aegis-primary/60 focus:outline-none"
-                required
-              />
-            </div>
+      <form onSubmit={enqueueTask} className="grid gap-4 border-b border-slate-800 pb-6 md:grid-cols-2 xl:grid-cols-3">
+        <label className="text-sm text-slate-300">Operation
+          <select value={operation} onChange={(event) => setOperation(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-2 text-white">
+            {['INSPECT', 'HARVEST', 'PLANT', 'PRUNE', 'SPRAY', 'SAMPLE', 'MAINTAIN', 'NAVIGATE'].map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="text-sm text-slate-300">Robot (optional)
+          <select value={robotId} onChange={(event) => setRobotId(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-2 text-white">
+            <option value="">Assign during scheduling</option>{robots.map((robot) => <option key={robot.id} value={robot.device_id}>{robot.name} · {robot.status}</option>)}
+          </select>
+        </label>
+        <label className="text-sm text-slate-300">Zone ID (optional)
+          <input value={zoneId} onChange={(event) => setZoneId(event.target.value)} inputMode="numeric" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-2 text-white" />
+        </label>
+        <label className="text-sm text-slate-300">Priority (1-10)
+          <input required type="number" min="1" max="10" step="1" value={priority} onChange={(event) => setPriority(event.target.value)} className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-2 text-white" />
+        </label>
+        <label className="text-sm text-slate-300 md:col-span-2">Task details
+          <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Inspection notes or operation parameters" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-2 text-white" />
+        </label>
+        <button type="submit" disabled={isSubmitting} className="w-fit rounded bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{isSubmitting ? 'Enqueuing...' : 'Add to queue'}</button>
+      </form>
 
-            <div>
-              <label className="text-xs font-bold text-aegis-muted uppercase tracking-wider">Assign Robot</label>
-              <select
-                value={formData.robot_id}
-                onChange={(e) => setFormData({ ...formData, robot_id: e.target.value })}
-                className="w-full mt-2 px-3 py-2 bg-black/50 border border-aegis-primary/30 rounded text-aegis-primary text-sm focus:border-aegis-primary/60 focus:outline-none"
-              >
-                <option value="">Select a robot...</option>
-                {estateState.robots.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name || `Robot ${r.id}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-aegis-muted uppercase tracking-wider">Priority</label>
-              <select
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                className="w-full mt-2 px-3 py-2 bg-black/50 border border-aegis-primary/30 rounded text-aegis-primary text-sm focus:border-aegis-primary/60 focus:outline-none"
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-aegis-muted uppercase tracking-wider">Status</label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full mt-2 px-3 py-2 bg-black/50 border border-aegis-primary/30 rounded text-aegis-primary text-sm focus:border-aegis-primary/60 focus:outline-none"
-              >
-                <option value="pending">Pending</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="running">Running</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-aegis-muted uppercase tracking-wider">Scheduled Time</label>
-              <input
-                type="datetime-local"
-                value={formData.scheduled_time}
-                onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
-                className="w-full mt-2 px-3 py-2 bg-black/50 border border-aegis-primary/30 rounded text-aegis-primary text-sm focus:border-aegis-primary/60 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-aegis-muted uppercase tracking-wider">Description</label>
-              <input
-                type="text"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Task details..."
-                className="w-full mt-2 px-3 py-2 bg-black/50 border border-aegis-primary/30 rounded text-aegis-primary text-sm focus:border-aegis-primary/60 focus:outline-none"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="col-span-1 md:col-span-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500 transition-all text-sm font-bold"
-            >
-              {editingId ? 'Update Task' : 'Schedule Task'}
-            </button>
-          </form>
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2">
+          <h2 className="text-lg font-semibold">Queued tasks</h2>
+          <input type="search" aria-label="Search task queue" placeholder="Search task, robot, zone, status" value={search} onChange={(event) => setSearch(event.target.value)} className="rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" />
         </div>
-      )}
-
-      {/* Search Bar */}
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search tasks..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-4 py-3 bg-black/50 border border-aegis-primary/30 rounded text-aegis-primary text-sm focus:border-aegis-primary/60 focus:outline-none"
-        />
-      </div>
-
-      {/* Tasks List */}
-      <div className="space-y-4">
-        {filteredTasks.length === 0 ? (
-          <div className="text-center py-12 bg-gradient-to-br from-black/40 to-black/60 border border-aegis-primary/30 rounded-lg">
-            <p className="text-aegis-muted text-lg">No tasks found. Schedule one to get started.</p>
+        {isLoading ? <p className="py-6 text-center text-slate-400">Loading task queue...</p> : filteredTasks.length === 0 ? <p className="py-6 text-center text-slate-400">No tasks match this queue.</p> : (
+          <div className="divide-y divide-slate-800 border-y border-slate-800">
+            {filteredTasks.map((task) => <article key={task.task_id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-white">{task.operation_type} <span className="font-mono text-xs text-slate-500">{task.task_id}</span></h3>
+                <p className="mt-1 text-sm text-slate-400">{task.task_detail?.description || 'No additional details'}</p>
+                <p className="mt-1 text-xs text-slate-500">Requested: {task.requested_robot_id || 'Unassigned'} · Assigned: {task.assigned_robot_id || 'Not assigned'} · Zone: {task.zone_id || 'Unspecified'} · Priority: {task.priority}</p>
+                {task.conflict_reason && <p className="mt-1 text-xs text-amber-300">{task.conflict_reason}</p>}
+              </div>
+              <div className="flex items-center gap-3"><span className="text-xs uppercase text-cyan-200">{task.status}</span><button onClick={() => cancelTask(task)} disabled={task.status !== 'pending' || cancellingId === task.task_id} className="rounded border border-red-800 px-3 py-2 text-xs text-red-300 disabled:opacity-40">{cancellingId === task.task_id ? 'Canceling...' : 'Cancel'}</button></div>
+            </article>)}
           </div>
-        ) : (
-          filteredTasks.map((task) => (
-            <div
-              key={task.id}
-              className="bg-gradient-to-br from-black/40 to-black/60 border border-aegis-primary/30 rounded-lg p-4 hover:border-aegis-primary/60 transition-all"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-aegis-primary">{task.name || `Task ${task.id}`}</h3>
-                  {task.description && <p className="text-xs text-aegis-muted mt-1">{task.description}</p>}
-                </div>
-                <div className="flex gap-2 ml-4">
-                  <span className={`text-xs font-bold ${priorityColors[task.priority] || 'text-gray-400'}`}>
-                    ◆ {(task.priority || 'medium').toUpperCase()}
-                  </span>
-                  <span className={`text-xs font-bold ${statusColors[task.status] || 'text-gray-400'}`}>
-                    ◆ {(task.status || 'pending').toUpperCase()}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 text-xs font-mono mb-4">
-                <div>
-                  <span className="text-aegis-muted">Assigned Robot:</span>
-                  <p className="text-aegis-primary">
-                    {estateState.robots.find((r) => r.id == task.robot_id)?.name || 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-aegis-muted">Scheduled:</span>
-                  <p className="text-aegis-primary">
-                    {task.scheduled_time
-                      ? new Date(task.scheduled_time).toLocaleString()
-                      : 'Not scheduled'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-aegis-muted">Created:</span>
-                  <p className="text-aegis-primary">
-                    {task.created_at ? new Date(task.created_at).toLocaleDateString() : 'Unknown'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(task)}
-                  className="flex-1 px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-500 transition-all font-bold"
-                >
-                  ✎ Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(task.id)}
-                  className="flex-1 px-3 py-2 bg-red-600 text-white text-xs rounded hover:bg-red-500 transition-all font-bold"
-                >
-                  🗑️ Delete
-                </button>
-              </div>
-            </div>
-          ))
         )}
-      </div>
-
-      {/* Back Button */}
-      <div className="mt-8">
-        <Link href="/dashboard" className="text-aegis-primary hover:text-aegis-primary/80 transition-colors">
-          ← Back to Dashboard
-        </Link>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

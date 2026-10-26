@@ -27,13 +27,19 @@ module.exports = {
     },
     localhost: {
       url: "http://127.0.0.1:8545",
-      accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== "" ? [process.env.PRIVATE_KEY] : [],
-      chainId: 1337, // Standard localhost chainId
+      accounts: {
+        mnemonic: "test test test test test test test test test test test junk",
+        count: 10,
+      },
+      chainId: 31337, // Matches the default local Hardhat node chain ID
     },
     private: {
       url: "http://127.0.0.1:8545", // Can be changed to your private network URL
-      accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== "" ? [process.env.PRIVATE_KEY] : [],
-      chainId: 12345, // Custom chainId for private network
+      accounts: {
+        mnemonic: "test test test test test test test test test test test junk",
+        count: 10,
+      },
+      chainId: 31337, // Matches the offline local node used by AEGIS
       gasPrice: 20000000000, // 20 gwei
     },
     sepolia: {

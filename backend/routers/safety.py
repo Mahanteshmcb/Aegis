@@ -8,6 +8,8 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_db, get_current_user
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models.safety import (
     SafetyRule,
     SafetyEvent,
@@ -19,6 +21,20 @@ from backend.models.safety import (
 )
 
 router = APIRouter(prefix="/api/v1/safety", tags=["safety"])
+
+
+def _record_safety_action(db: Session, actor: dict, event_type: str, entity_type: str, entity_id, details: dict, outcome: str = "success"):
+    return record_actor_audit_event(
+        db,
+        actor["tenant_id"],
+        actor,
+        event_type,
+        entity_type,
+        entity_id,
+        details,
+        blockchain=get_blockchain_connector(),
+        outcome=outcome,
+    )
 
 
 class RuleCreate(BaseModel):
@@ -147,6 +163,17 @@ def create_rule(payload: RuleCreate, db: Session = Depends(get_db), current_user
     db.add(rule)
     db.commit()
     db.refresh(rule)
+    _record_safety_action(
+        db, current_user, "safety_rule_created", "safety_rule", rule.id,
+        {
+            "name": rule.name,
+            "sensor_type": rule.sensor_type,
+            "metric": rule.metric,
+            "operator": rule.operator,
+            "threshold": rule.threshold,
+            "severity": rule.severity,
+        },
+    )
     return rule
 
 
@@ -258,6 +285,11 @@ def start_patrol(payload: PatrolRequest, db: Session = Depends(get_db), current_
     db.add(patrol)
     db.commit()
     db.refresh(patrol)
+    _record_safety_action(
+        db, current_user, "security_patrol_started", "security_patrol", patrol.id,
+        {"route_name": patrol.route_name, "assigned_robot": patrol.assigned_robot,
+         "zone_sequence": payload.zone_sequence or [], "reason": payload.reason},
+    )
     _create_access_control_event(
         db=db,
         tenant_id=current_user["tenant_id"],
@@ -289,6 +321,10 @@ def stop_patrol(db: Session = Depends(get_db), current_user=Depends(get_current_
     db.add(patrol)
     db.commit()
     db.refresh(patrol)
+    _record_safety_action(
+        db, current_user, "security_patrol_stopped", "security_patrol", patrol.id,
+        {"route_name": patrol.route_name, "assigned_robot": patrol.assigned_robot},
+    )
     _create_access_control_event(
         db=db,
         tenant_id=current_user["tenant_id"],
@@ -362,6 +398,12 @@ def trigger_evacuation(payload: EvacuationRequest, db: Session = Depends(get_db)
     db.add(protocol)
     db.commit()
     db.refresh(protocol)
+    _record_safety_action(
+        db, current_user, "evacuation_triggered", "evacuation_protocol", protocol.id,
+        {"incident_type": protocol.incident_type, "affected_zones": payload.affected_zones or [],
+         "reason": protocol.reason, "stage": protocol.stage},
+        outcome="success",
+    )
     _create_access_control_event(
         db=db,
         tenant_id=current_user["tenant_id"],
@@ -396,6 +438,10 @@ def complete_evacuation(db: Session = Depends(get_db), current_user=Depends(get_
     db.add(protocol)
     db.commit()
     db.refresh(protocol)
+    _record_safety_action(
+        db, current_user, "evacuation_completed", "evacuation_protocol", protocol.id,
+        {"incident_type": protocol.incident_type, "stage": protocol.stage},
+    )
     _create_access_control_event(
         db=db,
         tenant_id=current_user["tenant_id"],
@@ -439,6 +485,12 @@ def biometric_access(payload: BiometricScanRequest, db: Session = Depends(get_db
         status=status,
         location=payload.location,
         message=message,
+    )
+    _record_safety_action(
+        db, current_user, "biometric_access_attempted", "access_control_event", event.id,
+        {"subject": payload.user_name, "method": f"biometric:{payload.biometric_type}",
+         "location": payload.location, "status": status},
+        outcome="success" if authorized else "failure",
     )
 
     if not authorized:
@@ -487,6 +539,10 @@ def activate_lockdown(payload: EstopRequest, db: Session = Depends(get_db), curr
     db.add(lockdown)
     db.commit()
     db.refresh(lockdown)
+    _record_safety_action(
+        db, current_user, "perimeter_lockdown_activated", "perimeter_lockdown", lockdown.id,
+        {"reason": lockdown.reason},
+    )
     _create_access_control_event(
         db=db,
         tenant_id=current_user["tenant_id"],
@@ -524,6 +580,10 @@ def release_lockdown(db: Session = Depends(get_db), current_user=Depends(get_cur
     db.add(lockdown)
     db.commit()
     db.refresh(lockdown)
+    _record_safety_action(
+        db, current_user, "perimeter_lockdown_released", "perimeter_lockdown", lockdown.id,
+        {"reason": lockdown.reason},
+    )
     _create_access_control_event(
         db=db,
         tenant_id=current_user["tenant_id"],
@@ -550,6 +610,10 @@ def estop_activate(payload: EstopRequest, db: Session = Depends(get_db), current
         est.reason = payload.reason
     db.add(est)
     db.commit()
+    _record_safety_action(
+        db, current_user, "emergency_stop_activated", "emergency_stop", est.id,
+        {"reason": payload.reason},
+    )
     return {"status": "estop_activated", "reason": payload.reason}
 
 
@@ -562,6 +626,10 @@ def estop_release(db: Session = Depends(get_db), current_user=Depends(get_curren
     est.reason = None
     db.add(est)
     db.commit()
+    _record_safety_action(
+        db, current_user, "emergency_stop_released", "emergency_stop", est.id,
+        {},
+    )
     return {"status": "estop_released"}
 
 

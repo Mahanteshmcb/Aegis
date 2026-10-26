@@ -179,6 +179,24 @@ npm run gas-report
 
 ### Local Network
 
+For one-command startup from the repository root, run:
+
+```powershell
+.\start_blockchain.bat
+```
+
+The script starts Anvil with a local state file when Anvil is installed, checks the
+chain ID and existing contract deployment, deploys only when the saved address has
+no contract code, runs contract setup, and starts the backend if it is not already
+running. Keep the node window open while using Aegis. The state file is stored in
+`blockchain/.local-state/` and is ignored by Git.
+
+If Anvil is unavailable, the script falls back to the Hardhat node so the demo can
+still run, but Hardhat's default node is in-memory and loses chain history when it
+exits. In that fallback mode, a new deployment is required after each node restart.
+
+Manual Hardhat startup (non-persistent development chain):
+
 1. Start Hardhat node (terminal 1):
 ```bash
 npm run node
@@ -337,33 +355,48 @@ The contract ABI is automatically generated in:
 artifacts/contracts/AegisAudit.sol/AegisAudit.json
 ```
 
-Use this ABI with Web3.py for backend integration.
+Use this ABI with Web3.py for backend integration. Reading contract state only
+requires the RPC endpoint, deployed contract address, and ABI; it does not
+require a private key.
 
 ### Web3.py Integration Example
 
 ```python
 from web3 import Web3
 import json
+from pathlib import Path
 
-# Load ABI
-with open('../blockchain/artifacts/contracts/AegisAudit.sol/AegisAudit.json') as f:
+# Run from the blockchain directory after starting the same persistent node
+# that contains the deployment.
+with open('artifacts/contracts/AegisAudit.sol/AegisAudit.json', encoding='utf-8') as f:
     abi = json.load(f)['abi']
 
-# Connect to network
 w3 = Web3(Web3.HTTPProvider('http://localhost:8545'))
-contract = w3.eth.contract(address='0x...', abi=abi)
+if not w3.is_connected():
+    raise ConnectionError('Could not connect to the local blockchain RPC')
 
-# Create log
-tx_hash = contract.functions.createLog(
-    "DEVICE_ACTIVATED",
-    b'data_hash',
-    '{"device_id": "1"}',
-    1
-).transact()
+deployment = json.loads(Path('deployments/localhost-deployment.json').read_text(encoding='utf-8'))
+address = Web3.to_checksum_address(deployment['AegisAudit'])
+if not w3.eth.get_code(address):
+    raise RuntimeError('No contract at this address on this chain; check the RPC and deployment')
 
-# Verify log
-log_entry = contract.functions.getLog(log_id).call()
+contract = w3.eth.contract(address=address, abi=abi)
+print('Chain ID:', w3.eth.chain_id)
+print('Block:', w3.eth.block_number)
+print('All contract logs:', contract.functions.getLogCount().call())
+print('Tenant 1 compliance:', contract.functions.getComplianceSummary(1).call())
+
+for log_id in contract.functions.getTenantLogs(1).call():
+    print(contract.functions.getLog(log_id).call())
 ```
+
+The backend uses `BLOCKCHAIN_RPC_URL` (default `http://127.0.0.1:8545`) and
+`CONTRACT_ADDRESS`; when the latter is unset, it reads the address from
+`deployments/localhost-deployment.json`. If a local node is restarted with a
+fresh in-memory chain, the saved address may no longer contain a contract and
+the old logs cannot be fetched from that reset chain. For writes, the backend
+uses an RPC-unlocked account only when connected to loopback chain ID 31337;
+other networks require `BLOCKCHAIN_PRIVATE_KEY`.
 
 ## Troubleshooting
 

@@ -190,7 +190,7 @@ export default function TasksManagement() {
             setShowForm(!showForm);
             resetForm();
           }}
-          className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-500 hover:to-pink-500 transition-all font-mono text-sm font-bold"
+          className="px-6 py-3 br-linear-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-500 hover:to-pink-500 transition-all font-mono text-sm font-bold"
         >
           {showForm ? '✕ Cancel' : '+ New Task'}
         </button>
@@ -245,7 +245,7 @@ export default function TasksManagement() {
             return (
               <div
                 key={task.id}
-                className="bg-gradient-to-br from-black/40 to-black/60 border border-aegis-primary/30 rounded-lg p-4 hover:border-aegis-primary/60 transition-all"
+                className="br-linear-to-br from-black/40 to-black/60 border border-aegis-primary/30 rounded-lg p-4 hover:border-aegis-primary/60 transition-all"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>

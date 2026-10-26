@@ -7,12 +7,14 @@ import EstateMasterLayout from './EstateMasterLayout';
 
 const FARMHOUSE_MODEL = '/models/CesiumMilkTruck.glb';
 const FIELD_VEHICLE_MODEL = '/models/ToyCar.glb';
+const TOY_CAR_MODEL = '/models/ToyCar.glb';
 const FOREST_ASSET_MODEL = '/models/Fox.glb';
 const HELMET_MODEL = '/models/DamagedHelmet.glb';
 const PANEL_CRATE_MODEL = '/models/BoxTextured.glb';
 
 useGLTF.preload(FARMHOUSE_MODEL);
 useGLTF.preload(FIELD_VEHICLE_MODEL);
+useGLTF.preload(TOY_CAR_MODEL);
 useGLTF.preload(FOREST_ASSET_MODEL);
 useGLTF.preload(HELMET_MODEL);
 useGLTF.preload(PANEL_CRATE_MODEL);
@@ -52,10 +54,17 @@ function TwinSceneLoading() {
   );
 }
 
-function SectionLabel({ name, position, color = '#ffffff' }) {
+function SectionLabel({ name, position, color = '#e2f3ff' }) {
   return (
     <Html center position={position} style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}>
-      <div className="rounded-xl border border-white/20 bg-slate-950/90 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white shadow-lg shadow-black/20">
+      <div
+        className="rounded-xl border border-cyan-400/25 bg-slate-950/85 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.28em] shadow-[0_0_18px_rgba(34,211,238,0.18)] backdrop-blur-sm"
+        style={{
+          color,
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 0 18px rgba(34,211,238,0.18)',
+          textShadow: '0 0 10px rgba(103,232,249,0.45)',
+        }}
+      >
         {name}
       </div>
     </Html>
@@ -169,9 +178,9 @@ function AssetCrate({ position = [0, 0, 0], scale = [0.7, 0.7, 0.7], rotation = 
 
 function ZoneVolume({ zone, selected, hovered, onClick, onHover }) {
   const { width, height, depth } = useMemo(() => ({
-    width: zone.size?.[0] || 8,
-    height: Math.max(zone.size?.[1] || 2, 2),
-    depth: zone.size?.[2] || 8,
+    width: finiteNumber(zone.size?.[0], 8),
+    height: Math.max(finiteNumber(zone.size?.[1], 2), 2),
+    depth: finiteNumber(zone.size?.[2], 8),
   }), [zone.size]);
   const color = zone.color || '#16a34a';
   const active = selected || hovered;
@@ -324,32 +333,40 @@ export default function DigitalTwinScene({ robots = [], sensors = [], zones = []
   const handleHover = (entity) => setHoveredEntity(entity);
 
   return (
-    <div className="aegis-canvas-shell relative w-full h-full min-h-[360px] overflow-hidden rounded-3xl border border-slate-800 shadow-xl shadow-cyan-500/10 bg-slate-950">
+    <div className="aegis-canvas-shell relative w-full h-full min-h-[360px] overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-950 shadow-[0_0_30px_rgba(34,211,238,0.10)]">
       <Canvas
         shadows
         dpr={[1, 2]}
         camera={{ position: [78, 64, 86], fov: 52 }}
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
       >
-        <color attach="background" args={[0.32, 0.50, 0.62]} />
-        <Sky sunPosition={[-30, 45, 20]} turbidity={2.5} rayleigh={0.35} />
-        <Environment preset="forest" />
-        <hemisphereLight skyColor="#dbeafe" groundColor="#334155" intensity={0.75} />
-        <ambientLight intensity={0.65} />
+        <color attach="background" args={[0.03, 0.08, 0.14]} />
+        <fog attach="fog" args={[0x081b2b, 40, 150]} />
+        <Sky sunPosition={[-30, 45, 20]} turbidity={2.8} rayleigh={0.42} mieCoefficient={0.008} mieDirectionalG={0.9} />
+        <Environment preset="city" />
+        <hemisphereLight skyColor="#dff6ff" groundColor="#0f172a" intensity={0.95} />
+        <ambientLight intensity={0.7} />
         <directionalLight
           castShadow
-          position={[18, 25, 18]}
-          intensity={1.2}
+          position={[18, 26, 18]}
+          intensity={1.5}
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
-          shadow-camera-left={-30}
-          shadow-camera-right={30}
-          shadow-camera-top={30}
-          shadow-camera-bottom={-30}
+          shadow-camera-left={-40}
+          shadow-camera-right={40}
+          shadow-camera-top={40}
+          shadow-camera-bottom={-40}
         />
 
-        <pointLight position={[-20, 12, -12]} intensity={0.4} color="#a5b4fc" />
-        <pointLight position={[8, 8, -16]} intensity={0.3} color="#fcd34d" />
+        <pointLight position={[-20, 12, -12]} intensity={0.55} color="#93c5fd" />
+        <pointLight position={[8, 10, -16]} intensity={0.45} color="#fcd34d" />
+        <pointLight position={[0, 8, 18]} intensity={0.5} color="#67e8f9" />
+
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]} receiveShadow>
+          <planeGeometry args={[120, 120]} />
+          <meshStandardMaterial color="#0f172a" roughness={0.92} metalness={0.08} />
+        </mesh>
+        <gridHelper args={[150, 40, '#1e3a5f', '#0f172a']} position={[0, 0.02, 0]} />
 
         <GroundPlane />
         <EstateEnvironmentAssets />
@@ -427,24 +444,24 @@ export default function DigitalTwinScene({ robots = [], sensors = [], zones = []
         switches={defaultSwitches}
       />
 
-      <div className="absolute top-4 left-4 z-20 max-w-[calc(100%-2rem)] rounded-2xl border border-white/10 bg-black/70 p-4 text-xs text-slate-200 shadow-xl shadow-slate-950/30 backdrop-blur">
-        <div className="font-semibold text-white mb-2">Digital Twin</div>
+      <div className="absolute left-4 top-4 z-20 max-w-[calc(100%-2rem)] rounded-2xl border border-cyan-500/20 bg-slate-950/75 p-4 text-xs text-slate-100 shadow-[0_0_20px_rgba(34,211,238,0.15)] backdrop-blur-md">
+        <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.35em] text-cyan-300">Digital Twin</div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-xl bg-slate-900/80 p-2">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-2">
             <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Zones</p>
-            <p className="text-sm font-semibold text-white">{defaultZones.length}</p>
+            <p className="mt-1 text-sm font-semibold text-cyan-200">{defaultZones.length}</p>
           </div>
-          <div className="rounded-xl bg-slate-900/80 p-2">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-2">
             <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Sensors</p>
-            <p className="text-sm font-semibold text-white">{defaultSensors.length}</p>
+            <p className="mt-1 text-sm font-semibold text-emerald-200">{defaultSensors.length}</p>
           </div>
-          <div className="rounded-xl bg-slate-900/80 p-2">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-2">
             <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Robots</p>
-            <p className="text-sm font-semibold text-white">{defaultRobots.length}</p>
+            <p className="mt-1 text-sm font-semibold text-violet-200">{defaultRobots.length}</p>
           </div>
-          <div className="rounded-xl bg-slate-900/80 p-2">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-2">
             <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">Switches</p>
-            <p className="text-sm font-semibold text-white">{defaultSwitches.length}</p>
+            <p className="mt-1 text-sm font-semibold text-amber-200">{defaultSwitches.length}</p>
           </div>
         </div>
       </div>

@@ -10,10 +10,12 @@ import logging
 import random
 
 from backend.dependencies import get_db, get_current_user
+from backend.audit_utils import record_actor_audit_event
+from backend.blockchain_connector import get_blockchain_connector
 from backend.models.environmental import (
     EnvironmentalZone, EnvironmentalReading, AirQualityAlert, ComfortFeedback
 )
-from backend.models_db import Zone, Tenant
+from backend.models.zones import Zone
 from backend.services.environmental_control import HVACEngine, AirQualityController, CircadianOptimizer
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,19 @@ router = APIRouter(prefix="/api/v1/environmental", tags=["environmental"])
 hvac_engine = HVACEngine()
 air_quality_controller = AirQualityController()
 circadian_optimizer = CircadianOptimizer()
+
+
+def _record_environmental_action(db, actor, event_type, zone_id, details):
+    return record_actor_audit_event(
+        db,
+        actor["tenant_id"],
+        actor,
+        event_type,
+        "environmental_zone",
+        zone_id,
+        details,
+        blockchain=get_blockchain_connector(),
+    )
 
 
 # ============================================================================
@@ -71,6 +86,13 @@ async def get_current_environmental(
     current_user = Depends(get_current_user)
 ):
     """Get current temperature, humidity, air quality for zone"""
+    zone = db.query(Zone.id).filter(
+        Zone.id == zone_id,
+        Zone.tenant_id == current_user["tenant_id"],
+    ).first()
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Zone not found")
+
     env_zone = db.query(EnvironmentalZone).filter(
         EnvironmentalZone.zone_id == zone_id,
         EnvironmentalZone.tenant_id == current_user['tenant_id']
@@ -172,6 +194,13 @@ async def update_setpoint(
     env_zone.updated_at = datetime.utcnow()
     
     db.commit()
+    _record_environmental_action(
+        db,
+        current_user,
+        "environmental_setpoint_changed",
+        zone_id,
+        {"previous_setpoint": old_setpoint, "new_setpoint": new_setpoint},
+    )
     logger.info(f"Zone {zone_id} setpoint changed: {old_setpoint}°C → {new_setpoint}°C")
     
     return {
@@ -204,9 +233,17 @@ async def update_hvac_mode(
     if not env_zone:
         raise HTTPException(status_code=404, detail="Environmental zone not found")
     
+    previous_mode = env_zone.hvac_mode
     env_zone.hvac_mode = mode
     env_zone.updated_at = datetime.utcnow()
     db.commit()
+    _record_environmental_action(
+        db,
+        current_user,
+        "environmental_hvac_mode_changed",
+        zone_id,
+        {"previous_mode": previous_mode, "new_mode": mode},
+    )
     
     return {'status': 'success', 'mode': mode}
 
@@ -246,12 +283,20 @@ async def activate_scene(
         raise HTTPException(status_code=404, detail="Environmental zone not found")
     
     scene = COMFORT_SCENES[scene_name]
+    previous_scene = env_zone.active_scene
     env_zone.active_scene = scene_name
     env_zone.setpoint = scene['setpoint']
     env_zone.fan_mode = scene['fan_mode']
     env_zone.updated_at = datetime.utcnow()
     
     db.commit()
+    _record_environmental_action(
+        db,
+        current_user,
+        "environmental_scene_activated",
+        zone_id,
+        {"previous_scene": previous_scene, "scene": scene_name},
+    )
     logger.info(f"Zone {zone_id} activated scene: {scene_name}")
     
     return {

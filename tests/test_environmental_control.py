@@ -434,11 +434,26 @@ class TestEnvironmentalIntegration:
 # ============================================================================
 # API ENDPOINT TESTS
 # ============================================================================
-# These tests require FastAPI TestClient fixtures and environmental zone setup
-# To enable, add the following to conftest.py:
-#   - Create EnvironmentalZone fixtures
-#   - Add environmental_zone route to main.py app.include_router()
-#   - Create auth_headers fixture for authenticated requests
+def test_first_environmental_load_initializes_config_before_air_quality(client, test_db):
+    from backend.database import Zone
+
+    with test_db() as db:
+        db.add(Zone(id=9101, tenant_id=1, name="Climate Test Zone"))
+        db.commit()
+
+    headers = {"Authorization": "Bearer test-token"}
+    current_response = client.get(
+        "/api/v1/environmental/zones/9101/current",
+        headers=headers,
+    )
+    assert current_response.status_code == 200, current_response.text
+
+    air_quality_response = client.get(
+        "/api/v1/environmental/zones/9101/air-quality/current",
+        headers=headers,
+    )
+    assert air_quality_response.status_code == 200, air_quality_response.text
+    assert air_quality_response.json()["zone_id"] == 9101
 
 
 if __name__ == '__main__':

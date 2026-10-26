@@ -94,7 +94,7 @@ def seed_entities(db):
     return created
 
 
-def seed_entities_via_api(base_url: str = "http://127.0.0.1:8000"):
+def seed_entities_via_api(base_url: str = "http://127.0.0.1:8001"):
     demo = [
         {
             "name": "Tractor Alpha",

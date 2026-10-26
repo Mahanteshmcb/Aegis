@@ -6,10 +6,21 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.dependencies import get_current_user
+from backend.dependencies import get_current_user, get_db
 from backend.services.local_iot_runtime import runtime
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/v1/local-iot", tags=["local-iot"])
+
+
+def _record_local_iot_action(db: Session, actor: dict, event_type: str, device_id: str, details: dict):
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+
+    return record_actor_audit_event(
+        db, actor["tenant_id"], actor, event_type, "local_iot_device", device_id,
+        details, blockchain=get_blockchain_connector(),
+    )
 
 
 class LocalDeviceCreate(BaseModel):
@@ -45,7 +56,7 @@ def list_devices(current_user=Depends(get_current_user)) -> List[Dict[str, Any]]
 
 
 @router.post("/devices")
-def register_device(payload: LocalDeviceCreate, current_user=Depends(get_current_user)) -> Dict[str, Any]:
+def register_device(payload: LocalDeviceCreate, current_user=Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     tenant_id = int(current_user["tenant_id"])
     device = runtime.register_device(
         tenant_id=tenant_id,
@@ -56,6 +67,11 @@ def register_device(payload: LocalDeviceCreate, current_user=Depends(get_current
         device_type=payload.device_type,
         status=payload.status,
         metadata={**payload.metadata, "position": payload.position},
+    )
+    _record_local_iot_action(
+        db, current_user, "local_iot_device_registered", payload.device_id,
+        {"name": payload.name, "kind": payload.kind, "device_type": payload.device_type,
+         "zone_id": payload.zone_id, "status": payload.status, "position": payload.position},
     )
     return {"status": "ok", "device": device}
 
@@ -83,7 +99,7 @@ def ingest_telemetry(payload: LocalTelemetryIngest, current_user=Depends(get_cur
 
 
 @router.post("/commands")
-def queue_command(payload: LocalCommandPayload, current_user=Depends(get_current_user)) -> Dict[str, Any]:
+def queue_command(payload: LocalCommandPayload, current_user=Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     tenant_id = int(current_user["tenant_id"])
     device = runtime.get_device(payload.device_id)
     if not device or device.get("tenant_id") != tenant_id:
@@ -95,11 +111,16 @@ def queue_command(payload: LocalCommandPayload, current_user=Depends(get_current
         zone_id=payload.zone_id,
         created_by=current_user.get("email", "operator"),
     )
+    _record_local_iot_action(
+        db, current_user, "local_iot_command_queued", payload.device_id,
+        {"command": payload.command, "parameter_names": sorted(payload.parameters),
+         "zone_id": payload.zone_id, "queue_id": record.get("id")},
+    )
     return {"status": "queued", "command": record}
 
 
 @router.post("/commands/execute")
-def execute_command(payload: LocalCommandPayload, current_user=Depends(get_current_user)) -> Dict[str, Any]:
+def execute_command(payload: LocalCommandPayload, current_user=Depends(get_current_user), db: Session = Depends(get_db)) -> Dict[str, Any]:
     tenant_id = int(current_user["tenant_id"])
     device = runtime.get_device(payload.device_id)
     if not device or device.get("tenant_id") != tenant_id:
@@ -109,6 +130,11 @@ def execute_command(payload: LocalCommandPayload, current_user=Depends(get_curre
         command=payload.command,
         parameters=payload.parameters,
         actor=current_user.get("email", "operator"),
+    )
+    _record_local_iot_action(
+        db, current_user, "local_iot_command_executed", payload.device_id,
+        {"command": payload.command, "parameter_names": sorted(payload.parameters),
+         "zone_id": payload.zone_id, "status": updated.get("status")},
     )
     return {"status": "executed", "device": updated}
 

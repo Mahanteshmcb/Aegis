@@ -250,7 +250,10 @@ async def _poll_loop(stop_event: asyncio.Event):
                 except Exception:
                     pass
 
-            await asyncio.wait([stop_event.wait()], timeout=5)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
 
     except asyncio.CancelledError:
         logger.info("Automation scheduler cancelled")

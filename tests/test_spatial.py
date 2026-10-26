@@ -494,6 +494,16 @@ def test_spatial_api_endpoints(client):
     assert optimization_result["success"]
     assert "average_compatibility_score" in optimization_result
 
+    audit_response = client.get("/api/v1/audit?limit=100", headers=headers)
+    assert audit_response.status_code == 200, audit_response.text
+    audited_entities = {
+        (event["entity_type"], event["entity_id"], event["event_type"])
+        for event in audit_response.json()
+    }
+    assert ("biological_species", str(species_id), "biological_species_created") in audited_entities
+    assert ("spatial_zone", str(zone_id), "spatial_zone_created") in audited_entities
+    assert ("crop_instance", str(crop_result["id"]), "spatial_crop_created") in audited_entities
+
 
 def test_spatial_data_validation():
     """Day 34: Test spatial data validation and constraints."""

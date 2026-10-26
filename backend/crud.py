@@ -84,6 +84,13 @@ def create_audit_log(db: Session, audit: schemas.AuditLogCreate, tenant_id: int 
         event_type=audit.event_type,
         data_hash=audit.data_hash,
         blockchain_tx=audit.blockchain_tx,
+        actor_user_id=audit.actor_user_id,
+        actor_email=audit.actor_email,
+        action=audit.action,
+        entity_type=audit.entity_type,
+        entity_id=audit.entity_id,
+        outcome=audit.outcome,
+        details=audit.details,
     )
     db.add(db_log)
     db.commit()

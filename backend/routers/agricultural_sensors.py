@@ -26,6 +26,18 @@ async def create_agricultural_sensor(
     db.add(db_sensor)
     db.commit()
     db.refresh(db_sensor)
+    from backend.audit_utils import record_actor_audit_event
+    from backend.blockchain_connector import get_blockchain_connector
+    record_actor_audit_event(
+        db,
+        current_admin["tenant_id"],
+        current_admin,
+        "agricultural_sensor_created",
+        "agricultural_sensor",
+        db_sensor.id,
+        {"name": db_sensor.name, "sensor_type": db_sensor.sensor_type, "location": db_sensor.location},
+        blockchain=get_blockchain_connector(),
+    )
     return db_sensor
 
 

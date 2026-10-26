@@ -104,11 +104,6 @@ def upgrade():
     )
 
     # Add indexes for performance
-    op.create_index('ix_biological_species_scientific_name', 'biological_species', ['scientific_name'])
-    op.create_index('ix_biological_species_common_name', 'biological_species', ['common_name'])
-    op.create_index('ix_spatial_zones_tenant_id', 'spatial_zones', ['tenant_id'])
-    op.create_index('ix_crop_instances_species_id', 'crop_instances', ['species_id'])
-    op.create_index('ix_crop_instances_spatial_zone_id', 'crop_instances', ['spatial_zone_id'])
     op.create_index('ix_crop_instances_position', 'crop_instances', ['position_x', 'position_y', 'position_z'])
 
 
