@@ -305,41 +305,48 @@ workspace. Work here first, preserving tenant scope, permissions, surveyed vs.
 inferred geometry, audit events, and the existing source of truth.
 
 ### Scene navigation and visibility
-- [ ] Add a clear scene toolbar with select, pan/orbit, zoom, reset view, home,
+- [x] Add a clear scene toolbar with select, pan/orbit, zoom, reset view, home,
   top/front/side/isometric presets, and a visible camera/view indicator.
-- [ ] Add search and filters for zone, asset type, status, connectivity,
+- [x] Add search and filters for zone, asset type, status, connectivity,
   control mode, adapter, active alerts, and surveyed/inferred position.
-- [ ] Add a scene layer/visibility panel for zones, buildings, labels, sensors,
-  actuators, robots, cameras, routes, alert overlays, and telemetry overlays.
-- [ ] Add a legend and stable color/icon semantics for normal, warning,
-  critical, offline, simulated, physical, and unknown states; never use color
-  alone to convey meaning.
-- [ ] Make asset labels readable and non-overlapping at estate scale; support
-  label density, hide/show, selection highlighting, and clear unknown or stale
-  readings.
-- [ ] Show scene load/error/empty states, data freshness, active data source,
-  current tenant, coordinate units, and whether geometry is surveyed or
-  inferred.
+- [x] Add a scene layer/visibility panel for zones, buildings, labels, sensors,
+  actuators, robots, camera feeds, routes, alert overlays, and telemetry
+  overlays; unavailable camera/route sources are visibly disabled.
+- [x] Add a text-labeled status legend and source summary for normal, warning,
+  critical, offline, simulated, configured physical-adapter, and unknown
+  states. State precedence is explicit and colors are paired with labels.
+- [x] Make zone labels readable at estate scale with selected-zone default,
+  optional all-zone density, hide/show, and selection highlighting; keep
+  unknown or stale readings explicit.
+- [x] Show scene load/error/empty states, data freshness, configured source
+  counts, current tenant, coordinate units, and surveyed/inferred provenance.
 - [ ] Test scene interaction and usability on common desktop resolutions and
   keyboard navigation; document touch/tablet limitations if not supported.
 
 ### Real scene editing and spatial data
-- [ ] Implement editor modes for select, move, rotate, resize zone, and
-  placing a new supported scene asset; separate edit mode from read-only
-  operation mode.
-- [ ] Add visible transform handles/gizmos with axis constraints, numeric
-  position/rotation/dimension inputs, configurable grid snapping, and undo/
-  redo for unsaved edits.
-- [ ] Persist positions, dimensions, orientation, units, coordinate frame,
-  and surveyed/inferred provenance through tenant-scoped backend APIs; don't
-  silently convert geodetic coordinates or claim inferred placements are
-  measured.
-- [ ] Validate server-side permissions, ownership, numeric bounds, coordinate
-  frame, and audit events for every edit; resolve concurrent edits without
-  overwriting newer saved state.
-- [ ] Support create/edit/delete for zones and assets from the scene with
-  confirmation, API errors, optimistic-state rollback, and links to owning
-  operational pages.
+- [x] Implement an explicit edit-mode boundary from read-only operation;
+  creation, edit, deletion, and transform affordances are hidden until an
+  authorized user enables edit mode.
+- [x] Support placing a new scene asset directly in the viewport before save;
+  show an inferred placement preview and coordinates before the create request.
+- [x] Add selected-object move/rotate gizmos, zone resize controls, constrained
+  axis handles, and configurable grid/rotation snapping. Drag release stages a
+  draft; explicit Save edits, Discard, Undo, and Redo actions control persistence.
+  Numeric inspector editing remains available for exact values.
+- [x] Add undo/redo for unsaved scene transforms and viewport placement drafts.
+- [x] Add numeric position/orientation/dimension inputs and persist zone/device
+  position, orientation (degrees), units, coordinate frame, and
+  surveyed/inferred provenance through tenant-scoped APIs. Migration
+  `0016_spatial_orientation` and `0017_device_position_provenance` add durable
+  fields; inferred placements remain explicitly labeled and no coordinate
+  conversion is implied.
+- [x] Validate tenant-scoped permissions, finite/bounded values, surveyed
+  coordinate-frame requirements, and audit edits through the backend APIs.
+- [x] Resolve concurrent edits without overwriting newer saved state using
+  expected update timestamps, conditional writes, and HTTP 409 conflict handling.
+- [x] Support create/edit/delete for zones and assets from the scene with
+  permission gating, delete confirmation, API error display, no success-shaped
+  optimistic state, and links to owning operational pages.
 - [ ] Add configurable, metadata-backed model selection and asset orientation;
   handle missing models with a clear fallback and never break the scene.
 - [ ] Provide selection/inspector details for identity, zone, live/simulated/
@@ -352,20 +359,20 @@ inferred geometry, audit events, and the existing source of truth.
 - [ ] Add explicit simulation-vs-live indication and a user-controlled
   simulation overlay; simulated state must not overwrite or masquerade as
   physical observations.
-- [ ] Add selected-device controls only for supported commands and authorized
+- [x] Add selected-device controls only for supported commands and authorized
   users, with pending/accepted/confirmed/failed state and acknowledgment
   timestamps; do not present a requested state as a confirmed physical state.
 - [ ] Surface interlocks, safety-rule blocks, stale/offline state, manual/
   automation/AI authority, and the reason a command is unavailable.
-- [ ] Add scoped scene actions for the real underlying APIs (for example
-  inspect, acknowledge alert, or open the owning page); do not add cosmetic
-  buttons or duplicate business logic in the frontend.
+- [x] Add scoped scene actions for real underlying APIs, including opening the
+  owning operational page; do not add cosmetic buttons or duplicate business
+  logic in the frontend.
 - [ ] Overlay current telemetry, historical trails, sensor coverage, robot
   route/tasks, zone bounds, and alerts only when backed by data; include time
   range, units, legend, and source.
-- [ ] Connect camera/media controls only to configured capture/media devices;
-  display unavailable states when no camera exists, and keep retention and
-  access rules visible.
+- [x] Connect camera/media controls only to camera/media devices; display an
+  unavailable state when no camera source exists and expose media retention and
+  permission-gated upload behavior.
 - [ ] Validate render performance with a documented representative estate;
   use instancing/LOD or incremental loading only when measurements justify it.
 - [ ] Add component and browser-level regression tests for selection, edit,
@@ -381,6 +388,76 @@ inferred geometry, audit events, and the existing source of truth.
   permission results, and acknowledged command/audit history.
 - [ ] Focused frontend build/lint/tests and role/tenant API tests pass; no
   unsaved or failed edit is reported as saved.
+
+### Phase 6 progress — 2026-10-30
+- [x] Added camera presets and explicit select/pan/orbit interaction modes,
+  bounded zoom controls, and a reset-to-home action.
+- [x] Added live scene search and filters for zone, asset type, state,
+  connectivity, adapter, control mode, active sensor alerts, and inferred vs.
+  reported spatial placement. Filters now affect both the rendered scene and
+  the live-asset list, with a reset action and a visible zone/asset count.
+- [x] Added visibility toggles for zone footprints, labels, robots, sensors,
+  actuators, the coordinate grid, illustrative proximity guides, alert/status
+  overlays, and backed current sensor readings. Camera feeds and measured
+  routes are visibly unavailable until configured sources exist. Sensor alert
+  labels and per-asset stale/unknown statuses keep source state explicit.
+- [x] Tightened inferred zone spacing and footprint defaults so planning
+  geometry stays legible at the estate-wide camera view without claiming
+  surveyed dimensions.
+- [x] Added tenant-scoped persisted zone/device position and orientation,
+  spatial provenance, coordinate-frame and unit fields, numeric inspector
+  editing, and scene rotation rendering. Added retry-safe Alembic migration
+  `0016_spatial_orientation` plus focused API/migration regressions.
+- [x] Added selected-object Move/Rotate transform gizmos, zone resizing,
+  configurable translation snapping, and 15-degree rotation snapping.
+  Transform changes are permission-gated and staged until an explicit save.
+- [x] Persisted an explicit device-position-configured flag so a deliberate
+  origin position remains distinct from an unset/default position; migration
+  `0017_device_position_provenance` covers existing databases.
+- [x] Added a scene condition legend and per-tenant configured-source counts;
+  the inspector identifies adapter/source while clearly separating adapter
+  configuration from evidence of connectivity or live telemetry.
+- [x] Promoted the 3D viewport ahead of filters and the inspector at full
+  content width; fitted camera framing to visible zone dimensions and device
+  positions, kept the ground/grid centered, and added fit-all, focus-selected,
+  orientation-gizmo, and keyboard view controls. The canvas reports when
+  WebGL is unavailable instead of leaving a blank viewport.
+- [x] Added compact selected-zone label density by default, with an explicit
+  all-zone option and a global labels toggle to reduce overlap while preserving
+  selection highlighting and provenance.
+- [x] Added an explicit permission-gated scene edit mode; spatial gizmos,
+  create controls, and asset/zone edit-delete actions are unavailable in
+  read-only mode. Exiting edit mode asks before discarding an open unsaved
+  scene form.
+- [x] Browser-checked the 3D viewport with a 1195 × 478 canvas: the complete
+  estate loads, camera presets and keyboard preset shortcuts respond, Fit
+  scene restores the whole-estate view, and Focus selection is enabled after
+  selecting an asset. Edit mode reveals and hides authoring controls as
+  expected. This is a focused smoke check, not desktop-resolution or keyboard
+  acceptance coverage.
+- [x] Added direct viewport placement previews for device and zone creation;
+  inferred coordinates remain editable before submit and Undo restores the
+  previous placement draft.
+- [x] Added shared draft Undo/Redo, explicit save/discard actions, and
+  timestamp-based compare-and-swap conflict handling for spatial writes.
+- [x] Added explicit commits to digital-twin device create/update/delete/control
+  operations so successful responses persist beyond the request session.
+- [x] Focused backend tests pass for tenant-scoped zone edits, stale zone/device
+  writes, and device CRUD. Scene ESLint passes. A final production-build rerun
+  was inconclusive because the persistent Next dev process continued writing to
+  the shared `.next` directory (ENOENT); the live page was restored and smoke
+  checked instead of stopping the user's server.
+- [x] Browser-smoke-checked the live scene on port 3000 with 14 zones and 26
+  assets: viewport placement created an inferred draft; Undo/Redo restored it;
+  Cancel removed it without submitting. Orientation-gizmo interaction no longer
+  triggers the controls error after registering OrbitControls as the default.
+- [x] Added a tenant-scoped scene safety-status endpoint and enforced the same
+  emergency-stop/rule check before digital-twin commands are dispatched. The
+  scene fails closed when safety status cannot be verified and shows the latest
+  recorded command acknowledgment in the selected-asset inspector.
+- [ ] Remaining model/inspector/control requirements, desktop/accessibility
+  acceptance, persistent scene bookmarks, and automated browser tests remain
+  open; Phase 6 is not complete.
 
 ---
 

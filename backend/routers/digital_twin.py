@@ -1,14 +1,17 @@
 """Tenant-scoped virtual device APIs for the Day 74 simulation foundation."""
-from typing import Any, Dict, List
+import math
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from backend import realtime
 from backend.database import SessionLocal, Zone
 from backend.dependencies import get_current_user, has_permission
 from backend.models.digital_twin import DigitalTwinDevice
 from backend.services import digital_twin
+from backend.services.automation_scheduler import check_safety_for_tenant
 from backend.device_adapters import (
     AdapterCommandError,
     AdapterUnavailableError,
@@ -21,6 +24,19 @@ from backend.device_adapters import (
 
 router = APIRouter(prefix="/api/v1/digital-twin", tags=["digital-twin"])
 CONTROL_COMMANDS = {"on", "off", "start", "stop", "open", "close", "enable", "disable", "reset"}
+SPATIAL_AXES = {"x", "y", "z"}
+
+
+def _validate_spatial_vector(value, field_name: str):
+    if value is None:
+        return value
+    if set(value) != SPATIAL_AXES or not all(math.isfinite(axis) for axis in value.values()):
+        raise ValueError(f"{field_name} must contain finite x, y, and z values")
+    if field_name == "position" and any(abs(axis) > 1_000_000 for axis in value.values()):
+        raise ValueError("position coordinates must be within +/- 1,000,000")
+    if field_name == "orientation" and any(abs(axis) > 36_000 for axis in value.values()):
+        raise ValueError("orientation angles must be within +/- 36,000 degrees")
+    return value
 
 
 class DeviceCreate(BaseModel):
@@ -30,10 +46,24 @@ class DeviceCreate(BaseModel):
     device_type: str
     adapter_type: str = "simulation"
     zone_id: int | None = None
-    position: Dict[str, float] = {"x": 0.0, "y": 0.0, "z": 0.0}
+    position: Dict[str, float] | None = None
+    orientation: Dict[str, float] = {"x": 0.0, "y": 0.0, "z": 0.0}
+    spatial_status: Literal["inferred", "surveyed"] = "inferred"
+    coordinate_system: str | None = None
+    length_unit: str = "m"
     state: Dict[str, Any] = {}
     control_mode: str = "automation"
     automation_policy: Dict[str, Any] = {}
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value):
+        return _validate_spatial_vector(value, "position")
+
+    @field_validator("orientation")
+    @classmethod
+    def validate_orientation(cls, value):
+        return _validate_spatial_vector(value, "orientation")
 
 
 class DeviceControl(BaseModel):
@@ -42,6 +72,7 @@ class DeviceControl(BaseModel):
 
 
 class DeviceUpdate(BaseModel):
+    expected_last_updated: datetime | None = None
     name: str | None = None
     kind: str | None = None
     device_type: str | None = None
@@ -49,10 +80,24 @@ class DeviceUpdate(BaseModel):
     status: str | None = None
     adapter_type: str | None = None
     position: Dict[str, float] | None = None
+    orientation: Dict[str, float] | None = None
+    spatial_status: Literal["inferred", "surveyed"] | None = None
+    coordinate_system: str | None = None
+    length_unit: str | None = None
     state: Dict[str, Any] | None = None
     simulation_enabled: bool | None = None
     control_mode: str | None = None
     automation_policy: Dict[str, Any] | None = None
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value):
+        return _validate_spatial_vector(value, "position")
+
+    @field_validator("orientation")
+    @classmethod
+    def validate_orientation(cls, value):
+        return _validate_spatial_vector(value, "orientation")
 
 
 def _snapshot(device: DigitalTwinDevice) -> dict:
@@ -67,12 +112,48 @@ def _snapshot(device: DigitalTwinDevice) -> dict:
         "status": device.status,
         "adapter_type": device.adapter_type,
         "position": device.position or {},
+        "position_configured": bool(device.position_configured),
+        "orientation": device.orientation or {"x": 0.0, "y": 0.0, "z": 0.0},
+        "spatial_status": device.spatial_status or "inferred",
+        "coordinate_system": device.coordinate_system,
+        "length_unit": device.length_unit or "m",
         "state": device.state or {},
         "simulation_enabled": device.simulation_enabled,
         "control_mode": device.control_mode,
         "automation_policy": device.automation_policy or {},
         "last_updated": device.last_updated.isoformat() if device.last_updated else None,
     }
+
+
+def _timestamps_match(current: datetime | None, expected: datetime | None) -> bool:
+    if current is None or expected is None:
+        return current is expected
+    current_utc = current.replace(tzinfo=timezone.utc) if current.tzinfo is None else current.astimezone(timezone.utc)
+    expected_utc = expected.replace(tzinfo=timezone.utc) if expected.tzinfo is None else expected.astimezone(timezone.utc)
+    return current_utc == expected_utc
+
+
+def _next_revision(current: datetime | None) -> datetime:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if current is not None and now <= current:
+        return current + timedelta(microseconds=1)
+    return now
+
+
+def _validate_spatial_provenance(status, position, coordinate_system, length_unit):
+    if status == "surveyed" and (
+        position is None
+        or not isinstance(coordinate_system, str)
+        or not coordinate_system.strip()
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Surveyed device geometry requires position and coordinate_system",
+        )
+    if coordinate_system is not None and not coordinate_system.strip():
+        raise HTTPException(status_code=422, detail="coordinate_system cannot be blank")
+    if length_unit is not None and not length_unit.strip():
+        raise HTTPException(status_code=422, detail="length_unit cannot be blank")
 
 
 def _tenant_id(user) -> int:
@@ -133,6 +214,17 @@ def get_device(device_id: int, current_user=Depends(get_current_user)) -> dict:
         return _snapshot(device)
 
 
+@router.get("/safety-status")
+def device_safety_status(current_user=Depends(get_current_user)) -> dict:
+    with SessionLocal() as db:
+        blocked, reason, rule_id = check_safety_for_tenant(db, _tenant_id(current_user))
+        return {
+            "blocked": blocked,
+            "reason": reason or None,
+            "rule_id": rule_id,
+        }
+
+
 @router.get("/health")
 def twin_health(current_user=Depends(get_current_user)) -> dict:
     with SessionLocal() as db:
@@ -191,6 +283,9 @@ def create_device(schema: DeviceCreate, current_user=Depends(get_current_user)) 
         raise HTTPException(status_code=422, detail="kind must be sensor, robot, or actuator")
     if schema.control_mode not in {"manual", "automation", "ai"}:
         raise HTTPException(status_code=422, detail="control_mode must be manual, automation, or ai")
+    _validate_spatial_provenance(
+        schema.spatial_status, schema.position, schema.coordinate_system, schema.length_unit,
+    )
     if schema.adapter_type not in SUPPORTED_ADAPTER_TYPES:
         raise HTTPException(
             status_code=422,
@@ -212,11 +307,14 @@ def create_device(schema: DeviceCreate, current_user=Depends(get_current_user)) 
         ).first()
         if existing:
             raise HTTPException(status_code=409, detail="device_id already exists for this tenant")
-        device_data = schema.dict()
+        device_data = schema.model_dump()
+        device_data["position"] = schema.position or {"x": 0.0, "y": 0.0, "z": 0.0}
+        device_data["position_configured"] = schema.position is not None
         device_data["simulation_enabled"] = schema.adapter_type == "simulation"
         device = DigitalTwinDevice(tenant_id=tenant_id, **device_data)
         db.add(device)
         _record_device_audit(db, current_user, "device_created", device, {"state": device.state or {}, "position": device.position or {}})
+        db.commit()
         db.refresh(device)
         return _snapshot(device)
 
@@ -242,7 +340,32 @@ def update_device(device_id: int, schema: DeviceUpdate, current_user=Depends(get
         if not device:
             raise HTTPException(status_code=404, detail="Device not found")
 
-        changes = schema.dict(exclude_unset=True)
+        changes = schema.model_dump(exclude_unset=True)
+        expected_last_updated = changes.pop("expected_last_updated", None)
+        if expected_last_updated is not None and not _timestamps_match(device.last_updated, expected_last_updated):
+            raise HTTPException(
+                status_code=409,
+                detail="Device changed since it was loaded. Refresh the scene before saving.",
+            )
+        if "position" in changes:
+            changes["position_configured"] = True
+        if (
+            changes.get("spatial_status") == "surveyed"
+            and (device.spatial_status or "inferred") != "surveyed"
+            and "position" not in changes
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Surveying an inferred device requires an explicitly supplied position",
+            )
+        _validate_spatial_provenance(
+            changes.get("spatial_status", device.spatial_status or "inferred"),
+            changes.get("position", device.position),
+            changes.get("coordinate_system", device.coordinate_system),
+            changes.get("length_unit", device.length_unit or "m"),
+        )
+        if changes.get("length_unit") is not None and not changes["length_unit"].strip():
+            raise HTTPException(status_code=422, detail="length_unit cannot be blank")
         effective_adapter = changes.get("adapter_type", device.adapter_type)
         if effective_adapter == "serial" and (
             changes.get("kind", device.kind) != "actuator"
@@ -267,10 +390,30 @@ def update_device(device_id: int, schema: DeviceUpdate, current_user=Depends(get
             )
         if "zone_id" in changes:
             _validate_zone_ownership(db, _tenant_id(current_user), changes["zone_id"])
-        for field, value in changes.items():
-            if field == "zone_id" or value is not None:
+        update_values = {
+            field: value
+            for field, value in changes.items()
+            if field == "zone_id" or value is not None
+        }
+        if expected_last_updated is not None:
+            update_values["last_updated"] = _next_revision(device.last_updated)
+            affected_rows = db.query(DigitalTwinDevice).filter(
+                DigitalTwinDevice.id == device_id,
+                DigitalTwinDevice.tenant_id == _tenant_id(current_user),
+                DigitalTwinDevice.last_updated == device.last_updated,
+            ).update(update_values, synchronize_session=False)
+            if affected_rows != 1:
+                db.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="Device changed while saving. Refresh the scene before trying again.",
+                )
+            db.refresh(device)
+        else:
+            for field, value in update_values.items():
                 setattr(device, field, value)
         _record_device_audit(db, current_user, "device_updated", device, {"changed_fields": list(changes.keys()), "changes": changes})
+        db.commit()
         db.refresh(device)
         return _snapshot(device)
 
@@ -288,6 +431,7 @@ def delete_device(device_id: int, current_user=Depends(get_current_user)) -> dic
         deleted_id = device.device_id
         db.delete(device)
         _record_device_audit(db, current_user, "device_deleted", device)
+        db.commit()
         return {"deleted": True, "device_id": deleted_id}
 
 
@@ -306,6 +450,9 @@ def control_device(device_id: int, command: DeviceControl, current_user=Depends(
             raise HTTPException(status_code=404, detail="Device not found")
         if device.status.lower() != "online":
             raise HTTPException(status_code=409, detail="Cannot control an offline device")
+        blocked, reason, _ = check_safety_for_tenant(db, _tenant_id(current_user))
+        if blocked:
+            raise HTTPException(status_code=423, detail=f"Command blocked by safety: {reason}")
 
         try:
             _, acknowledgement = dispatch_command(device, command.command.lower(), command.parameters)
@@ -334,6 +481,7 @@ def control_device(device_id: int, command: DeviceControl, current_user=Depends(
             "delivery": acknowledgement.to_payload(),
             "response": _snapshot(device),
         })
+        db.commit()
         db.refresh(device)
         return _snapshot(device)
 

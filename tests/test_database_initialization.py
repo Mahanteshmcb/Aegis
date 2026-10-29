@@ -1,11 +1,14 @@
 from pathlib import Path
+import importlib.util
 import os
 import sqlite3
 
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from backend import database
 from backend.models_db import Tenant, User
 from passlib.hash import bcrypt
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
 
@@ -76,3 +79,45 @@ def test_sqlite_backup_retains_two_consistent_snapshots(monkeypatch, tmp_path):
     assert unrelated_file.exists()
     with sqlite3.connect(created_backup) as snapshot:
         assert snapshot.execute("SELECT value FROM backup_probe").fetchone() == ("current",)
+
+
+def test_spatial_orientation_migration_is_safe_to_retry(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'spatial-migration.db'}")
+    migration_path = Path(__file__).parents[1] / "backend" / "alembic" / "versions" / "0016_spatial_orientation.py"
+    spec = importlib.util.spec_from_file_location("spatial_orientation_migration", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE zones (id INTEGER PRIMARY KEY)")
+        connection.exec_driver_sql(
+            "CREATE TABLE digital_twin_devices (id INTEGER PRIMARY KEY, adapter_type VARCHAR(24) NOT NULL)"
+        )
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+            migration.upgrade()
+
+        zone_columns = {column["name"] for column in inspect(connection).get_columns("zones")}
+        device_columns = {column["name"] for column in inspect(connection).get_columns("digital_twin_devices")}
+
+    assert "orientation" in zone_columns
+    assert {"orientation", "spatial_status", "coordinate_system", "length_unit"} <= device_columns
+    engine.dispose()
+
+
+def test_device_position_provenance_migration_is_safe_to_retry(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'device-position-migration.db'}")
+    migration_path = Path(__file__).parents[1] / "backend" / "alembic" / "versions" / "0017_device_position_provenance.py"
+    spec = importlib.util.spec_from_file_location("device_position_provenance_migration", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE digital_twin_devices (id INTEGER PRIMARY KEY)")
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+            migration.upgrade()
+        columns = {column["name"] for column in inspect(connection).get_columns("digital_twin_devices")}
+
+    assert "position_configured" in columns
+    engine.dispose()

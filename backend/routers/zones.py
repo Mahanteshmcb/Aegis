@@ -5,6 +5,7 @@ Zone management endpoints.
 
 
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,6 +46,13 @@ def _zone_query(db: Session, tenant_id: int | None = None):
     return query
 
 
+def _next_revision(current: datetime | None) -> datetime:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if current is not None and now <= current:
+        return current + timedelta(microseconds=1)
+    return now
+
+
 class ZoneCreate(BaseModel):
     """Zone creation request."""
     name: str
@@ -53,6 +61,7 @@ class ZoneCreate(BaseModel):
     tenant_id: int | None = None
     spatial_position: dict[str, float] | None = None
     dimensions: dict[str, float] | None = None
+    orientation: dict[str, float] | None = None
     spatial_status: Literal["inferred", "surveyed"] = "inferred"
     coordinate_system: str | None = None
     length_unit: str = "m"
@@ -70,9 +79,11 @@ class ZoneResponse(BaseModel):
     zone_id: str | None = None
     spatial_position: dict[str, float] | None = None
     dimensions: dict[str, float] | None = None
+    orientation: dict[str, float] | None = None
     spatial_status: str = "inferred"
     coordinate_system: str | None = None
     length_unit: str = "m"
+    updated_at: datetime | None = None
     position: list[float] | None = None
     size: list[float] | None = None
 
@@ -87,15 +98,24 @@ class ZoneResponse(BaseModel):
         return value if value is not None else "m"
 
 
-def _validate_geometry(position, dimensions, spatial_status, coordinate_system, length_unit):
+def _validate_geometry(position, dimensions, orientation, spatial_status, coordinate_system, length_unit):
     if position is not None:
         if set(position) != {"x", "y", "z"} or not all(math.isfinite(value) for value in position.values()):
             raise HTTPException(status_code=422, detail="spatial_position must contain finite x, y, and z coordinates")
+        if any(abs(value) > 1_000_000 for value in position.values()):
+            raise HTTPException(status_code=422, detail="spatial_position coordinates must be within +/- 1,000,000")
     if dimensions is not None:
         if set(dimensions) != {"width", "height", "depth"} or not all(
             math.isfinite(value) and value > 0 for value in dimensions.values()
         ):
             raise HTTPException(status_code=422, detail="dimensions must contain positive width, height, and depth")
+        if any(value > 1_000_000 for value in dimensions.values()):
+            raise HTTPException(status_code=422, detail="dimensions must be no greater than 1,000,000")
+    if orientation is not None:
+        if set(orientation) != {"x", "y", "z"} or not all(math.isfinite(value) for value in orientation.values()):
+            raise HTTPException(status_code=422, detail="orientation must contain finite x, y, and z angles in degrees")
+        if any(abs(value) > 36_000 for value in orientation.values()):
+            raise HTTPException(status_code=422, detail="orientation angles must be within +/- 36,000 degrees")
     if spatial_status == "surveyed" and (
         position is None or dimensions is None
         or not isinstance(coordinate_system, str) or not coordinate_system.strip()
@@ -118,7 +138,7 @@ async def create_zone(zone: ZoneCreate, db: Session = Depends(get_db), current_a
     if zone.tenant_id is not None and zone.tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="Cannot create zone for another tenant")
     _validate_geometry(
-        zone.spatial_position, zone.dimensions, zone.spatial_status,
+        zone.spatial_position, zone.dimensions, zone.orientation, zone.spatial_status,
         zone.coordinate_system, zone.length_unit,
     )
 
@@ -129,6 +149,7 @@ async def create_zone(zone: ZoneCreate, db: Session = Depends(get_db), current_a
         tenant_id=tenant_id,
         spatial_position=zone.spatial_position,
         dimensions=zone.dimensions,
+        orientation=zone.orientation,
         spatial_status=zone.spatial_status,
         coordinate_system=zone.coordinate_system,
         length_unit=zone.length_unit,
@@ -178,11 +199,13 @@ async def list_zones(db: Session = Depends(get_db), current_user=Depends(get_cur
 
 class ZoneUpdate(BaseModel):
     """Zone update request."""
+    expected_updated_at: datetime | None = None
     name: str | None = None
     description: str | None = None
     location: str | None = None
     spatial_position: dict[str, float] | None = None
     dimensions: dict[str, float] | None = None
+    orientation: dict[str, float] | None = None
     spatial_status: Literal["inferred", "surveyed"] | None = None
     coordinate_system: str | None = None
     length_unit: str | None = None
@@ -199,26 +222,51 @@ async def update_zone(zone_id: int, update: ZoneUpdate, db: Session = Depends(ge
     if not db_zone:
         raise HTTPException(status_code=404, detail="Zone not found or tenant mismatch")
 
-    update_data = update.dict(exclude_unset=True)
+    update_data = update.model_dump(exclude_unset=True)
+    expected_updated_at = update_data.pop("expected_updated_at", None)
+    if expected_updated_at is not None:
+        current_updated_at = db_zone.updated_at
+        current_utc = current_updated_at.replace(tzinfo=timezone.utc) if current_updated_at and current_updated_at.tzinfo is None else current_updated_at.astimezone(timezone.utc) if current_updated_at else None
+        expected_utc = expected_updated_at.replace(tzinfo=timezone.utc) if expected_updated_at.tzinfo is None else expected_updated_at.astimezone(timezone.utc)
+        if current_utc != expected_utc:
+            raise HTTPException(
+                status_code=409,
+                detail="Zone changed since it was loaded. Refresh the scene before saving.",
+            )
     if update_data.get("spatial_status", "inferred") is None or update_data.get("length_unit", "m") is None:
         raise HTTPException(status_code=422, detail="spatial_status and length_unit cannot be null")
     _validate_geometry(
         update_data.get("spatial_position", db_zone.spatial_position),
         update_data.get("dimensions", db_zone.dimensions),
+        update_data.get("orientation", db_zone.orientation),
         update_data.get("spatial_status", db_zone.spatial_status or "inferred"),
         update_data.get("coordinate_system", db_zone.coordinate_system),
         update_data.get("length_unit", db_zone.length_unit or "m"),
     )
-    for k, v in update_data.items():
-        setattr(db_zone, k, v)
-
-    db.add(db_zone)
+    if expected_updated_at is not None:
+        current_updated_at = db_zone.updated_at
+        update_data["updated_at"] = _next_revision(current_updated_at)
+        affected_rows = _zone_query(db, tenant_id).filter(
+            Zone.id == zone_id,
+            Zone.updated_at == current_updated_at,
+        ).update(update_data, synchronize_session=False)
+        if affected_rows != 1:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Zone changed while saving. Refresh the scene before trying again.",
+            )
+        db.expire(db_zone)
+        db_zone = _zone_query(db, tenant_id).filter(Zone.id == zone_id).first()
+    else:
+        for field, value in update_data.items():
+            setattr(db_zone, field, value)
+    _record_zone_audit(db, current_admin, tenant_id, "zone_updated", db_zone.id, db_zone.name, {
+        "changed_fields": [field for field in update_data if field != "updated_at"],
+        "changes": {field: value for field, value in update_data.items() if field != "updated_at"},
+    })
     db.commit()
     db.refresh(db_zone)
-    _record_zone_audit(db, current_admin, tenant_id, "zone_updated", db_zone.id, db_zone.name, {
-        "changed_fields": list(update_data.keys()),
-        "changes": update_data,
-    })
     return db_zone
 
 

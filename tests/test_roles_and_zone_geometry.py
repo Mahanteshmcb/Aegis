@@ -60,12 +60,36 @@ def test_custom_permissions_gate_zone_writes_and_persist_survey_geometry(client)
                 "spatial_status": "surveyed",
                 "coordinate_system": "estate-local-y-up",
                 "length_unit": "m",
+                "orientation": {"x": 0, "y": 45, "z": 0},
             },
         )
         assert response.status_code == 200
         assert response.json()["spatial_status"] == "surveyed"
         assert response.json()["position"] == [12.5, 0, -7]
         assert response.json()["size"] == [18, 4, 12]
+        assert response.json()["orientation"] == {"x": 0, "y": 45, "z": 0}
+        original_updated_at = response.json()["updated_at"]
+
+        updated = client.put(
+            f"/api/v1/zones/{response.json()['id']}",
+            headers={"Authorization": "******"},
+            json={
+                "expected_updated_at": original_updated_at,
+                "orientation": {"x": 0, "y": 90, "z": 0},
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["orientation"] == {"x": 0, "y": 90, "z": 0}
+        assert updated.json()["updated_at"] != original_updated_at
+        stale = client.put(
+            f"/api/v1/zones/{response.json()['id']}",
+            headers={"Authorization": "******"},
+            json={
+                "expected_updated_at": original_updated_at,
+                "orientation": {"x": 0, "y": 180, "z": 0},
+            },
+        )
+        assert stale.status_code == 409
 
         app.dependency_overrides[current_user_dependency] = lambda: {
             "id": 6,

@@ -341,6 +341,7 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 - **Entry Point:** `contracts/AegisAudit.sol`
 - **Dependencies:** `blockchain/package.json`
 - **Blockchain and backend startup (Windows):**
+
   ```powershell
   .\start_blockchain.bat
   ```
@@ -354,15 +355,18 @@ Aegis is a decentralized digital twin framework for sovereign asset management, 
 - **Start the complete local demo:** run `.\start_aegis.bat` from the
   repository root. See the one-command startup notes above.
 - **Manual development node:**
+
   ```powershell
   Set-Location .\blockchain
   npm run node
   ```
 - **Expected Output:**
+
   ```text
   Started HTTP and WebSocket JSON-RPC server at http://127.0.0.1:8545/
   ```
 - **Run Tests:**
+
   ```sh
   npx hardhat test
   ```

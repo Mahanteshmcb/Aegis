@@ -99,18 +99,18 @@ popd
 
 echo.
 echo Checking Aegis backend on port 8001...
+echo Applying pending backend database migrations...
+"%AEGIS_PYTHON%" -m alembic -c "%ROOT%backend\alembic.ini" upgrade head
+if errorlevel 1 (
+    echo ERROR: Database migrations failed. Backend startup cannot continue.
+    exit /b 1
+)
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort 8001 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if errorlevel 1 (
-    echo Applying pending backend database migrations...
-    "%AEGIS_PYTHON%" -m alembic -c "%ROOT%backend\alembic.ini" upgrade head
-    if errorlevel 1 (
-        echo ERROR: Database migrations failed. Backend was not started.
-        exit /b 1
-    )
     echo Starting Aegis backend in a new window...
     start "Aegis Backend" cmd /k "cd /d ""%ROOT%"" && ""%AEGIS_PYTHON%"" -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001"
 ) else (
-    echo Aegis backend is already running.
+    echo Aegis backend is already running; pending migrations were applied.
 )
 
 echo.

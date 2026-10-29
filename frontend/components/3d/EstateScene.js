@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, Suspense, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Text, useGLTF } from '@react-three/drei';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Billboard, GizmoHelper, GizmoViewport, OrbitControls, Text, TransformControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { Box3, Vector3 } from 'three';
 
@@ -30,6 +30,7 @@ const normalizeBuildingSize = (value) => normalizeVector3(value, [6, 2, 6]).map(
 
 const normalizeEntityPosition = (value) => normalizeVector3(value, [0, 0, 0]);
 const normalizeEntitySize = (value) => normalizeVector3(value, [1, 1, 1]);
+const toDegrees = (radians) => radians * (180 / Math.PI);
 
 const normalizeDisplayEntities = (items, fallbackSize) => {
   const seen = new Set();
@@ -60,8 +61,60 @@ function AssetModel({ url, scale, rotation = [0, 0, 0] }) {
   return <primitive object={model} scale={scale} rotation={rotation} dispose={null} />;
 }
 
+function SceneTransform({ entity, selected, canTransform, transformMode, gridSnap, onCommit, children }) {
+  const objectRef = useRef(null);
+  const changedRef = useRef(false);
+  const enabled = canTransform && selected && transformMode !== 'select'
+    && (transformMode !== 'scale' || entity.type === 'zone');
+
+  const commitTransform = () => {
+    if (!changedRef.current || !objectRef.current) return;
+    changedRef.current = false;
+    const object = objectRef.current;
+    onCommit?.(entity, {
+      position: {
+        x: object.position.x,
+        y: object.position.y,
+        z: object.position.z,
+      },
+      orientation: {
+        x: toDegrees(object.rotation.x),
+        y: toDegrees(object.rotation.y),
+        z: toDegrees(object.rotation.z),
+      },
+      ...(entity.type === 'zone' && transformMode === 'scale' ? {
+        dimensions: {
+          width: (entity.size?.[0] || 1) * object.scale.x,
+          height: (entity.size?.[1] || 1) * object.scale.y,
+          depth: (entity.size?.[2] || 1) * object.scale.z,
+        },
+      } : {}),
+    });
+  };
+
+  const object = (
+    <group ref={objectRef} position={normalizeEntityPosition(entity.position)} rotation={normalizeEntityPosition(entity.rotation)}>
+      {children}
+    </group>
+  );
+
+  if (!enabled) return object;
+  return (
+    <TransformControls
+      mode={transformMode}
+      space="world"
+      translationSnap={gridSnap}
+      rotationSnap={transformMode === 'rotate' ? Math.PI / 12 : undefined}
+      onObjectChange={() => { changedRef.current = true; }}
+      onMouseUp={commitTransform}
+    >
+      {object}
+    </TransformControls>
+  );
+}
+
 // Building Structure Component
-function Building({ position, size, color, name, spatialStatus, lengthUnit, selected, onClick }) {
+function Building({ position, size, color, name, spatialStatus, lengthUnit, selected, onClick, showLabels, showAllLabels }) {
   const [hovered, setHovered] = useState(false);
   const safePosition = normalizeEntityPosition(position);
   const safeSize = normalizeBuildingSize(size);
@@ -91,15 +144,19 @@ function Building({ position, size, color, name, spatialStatus, lengthUnit, sele
         <boxGeometry args={wall.size} />
         <meshStandardMaterial color={wallColor} transparent opacity={selected ? 0.28 : hovered ? 0.2 : 0.1} roughness={0.72} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>)}
-      <Text position={[0, 0.35, -safeSize[2] * 0.34]} fontSize={Math.min(Math.max(safeSize[0] * 0.055, 1.4), 3.5)} color="#e2f3e9" anchorX="center" anchorY="middle" outlineWidth={0.035} outlineColor="#102019">
-        {`${name || 'Estate zone'} · ${spatialStatus === 'surveyed' ? 'SURVEYED' : 'INFERRED'} · ${lengthUnit || 'm'}`}
-      </Text>
+      {showLabels && (showAllLabels || selected) && (
+        <Billboard position={[0, wallHeight + 0.7, safeSize[2] / 2 + 1]}>
+          <Text fontSize={selected ? 1.25 : 0.8} color="#f0fdf4" anchorX="center" anchorY="middle" textAlign="center" outlineWidth={0.06} outlineColor="#020617" depthOffset={-10}>
+            {`${name || 'Estate zone'}\n${spatialStatus === 'surveyed' ? 'SURVEYED' : 'INFERRED'} · ${lengthUnit || 'm'}`}
+          </Text>
+        </Billboard>
+      )}
     </group>
   );
 }
 
 // Robot Component
-function Robot({ position, status, state = {}, selected, onClick }) {
+function Robot({ position, rotation = [0, 0, 0], status, state = {}, name, selected, onClick }) {
   const groupRef = useRef();
   const armRef = useRef();
   const robotTime = useRef(0);
@@ -111,7 +168,7 @@ function Robot({ position, status, state = {}, selected, onClick }) {
     robotTime.current += delta;
     if (groupRef.current) {
       groupRef.current.position.set(...safePosition);
-      groupRef.current.rotation.z = 0;
+      groupRef.current.rotation.set(...rotation);
     }
     if (armRef.current) {
       armRef.current.rotation.z = moving ? Math.sin(robotTime.current * 3.2) * 0.18 : 0;
@@ -119,11 +176,13 @@ function Robot({ position, status, state = {}, selected, onClick }) {
     }
   });
 
-  const statusColor = status === 'offline' ? '#64748b'
-    : status === 'critical' || status === 'error' ? '#ef4444'
-      : status === 'warning' ? '#f59e0b'
-        : status === 'charging' ? '#FF9500'
-          : '#34C759';
+  const normalizedStatus = String(status || '').toLowerCase();
+  const statusColor = ['offline', 'disconnected'].includes(normalizedStatus) ? '#64748b'
+    : ['critical', 'error'].includes(normalizedStatus) ? '#ef4444'
+      : normalizedStatus === 'warning' ? '#f59e0b'
+        : normalizedStatus === 'charging' ? '#FF9500'
+          : ['online', 'active', 'normal', 'idle', 'secure'].includes(normalizedStatus) ? '#34C759'
+            : '#a78bfa';
 
   return (
     <group ref={groupRef} position={safePosition} onClick={onClick} onPointerDown={onClick}>
@@ -173,12 +232,13 @@ function Robot({ position, status, state = {}, selected, onClick }) {
         <sphereGeometry args={[0.09, 16, 16]} />
         <meshBasicMaterial color={statusColor} transparent opacity={0.95} />
       </mesh>
+      {selected && <Billboard position={[0, 1.15, 0]}><Text fontSize={0.3} color="#e2e8f0" anchorX="center" anchorY="bottom" outlineWidth={0.025} outlineColor="#020617">{name || 'Robot'}</Text></Billboard>}
     </group>
   );
 }
 
 // Sensor Node Component
-function SensorNode({ position, type, value, unit, readingStatus, name, selected, onClick }) {
+function SensorNode({ position, rotation = [0, 0, 0], type, value, unit, readingStatus, name, selected, onClick, showLabels, showTelemetry }) {
   const meshRef = useRef();
   const ringRef = useRef();
   const sensorTime = useRef(0);
@@ -208,7 +268,7 @@ function SensorNode({ position, type, value, unit, readingStatus, name, selected
   const attention = readingStatus === 'warning' || readingStatus === 'critical';
 
   return (
-    <group position={safePosition} onClick={onClick} onPointerDown={onClick}>
+    <group position={safePosition} rotation={rotation} onClick={onClick} onPointerDown={onClick}>
       {selected && (
         <mesh ref={ringRef} scale={[1.5, 1.5, 1.5]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[0.32, 0.045, 16, 100]} />
@@ -229,12 +289,35 @@ function SensorNode({ position, type, value, unit, readingStatus, name, selected
         <sphereGeometry args={[0.06, 16, 16]} />
         <meshBasicMaterial color={color} transparent opacity={0.9} />
       </mesh>
-      {(selected || attention) && (
-        <Text position={[0, 0.95, 0]} fontSize={0.3} color={readingStatus === 'critical' ? '#fecaca' : readingStatus === 'warning' ? '#fde68a' : '#e2e8f0'} anchorX="center" anchorY="bottom" outlineWidth={0.025} outlineColor="#020617">
-          {`${name || type}: ${value ?? 'No reading'}${value !== undefined && value !== null && unit ? ` ${unit}` : ''}${attention ? ` · ${readingStatus.toUpperCase()}` : ''}`}
-        </Text>
+      {showLabels && selected && <Billboard position={[0, 0.95, 0]}><Text fontSize={0.3} color="#e2e8f0" anchorX="center" anchorY="bottom" outlineWidth={0.025} outlineColor="#020617">{name || type}</Text></Billboard>}
+      {showTelemetry && value !== undefined && value !== null && (
+        <Billboard position={[0, attention ? 1.58 : 1.28, 0]}>
+          <Text fontSize={0.24} color="#bfdbfe" anchorX="center" anchorY="bottom" outlineWidth={0.025} outlineColor="#020617">
+            {`${name || type}: ${value}${unit ? ` ${unit}` : ''}`}
+          </Text>
+        </Billboard>
       )}
     </group>
+  );
+}
+
+function AssetConditionLabel({ status, lastUpdated, selected }) {
+  const normalized = String(status || '').toLowerCase();
+  const parsedTimestamp = lastUpdated ? new Date(lastUpdated).getTime() : NaN;
+  const hasTimestamp = Number.isFinite(parsedTimestamp);
+  const stale = hasTimestamp && Date.now() - parsedTimestamp >= 5 * 60 * 1000;
+  const alertLabel = ['critical', 'warning', 'offline', 'error'].includes(normalized)
+    ? normalized === 'error' ? 'OFFLINE' : normalized.toUpperCase()
+    : null;
+  const freshnessLabel = !hasTimestamp ? 'FRESHNESS UNKNOWN' : stale ? 'STALE' : null;
+  const label = alertLabel || (selected ? freshnessLabel || (normalized === 'unknown' ? 'UNKNOWN' : null) : null);
+  if (!label) return null;
+  return (
+    <Billboard position={[0, 1.65, 0]}>
+      <Text fontSize={0.18} color={normalized === 'critical' || normalized === 'error' ? '#fecaca' : stale || normalized === 'warning' ? '#fde68a' : '#ddd6fe'} anchorX="center" anchorY="bottom" outlineWidth={0.02} outlineColor="#020617">
+        {label}
+      </Text>
+    </Billboard>
   );
 }
 
@@ -318,10 +401,11 @@ function DeviceStatusRing({ position, status, color, selected }) {
     offline: '#64748b',
     error: '#ef4444',
     secure: '#a78bfa',
+    unknown: '#a78bfa',
     default: '#a5f3fc',
   };
 
-  const ringColor = statusMap[status] || color || '#a5f3fc';
+  const ringColor = statusMap[String(status || '').toLowerCase()] || statusMap.unknown;
 
   return (
     <group position={safePosition}>
@@ -337,12 +421,12 @@ function DeviceStatusRing({ position, status, color, selected }) {
   );
 }
 
-function ActuatorNode({ position, status, output, selected, onClick }) {
+function ActuatorNode({ position, rotation = [0, 0, 0], status, output, name, selected, showLabels, onClick }) {
   const safePosition = normalizeEntityPosition(position);
   const active = output === 'active' || status === 'active';
   const color = active ? '#fbbf24' : '#64748b';
   return (
-    <group position={safePosition} onClick={onClick} onPointerDown={onClick}>
+    <group position={safePosition} rotation={rotation} onClick={onClick} onPointerDown={onClick}>
       <mesh position={[0, 0.45, 0]} castShadow>
         <cylinderGeometry args={[0.38, 0.48, 0.9, 16]} />
         <meshStandardMaterial color={active ? '#f59e0b' : '#334155'} emissive={color} emissiveIntensity={active ? 0.55 : 0.12} metalness={0.55} roughness={0.3} />
@@ -355,26 +439,8 @@ function ActuatorNode({ position, status, output, selected, onClick }) {
         <torusGeometry args={[0.7, 0.07, 16, 64]} />
         <meshBasicMaterial color="#fef08a" transparent opacity={0.85} />
       </mesh>}
+      {showLabels && selected && <Billboard position={[0, 1.15, 0]}><Text fontSize={0.3} color="#e2e8f0" anchorX="center" anchorY="bottom" outlineWidth={0.025} outlineColor="#020617">{name || 'Actuator'}</Text></Billboard>}
     </group>
-  );
-}
-
-function IndustrialControlPanel({ robots, sensors, actuators, zones }) {
-  const devices = [...robots, ...sensors, ...actuators];
-  const unavailable = devices.filter((device) => ['offline', 'error', 'unknown'].includes(String(device.status || '').toLowerCase())).length;
-  return (
-    <div className="pointer-events-auto w-full rounded-2xl border border-cyan-400/25 bg-slate-950/80 p-3 text-[11px] font-mono text-cyan-100 shadow-[0_0_25px_rgba(34,211,238,0.12)] backdrop-blur-md">
-      <div className="mb-2 flex items-center justify-between border-b border-cyan-500/20 pb-2">
-        <span className="tracking-[0.28em] text-cyan-300 uppercase">Scene Inventory</span>
-        <span className={`text-[10px] ${unavailable ? 'text-amber-300' : 'text-emerald-300'}`}>{unavailable ? `${unavailable} unavailable` : 'No reported faults'}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-slate-300">
-        <span>Robots</span><span className="text-right">{robots.length}</span>
-        <span>Sensors</span><span className="text-right">{sensors.length}</span>
-        <span>Actuators</span><span className="text-right">{actuators.length}</span>
-        <span>Zones</span><span className="text-right">{zones.length}</span>
-      </div>
-    </div>
   );
 }
 
@@ -397,9 +463,50 @@ function SceneDynamics({ lightIntensity = 1, estateSpan = 100 }) {
         shadow-camera-top={estateSpan * 0.8}
         shadow-camera-bottom={-estateSpan * 0.8}
       />
+      <GizmoHelper alignment="bottom-left" margin={[72, 72]}>
+        <GizmoViewport axisColors={['#ef4444', '#22c55e', '#3b82f6']} labelColor="#f8fafc" />
+      </GizmoHelper>
       <directionalLight position={[estateSpan * 0.5, estateSpan * 0.3, -estateSpan * 0.5]} intensity={0.18 * lightIntensity} color="#c9d9e8" />
     </>
   );
+}
+
+function SceneCameraController({ preset, target, radius, focusTarget, focusRadius, zoomLevel, controlsRef, revision }) {
+  const { camera, size } = useThree();
+  const activeTarget = focusTarget || target;
+  const targetX = activeTarget[0];
+  const targetY = activeTarget[1];
+  const targetZ = activeTarget[2];
+  const activeRadius = focusTarget ? focusRadius : radius;
+
+  useEffect(() => {
+    const aspect = Math.max(size.width / Math.max(size.height, 1), 0.1);
+    const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
+    const limitingFov = Math.min(verticalFov, horizontalFov);
+    const distance = Math.max(activeRadius, 1) / Math.sin(limitingFov / 2) * 1.05 * zoomLevel;
+    const positions = {
+      home: [1, 0.78, 1],
+      top: [0, 1, 0.001],
+      front: [0, 0.3, 1],
+      side: [1, 0.3, 0],
+      isometric: [1, 0.62, 1],
+    };
+    const direction = new Vector3(...(positions[preset] || positions.home)).normalize();
+    camera.position.set(targetX, targetY, targetZ).addScaledVector(direction, distance);
+    camera.near = Math.max(0.01, distance / 1000);
+    camera.far = Math.max(1000, distance * 12);
+    camera.updateProjectionMatrix();
+    camera.lookAt(targetX, targetY, targetZ);
+    if (controlsRef.current) {
+      controlsRef.current.target.set(targetX, targetY, targetZ);
+      controlsRef.current.minDistance = Math.max(0.5, activeRadius * 0.025);
+      controlsRef.current.maxDistance = Math.max(distance * 8, activeRadius * 8);
+      controlsRef.current.update();
+    }
+  }, [activeRadius, camera, controlsRef, preset, size.height, size.width, targetX, targetY, targetZ, zoomLevel, revision]);
+
+  return null;
 }
 
 // Main Estate Scene Component
@@ -411,10 +518,29 @@ export const EstateScene = ({
   selectedEntity = null, 
   onEntitySelect = () => {},
   viewMode = 'realworld',
+  cameraPreset = 'home',
+  interactionMode = 'orbit',
+  transformMode = 'select',
+  gridSnap = 1,
+  canTransform = false,
+  onTransformCommit = () => {},
+  pendingTransforms = {},
+  placementMode = false,
+  placementKind = 'sensor',
+  placementPosition = null,
+  placementSize = [10, 4, 10],
+  onViewportPlace = () => {},
+  zoomLevel = 1,
+  layers = {},
+  labelDensity = 'selected',
   lightIntensity = 1,
   autoRotate = false,
+  cameraRevision = 0,
+  focusTarget = null,
+  focusRadius = 4,
 }) => {
   const [isClient, setIsClient] = useState(false);
+  const controlsRef = useRef(null);
 
   useEffect(() => {
     setIsClient(true);
@@ -428,41 +554,95 @@ export const EstateScene = ({
     );
   }
 
-  const displayZones = normalizeDisplayEntities(zones, 'zone');
-  const displayRobots = normalizeDisplayEntities(robots, 'robot');
-  const displaySensors = normalizeDisplayEntities(sensors, 'sensor');
-  const displayActuators = normalizeDisplayEntities(actuators, 'actuator');
+  const applyTransformDraft = (entity, fallbackType) => {
+    const type = entity.type || fallbackType;
+    const draft = pendingTransforms[`${type}:${entity.id}`];
+    if (!draft) return { ...entity, type };
+    const orientation = draft.orientation || entity.orientation;
+    return {
+      ...entity,
+      type,
+      position: draft.position || entity.position,
+      orientation,
+      rotation: orientation
+        ? ['x', 'y', 'z'].map((axis) => (finiteNumber(orientation[axis], 0) * Math.PI) / 180)
+        : entity.rotation,
+      ...(draft.dimensions ? {
+        dimensions: draft.dimensions,
+        size: [draft.dimensions.width, draft.dimensions.height, draft.dimensions.depth],
+      } : {}),
+    };
+  };
+  const handleEntityClick = (event, entity) => {
+    if (placementMode) {
+      event.stopPropagation();
+      return;
+    }
+    onEntitySelect(entity);
+  };
+  const displayZones = normalizeDisplayEntities(zones.map((zone) => applyTransformDraft(zone, 'zone')), 'zone');
+  const displayRobots = normalizeDisplayEntities(robots.map((robot) => applyTransformDraft(robot, 'robot')), 'robot');
+  const displaySensors = normalizeDisplayEntities(sensors.map((sensor) => applyTransformDraft(sensor, 'sensor')), 'sensor');
+  const displayActuators = normalizeDisplayEntities(actuators.map((actuator) => applyTransformDraft(actuator, 'actuator')), 'actuator');
   const attentionCount = displaySensors.filter((sensor) => ['warning', 'critical'].includes(String(sensor.state?.reading_status || '').toLowerCase())).length;
   const inferredCount = displayZones.filter((zone) => zone.spatial_status !== 'surveyed').length;
   const hasData = displayZones.length + displayRobots.length + displaySensors.length + displayActuators.length > 0;
-  const zoneBounds = displayZones.map((zone) => {
+  const worldAssets = [...displayRobots, ...displaySensors, ...displayActuators];
+  const hasSceneObjects = displayZones.length + worldAssets.length > 0;
+  const bounds = {
+    minX: hasSceneObjects ? Infinity : -40,
+    maxX: hasSceneObjects ? -Infinity : 40,
+    minY: 0,
+    maxY: hasSceneObjects ? 0 : 6,
+    minZ: hasSceneObjects ? Infinity : -40,
+    maxZ: hasSceneObjects ? -Infinity : 40,
+  };
+  displayZones.forEach((zone) => {
     const position = normalizeEntityPosition(zone.position);
     const size = normalizeBuildingSize(zone.size);
-    return {
-      minX: position[0] - size[0] / 2,
-      maxX: position[0] + size[0] / 2,
-      minZ: position[2] - size[2] / 2,
-      maxZ: position[2] + size[2] / 2,
-    };
+    bounds.minX = Math.min(bounds.minX, position[0] - size[0] / 2);
+    bounds.maxX = Math.max(bounds.maxX, position[0] + size[0] / 2);
+    bounds.minY = Math.min(bounds.minY, position[1]);
+    bounds.maxY = Math.max(bounds.maxY, position[1] + Math.min(Math.max(size[1], 3), 6) + 1.6);
+    bounds.minZ = Math.min(bounds.minZ, position[2] - size[2] / 2);
+    bounds.maxZ = Math.max(bounds.maxZ, position[2] + size[2] / 2);
   });
-  const minX = zoneBounds.length ? Math.min(...zoneBounds.map((bounds) => bounds.minX)) : -40;
-  const maxX = zoneBounds.length ? Math.max(...zoneBounds.map((bounds) => bounds.maxX)) : 40;
-  const minZ = zoneBounds.length ? Math.min(...zoneBounds.map((bounds) => bounds.minZ)) : -40;
-  const maxZ = zoneBounds.length ? Math.max(...zoneBounds.map((bounds) => bounds.maxZ)) : 40;
+  worldAssets.forEach((asset) => {
+    const position = normalizeEntityPosition(asset.position);
+    bounds.minX = Math.min(bounds.minX, position[0] - 1.5);
+    bounds.maxX = Math.max(bounds.maxX, position[0] + 1.5);
+    bounds.minY = Math.min(bounds.minY, position[1]);
+    bounds.maxY = Math.max(bounds.maxY, position[1] + 3);
+    bounds.minZ = Math.min(bounds.minZ, position[2] - 1.5);
+    bounds.maxZ = Math.max(bounds.maxZ, position[2] + 1.5);
+  });
+  const { minX, maxX, minY, maxY, minZ, maxZ } = bounds;
   const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
   const centerZ = (minZ + maxZ) / 2;
-  const estateSpan = Math.max(maxX - minX, maxZ - minZ, 80);
-  const cameraDistance = estateSpan * 1.15;
-  const cameraPosition = viewMode === 'drone'
-    ? [centerX + cameraDistance * 0.08, cameraDistance * 1.3, centerZ + cameraDistance * 0.14]
-    : [centerX + cameraDistance, cameraDistance * 0.8, centerZ + cameraDistance];
+  const estateSpan = Math.max(maxX - minX, maxZ - minZ, 20);
+  const sceneRadius = Math.max(Math.hypot((maxX - minX) / 2, (maxY - minY) / 2, (maxZ - minZ) / 2), 8);
+  const cameraDistance = sceneRadius * 3 * zoomLevel;
+  const cameraPosition = [centerX + cameraDistance, centerY + cameraDistance * 0.78, centerZ + cameraDistance];
   const groundSize = Math.max(estateSpan * 1.2, 160);
+  const sceneLayers = {
+    zones: layers.zones !== false,
+    labels: layers.labels !== false,
+    robots: layers.robots !== false,
+    sensors: layers.sensors !== false,
+    actuators: layers.actuators !== false,
+    connections: layers.connections === true,
+    grid: layers.grid !== false,
+    alerts: layers.alerts !== false,
+    telemetry: layers.telemetry === true,
+  };
+  const sceneTarget = [centerX, centerY, centerZ];
 
   return (
     <div className="flex h-full w-full flex-col gap-4">
       <div className="aegis-canvas-shell relative min-h-120 flex-1 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/95 shadow-[0_0_30px_rgba(34,211,238,0.14)]" style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 0 35px rgba(34,211,238,0.12)' }}>
         <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-full border border-cyan-500/30 bg-slate-950/65 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.1)] backdrop-blur-sm">
-          LIVE TWIN
+          3D DIGITAL TWIN
         </div>
 
         <div className="pointer-events-none absolute left-4 top-12 z-10 flex flex-wrap gap-2 font-mono text-[10px]">
@@ -486,6 +666,7 @@ export const EstateScene = ({
         <Canvas
           style={{ width: '100%', height: '100%' }}
           camera={{ position: cameraPosition, fov: 55 }}
+          fallback={<div role="status" className="flex h-full w-full items-center justify-center bg-slate-950 p-6 text-center text-sm text-amber-200">This device or browser does not support WebGL. Open the scene in a browser with hardware-accelerated graphics enabled.</div>}
           shadows
           dpr={[1, 1.25]}
           gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
@@ -501,10 +682,23 @@ export const EstateScene = ({
           <ambientLight intensity={0.35 * lightIntensity} />
           <SceneDynamics lightIntensity={lightIntensity} estateSpan={estateSpan} />
 
+          <SceneCameraController
+            preset={cameraPreset}
+            target={sceneTarget}
+            radius={sceneRadius}
+            focusTarget={focusTarget}
+            focusRadius={focusRadius}
+            zoomLevel={zoomLevel}
+            revision={cameraRevision}
+            controlsRef={controlsRef}
+          />
           <OrbitControls
-            enablePan={true}
+            ref={controlsRef}
+            makeDefault
+            enabled={!placementMode}
+            enablePan={interactionMode === 'pan' || interactionMode === 'orbit'}
             enableZoom={true}
-            enableRotate={true}
+            enableRotate={interactionMode === 'orbit'}
             enableDamping={true}
             autoRotate={autoRotate}
             autoRotateSpeed={1}
@@ -513,14 +707,21 @@ export const EstateScene = ({
             rotateSpeed={0.45}
             panSpeed={0.65}
             screenSpacePanning={true}
-            target={[centerX, 0, centerZ]}
-            maxDistance={estateSpan * 1.8}
-            minDistance={6}
+            target={sceneTarget}
           />
 
-            <fog attach="fog" args={[0x9fc4d7, estateSpan * 3, estateSpan * 7]} />
+          <fog attach="fog" args={[0x9fc4d7, estateSpan * 3, estateSpan * 7]} />
 
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[centerX, -0.02, centerZ]}
+            receiveShadow
+            onClick={(event) => {
+              if (!placementMode) return;
+              event.stopPropagation();
+              onViewportPlace({ x: event.point.x, z: event.point.z });
+            }}
+          >
             <planeGeometry args={[groundSize, groundSize]} />
             <meshStandardMaterial
                 color={viewMode === 'wireframe' ? '#333333' : '#58744c'}
@@ -529,87 +730,128 @@ export const EstateScene = ({
               wireframe={viewMode === 'wireframe'}
             />
           </mesh>
-          {viewMode !== 'wireframe' && (
+          {sceneLayers.grid && viewMode !== 'wireframe' && (
             <gridHelper
               args={[groundSize, Math.max(8, Math.ceil(groundSize / 20)), '#536d4d', '#70885b']}
-              position={[0, 0.01, 0]}
+              position={[centerX, 0.01, centerZ]}
             />
           )}
+          {placementPosition && (
+            <mesh
+              position={[placementPosition.x, placementPosition.y, placementPosition.z]}
+              raycast={() => null}
+            >
+              <boxGeometry args={placementKind === 'zone' ? normalizeBuildingSize(placementSize) : [1.2, 1.2, 1.2]} />
+              <meshBasicMaterial color="#22d3ee" wireframe transparent opacity={0.9} />
+            </mesh>
+          )}
 
-          {displayZones.map((zone) => {
+          {sceneLayers.zones && displayZones.map((zone) => {
             const safeZonePosition = normalizeEntityPosition(zone.position);
+            const selected = selectedEntity?.type === 'zone' && selectedEntity.id === zone.id;
             return (
-              <CoverageZone
+              <SceneTransform
                 key={zone.id}
-                zone={{ ...zone, position: safeZonePosition }}
-                selected={selectedEntity?.type === 'zone' && selectedEntity.id === zone.id}
-                onClick={() => onEntitySelect({ type: 'zone', id: zone.id, ...zone })}
-              />
+                entity={{ ...zone, type: 'zone' }}
+                selected={selected}
+                canTransform={canTransform}
+                transformMode={transformMode}
+                gridSnap={gridSnap}
+                onCommit={onTransformCommit}
+              >
+                <CoverageZone
+                  zone={{ ...zone, position: [0, 0, 0] }}
+                  selected={selected}
+                  onClick={(event) => handleEntityClick(event, { type: 'zone', id: zone.id, ...zone })}
+                />
+                <Building
+                  position={[0, 0, 0]}
+                  size={zone.size}
+                  color={zone.color}
+                  name={zone.name}
+                  spatialStatus={zone.spatial_status}
+                  lengthUnit={zone.length_unit}
+                  showLabels={sceneLayers.labels}
+                  showAllLabels={labelDensity === 'all'}
+                  selected={selected}
+                  onClick={(event) => handleEntityClick(event, { type: 'zone', id: zone.id, ...zone })}
+                />
+              </SceneTransform>
             );
           })}
 
-          {displayZones.map((zone) => {
-            const safeZonePosition = normalizeEntityPosition(zone.position);
-            return (
-              <Building
-                key={`${zone.id}-building`}
-                position={safeZonePosition}
-                size={zone.size}
-                color={zone.color}
-                name={zone.name}
-                spatialStatus={zone.spatial_status}
-                lengthUnit={zone.length_unit}
-                selected={selectedEntity?.type === 'zone' && selectedEntity.id === zone.id}
-                onClick={() => onEntitySelect({ type: 'zone', id: zone.id, ...zone })}
-              />
-            );
-          })}
+          {sceneLayers.connections && <ConnectionLines robots={displayRobots} sensors={displaySensors} />}
 
-          <ConnectionLines robots={displayRobots} sensors={displaySensors} />
-
-          {displayRobots.map((robot) => {
-            const safeRobotPosition = normalizeEntityPosition(robot.position);
+          {sceneLayers.robots && displayRobots.map((robot) => {
             return (
-              <group key={robot.id}>
-                <DeviceStatusRing position={safeRobotPosition} status={robot.status} color="#34d399" selected={selectedEntity?.type === 'robot' && selectedEntity.id === robot.id} />
+              <SceneTransform
+                key={robot.id}
+                entity={{ ...robot, type: 'robot' }}
+                selected={selectedEntity?.type === 'robot' && selectedEntity.id === robot.id}
+                canTransform={canTransform}
+                transformMode={transformMode}
+                gridSnap={gridSnap}
+                onCommit={onTransformCommit}
+              >
+                {sceneLayers.alerts && <AssetConditionLabel status={robot.status} lastUpdated={robot.last_updated} selected={selectedEntity?.type === 'robot' && selectedEntity.id === robot.id} />}
+                {sceneLayers.alerts && <DeviceStatusRing position={[0, 0, 0]} status={robot.status} color="#34d399" selected={selectedEntity?.type === 'robot' && selectedEntity.id === robot.id} />}
                 <Robot
-                  position={safeRobotPosition}
+                  position={[0, 0, 0]}
                   id={robot.id}
                   status={robot.status}
                   state={robot.state}
+                  name={robot.name}
                   selected={selectedEntity?.type === 'robot' && selectedEntity.id === robot.id}
-                  onClick={() => onEntitySelect({ type: 'robot', id: robot.id, ...robot })}
+                  onClick={(event) => handleEntityClick(event, { type: 'robot', id: robot.id, ...robot })}
                 />
-              </group>
+              </SceneTransform>
             );
           })}
 
-          {displaySensors.map((sensor) => {
-            const safeSensorPosition = normalizeEntityPosition(sensor.position);
+          {sceneLayers.sensors && displaySensors.map((sensor) => {
             return (
-              <group key={sensor.id}>
-                <DeviceStatusRing position={safeSensorPosition} status={sensor.state?.reading_status || sensor.status || 'active'} color="#60a5fa" selected={selectedEntity?.type === 'sensor' && selectedEntity.id === sensor.id} />
+              <SceneTransform
+                key={sensor.id}
+                entity={{ ...sensor, type: 'sensor' }}
+                selected={selectedEntity?.type === 'sensor' && selectedEntity.id === sensor.id}
+                canTransform={canTransform}
+                transformMode={transformMode}
+                gridSnap={gridSnap}
+                onCommit={onTransformCommit}
+              >
+                {sceneLayers.alerts && <AssetConditionLabel status={sensor.state?.reading_status || sensor.status} lastUpdated={sensor.last_updated} selected={selectedEntity?.type === 'sensor' && selectedEntity.id === sensor.id} />}
+                {sceneLayers.alerts && <DeviceStatusRing position={[0, 0, 0]} status={sensor.state?.reading_status || sensor.status || 'active'} color="#60a5fa" selected={selectedEntity?.type === 'sensor' && selectedEntity.id === sensor.id} />}
                   <SensorNode
-                    position={safeSensorPosition}
+                    position={[0, 0, 0]}
                     type={sensor.sensor_type || sensor.type || 'temperature'}
-                    value={sensor.value}
+                    value={sensor.state?.value ?? sensor.value}
                     unit={sensor.state?.unit}
                     readingStatus={sensor.state?.reading_status}
                     name={sensor.name}
+                    showLabels={sceneLayers.labels}
+                    showTelemetry={sceneLayers.telemetry}
                     selected={selectedEntity?.type === 'sensor' && selectedEntity.id === sensor.id}
-                    onClick={() => onEntitySelect({ type: 'sensor', id: sensor.id, ...sensor })}
+                    onClick={(event) => handleEntityClick(event, { type: 'sensor', id: sensor.id, ...sensor })}
                   />
-              </group>
+              </SceneTransform>
             );
           })}
 
-          {displayActuators.map((actuator) => {
-            const safeActuatorPosition = normalizeEntityPosition(actuator.position);
+          {sceneLayers.actuators && displayActuators.map((actuator) => {
             return (
-              <group key={actuator.id}>
-                <DeviceStatusRing position={safeActuatorPosition} status={actuator.state?.output === 'active' ? 'active' : actuator.status} color="#fbbf24" selected={selectedEntity?.type === 'actuator' && selectedEntity.id === actuator.id} />
-                <ActuatorNode position={safeActuatorPosition} status={actuator.status} output={actuator.state?.output} selected={selectedEntity?.type === 'actuator' && selectedEntity.id === actuator.id} onClick={() => onEntitySelect({ type: 'actuator', id: actuator.id, ...actuator })} />
-              </group>
+              <SceneTransform
+                key={actuator.id}
+                entity={{ ...actuator, type: 'actuator' }}
+                selected={selectedEntity?.type === 'actuator' && selectedEntity.id === actuator.id}
+                canTransform={canTransform}
+                transformMode={transformMode}
+                gridSnap={gridSnap}
+                onCommit={onTransformCommit}
+              >
+                {sceneLayers.alerts && <AssetConditionLabel status={actuator.status} lastUpdated={actuator.last_updated} selected={selectedEntity?.type === 'actuator' && selectedEntity.id === actuator.id} />}
+                {sceneLayers.alerts && <DeviceStatusRing position={[0, 0, 0]} status={actuator.state?.output === 'active' ? 'active' : actuator.status} color="#fbbf24" selected={selectedEntity?.type === 'actuator' && selectedEntity.id === actuator.id} />}
+                <ActuatorNode position={[0, 0, 0]} rotation={actuator.rotation} status={actuator.status} output={actuator.state?.output} name={actuator.name} selected={selectedEntity?.type === 'actuator' && selectedEntity.id === actuator.id} showLabels={sceneLayers.labels} onClick={(event) => handleEntityClick(event, { type: 'actuator', id: actuator.id, ...actuator })} />
+              </SceneTransform>
             );
           })}
         </Canvas>
@@ -630,17 +872,6 @@ export const EstateScene = ({
         <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-aegis-primary/50"></div>
       </div>
 
-      <aside className="grid w-full grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <IndustrialControlPanel robots={displayRobots} sensors={displaySensors} actuators={displayActuators} zones={displayZones} />
-        <div className="rounded-2xl border border-cyan-500/25 bg-slate-950/80 p-3 text-[10px] font-mono uppercase tracking-[0.25em] text-cyan-200 shadow-[0_0_15px_rgba(34,211,238,0.08)] backdrop-blur-sm">
-          <div className="space-y-2">
-            <p>Robots: {displayRobots.length}</p>
-            <p>Sensors: {displaySensors.length}</p>
-            <p>Actuators: {displayActuators.length}</p>
-            <p>Zones: {displayZones.length}</p>
-          </div>
-        </div>
-      </aside>
     </div>
   );
 };

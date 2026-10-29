@@ -4,6 +4,7 @@ import pytest
 
 from backend.database import Zone
 from backend.models.digital_twin import DigitalTwinDevice
+from backend.models.safety import EmergencyStop
 from backend.models_db import AuditLog, DigitalTwinTelemetry
 from backend.audit_utils import record_actor_audit_event
 from backend.services import digital_twin
@@ -719,6 +720,50 @@ def test_device_lifecycle_and_command_write_structured_audit(client, test_db, mo
         assert command_log.details["response"]["state"]["command"] == "on"
     finally:
         audit_db.close()
+
+
+def test_active_emergency_stop_blocks_digital_twin_commands(client, test_db, monkeypatch):
+    monkeypatch.setattr("backend.routers.digital_twin.SessionLocal", test_db)
+    headers = {"Authorization": "Bearer test-token"}
+    created = client.post("/api/v1/digital-twin/devices", headers=headers, json={
+        "device_id": "estop-protected-actuator",
+        "name": "Protected actuator",
+        "kind": "actuator",
+        "device_type": "relay",
+        "state": {"output": "idle"},
+    })
+    assert created.status_code == 200, created.text
+
+    db = test_db()
+    try:
+        db.add(EmergencyStop(tenant_id=1, active=True, reason="Test emergency stop"))
+        db.commit()
+    finally:
+        db.close()
+
+    safety = client.get("/api/v1/digital-twin/safety-status", headers=headers)
+    assert safety.status_code == 200, safety.text
+    assert safety.json() == {
+        "blocked": True,
+        "reason": "Emergency Stop active: Test emergency stop",
+        "rule_id": None,
+    }
+
+    response = client.post(
+        f"/api/v1/digital-twin/devices/{created.json()['id']}/control",
+        headers=headers,
+        json={"command": "on"},
+    )
+    assert response.status_code == 423, response.text
+    assert "Emergency Stop active" in response.json()["detail"]
+
+    db = test_db()
+    try:
+        device = db.query(DigitalTwinDevice).filter_by(id=created.json()["id"]).one()
+        assert device.state["output"] == "idle"
+        assert "command" not in device.state
+    finally:
+        db.close()
 
 
 def test_unconfigured_hardware_adapter_fails_without_mutating_device(client, test_db, monkeypatch):

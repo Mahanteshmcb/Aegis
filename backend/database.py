@@ -81,6 +81,7 @@ class Zone(Base):
     description = Column(Text, nullable=True)
     spatial_position = Column(JSON, nullable=True)
     dimensions = Column(JSON, nullable=True)
+    orientation = Column(JSON, nullable=True)
     spatial_status = Column(String(24), nullable=False, default="inferred")
     coordinate_system = Column(String(100), nullable=True)
     length_unit = Column(String(16), nullable=False, default="m")
